@@ -38,3 +38,9 @@ RSIMD_OP(selftest_arith_i32, int,
 RSIMD_OP(selftest_arith_f64, void,
          (int op, const double *x, const double *y, R_xlen_t n, int x_scalar, int y_scalar,
           double *out, const rsimd_opts *o))
+
+/* Reductions. Each call folds one chunk into the running result (see
+   rsimd_reduce_result in kernel_types.h); the entry point merges chunks
+   and finishes. Logical vectors use the integer kernels. */
+RSIMD_OP(sum_f64, void, (const double *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(sum_i32, void, (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))

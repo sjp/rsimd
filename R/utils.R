@@ -41,3 +41,13 @@
   }
   invisible()
 }
+
+# Errors if x is of one of the element types in `unsupported` ("integer64",
+# "complex"), which function `fun` does not take yet.
+.check_supported <- function(x, fun, unsupported) {
+  type <- if (inherits(x, "integer64")) "integer64" else typeof(x)
+  if (type %in% unsupported) {
+    stop(fun, "() does not support 'x' of type ", type, " yet", call. = FALSE)
+  }
+  invisible()
+}

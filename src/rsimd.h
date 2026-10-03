@@ -24,6 +24,9 @@ SEXP C_simd_debug_bin(SEXP x, SEXP y);
 SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision, SEXP na_rm);
 SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 
+/* reductions */
+SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
+
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);

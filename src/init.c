@@ -26,6 +26,7 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_debug_bin, 2),
   CALLDEF(C_simd_debug_finish, 6),
   CALLDEF(C_simd_debug_opts, 4),
+  CALLDEF(C_simd_sum, 4),
   CALLDEF(C_simd_debug_fold, 6),
   CALLDEF(C_simd_debug_lgl, 4),
   CALLDEF(C_simd_debug_arith, 4),

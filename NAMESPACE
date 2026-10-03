@@ -9,3 +9,6 @@ export(simd_tiers)
 export(simd_use)
 export(simd_version)
 export(simd_with_impl)
+
+# reductions
+export(simd_sum)

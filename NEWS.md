@@ -30,3 +30,7 @@
   follow: `NA` and `NaN` stay distinct, a reduction over both returns `NA`
   whatever their order, `na.rm = TRUE` removes both, and checked integer
   arithmetic returns `NA` with base R's overflow warning.
+* Added `simd_sum()`, the sum of a double, integer or logical vector, with
+  `na.rm` and `na_check` arguments and the accumulation mode set by
+  `simd_precision()`. Integer sums are exact and become a double when they
+  leave the integer range, as in base R.
