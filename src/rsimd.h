@@ -7,5 +7,7 @@
 
 /* control */
 SEXP C_simd_version(void);
+SEXP C_simd_cpu_features(void);
+SEXP C_simd_cpu_tiers(void);
 
 #endif /* RSIMD_H */

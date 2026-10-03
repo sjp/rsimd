@@ -1,4 +1,5 @@
 useDynLib(rsimd, .registration = TRUE)
 
 # control
+export(simd_cpu_features)
 export(simd_version)

@@ -23,6 +23,7 @@ Depends:
 Suggests:
     bench,
     bit64,
+    callr,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)
