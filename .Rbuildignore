@@ -1,0 +1,11 @@
+^issues$
+^bench$
+^\.devcontainer$
+^\.github$
+^\.lintr$
+^CONTRIBUTING\.md$
+^tools$
+^.*\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+^README\.Rmd$

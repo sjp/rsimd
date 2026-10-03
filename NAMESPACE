@@ -1,0 +1,4 @@
+useDynLib(rsimd, .registration = TRUE)
+
+# control
+export(simd_version)

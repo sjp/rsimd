@@ -1,0 +1,8 @@
+Third-party code bundled with rsimd
+===================================
+
+This file lists third-party code vendored into the rsimd source package,
+with its copyright holders and licence. The rsimd package itself is
+distributed under the MIT licence (see LICENSE).
+
+No third-party code is bundled yet.
