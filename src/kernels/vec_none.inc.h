@@ -185,3 +185,27 @@ RSIMD_INLINE rsimd_mi64 rsimd_vi64_is_na(rsimd_vi64 a) { return a == INT64_MIN; 
 RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 a) { return a; }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_min(rsimd_vi64 a) { return a; }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_max(rsimd_vi64 a) { return a; }
+
+/* Width conversions and extras */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
+  return (int32_t) (((int64_t) a * b) >> 32);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) { return *p; }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
+  return pg ? *p : fill;
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
+  *p = (int32_t) (uint32_t) (uint64_t) v;
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v) {
+  if (pg) rsimd_vi64_storeu_i32(p, v);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return floor(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) { return (double) *p; }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
+  return (double) (pg ? *p : fill);
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) { *p = (int32_t) v; }
+RSIMD_INLINE void rsimd_vf64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vf64 v) {
+  if (pg) *p = (int32_t) v;
+}

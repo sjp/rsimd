@@ -122,7 +122,10 @@ void rsimd_rvec_init(void) {
     if (*p < '0' || *p > '9') return;
   }
   v = strtoll(s, NULL, 10); /* LLONG_MAX on overflow: no interrupt checks */
-  if (v >= 1) rsimd_stride = (R_xlen_t) v;
+  if (v < 1) return;
+  if (v > LLONG_MAX - RSIMD_PAIRWISE_LEAF) v = LLONG_MAX - RSIMD_PAIRWISE_LEAF;
+  v = (v + RSIMD_PAIRWISE_LEAF - 1) / RSIMD_PAIRWISE_LEAF * RSIMD_PAIRWISE_LEAF;
+  rsimd_stride = (R_xlen_t) v;
 }
 
 void rsimd_check_interrupt(void) {
@@ -189,24 +192,30 @@ static SEXP scalar_index(double v, R_xlen_t n) {
   return n > INT_MAX ? Rf_ScalarReal(v) : Rf_ScalarInteger((int) v);
 }
 
+/* NA of the type a reduction returns. */
+static SEXP na_result(int op, rsimd_etype type) {
+  int is_int = type == RSIMD_I32 || type == RSIMD_LGL;
+  if (op == RSIMD_RED_SUM || op == RSIMD_RED_MIN || op == RSIMD_RED_MAX) {
+    if (is_int) return Rf_ScalarInteger(NA_INTEGER);
+    if (type == RSIMD_I64) return scalar_i64(RSIMD_NA_I64);
+  }
+  return Rf_ScalarReal(NA_REAL);
+}
+
 SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduce_result *r,
                          const rsimd_opts *o) {
   int is_int = type == RSIMD_I32 || type == RSIMD_LGL;
   int is_real = type == RSIMD_F64 || is_int;
-  double value = o->precision == RSIMD_PREC_COMPENSATED ? r->f64 + r->comp : r->f64;
+  /* Missing values decide the result of the NaN-propagating ops. */
+  int missing = !o->na_rm && (r->saw_na || r->saw_nan);
+  double value = rsimd_reduce_value(r, o->precision);
 
   switch (op) {
   case RSIMD_RED_SUM:
-    if (type == RSIMD_F64) return Rf_ScalarReal(value);
-    if (is_int) {
-      /* Base R returns a double when an integer sum overflows. */
-      if (r->i64 > INT_MAX || r->i64 < -INT_MAX) return Rf_ScalarReal((double) r->i64);
-      return Rf_ScalarInteger((int) r->i64);
-    }
-    if (type == RSIMD_I64) return scalar_i64(r->i64);
-    break;
   case RSIMD_RED_PROD:
   case RSIMD_RED_MEAN:
+  case RSIMD_RED_MIN:
+  case RSIMD_RED_MAX:
   case RSIMD_RED_SUM_SQ:
   case RSIMD_RED_SUM_ABS:
   case RSIMD_RED_DOT:
@@ -215,10 +224,54 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
   case RSIMD_RED_COSINE:
   case RSIMD_RED_VAR:
   case RSIMD_RED_SD:
+    if (!(is_real || type == RSIMD_I64)) break;
+    if (type == RSIMD_I64 && op != RSIMD_RED_SUM && op != RSIMD_RED_MIN && op != RSIMD_RED_MAX) {
+      break;
+    }
+    if (missing) {
+      /* NA wins over NaN, whatever the order; integer inputs have no NaN. */
+      if (r->saw_na || is_int || type == RSIMD_I64) return na_result(op, type);
+      return Rf_ScalarReal(R_NaN);
+    }
+    break;
+  default: break;
+  }
+
+  switch (op) {
+  case RSIMD_RED_SUM:
+    if (type == RSIMD_F64) return Rf_ScalarReal(value);
+    if (is_int) {
+      /* Base R returns a double when an integer sum overflows. */
+      if (r->overflow) return Rf_ScalarReal(r->f64 + (double) r->i64);
+      if (r->i64 > INT_MAX || r->i64 < -INT_MAX) return Rf_ScalarReal((double) r->i64);
+      return Rf_ScalarInteger((int) r->i64);
+    }
+    if (type == RSIMD_I64) return scalar_i64(r->i64);
+    break;
+  case RSIMD_RED_MEAN:
+    if (is_real) return Rf_ScalarReal(r->count == 0 ? R_NaN : value);
+    break;
+  case RSIMD_RED_VAR:
+  case RSIMD_RED_SD:
+    if (is_real) return Rf_ScalarReal(r->count < 2 ? NA_REAL : value);
+    break;
+  case RSIMD_RED_PROD:
+  case RSIMD_RED_SUM_SQ:
+  case RSIMD_RED_SUM_ABS:
+  case RSIMD_RED_DOT:
+  case RSIMD_RED_NORM:
+  case RSIMD_RED_DIST:
+  case RSIMD_RED_COSINE:
     if (is_real) return Rf_ScalarReal(value);
     break;
   case RSIMD_RED_MIN:
   case RSIMD_RED_MAX:
+    if (is_real && r->count == 0) {
+      int is_min = op == RSIMD_RED_MIN;
+      Rf_warning("no non-missing arguments to %s; returning %s", is_min ? "min" : "max",
+                 is_min ? "Inf" : "-Inf");
+      return Rf_ScalarReal(is_min ? R_PosInf : R_NegInf);
+    }
     if (type == RSIMD_F64) return Rf_ScalarReal(value);
     if (is_int) return Rf_ScalarInteger((int) r->i64);
     if (type == RSIMD_I64) return scalar_i64(r->i64);
@@ -230,14 +283,22 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
       return scalar_index((double) r->idx + 1, n);
     }
     break;
-  case RSIMD_RED_ANY: return Rf_ScalarLogical(r->any_true);
-  case RSIMD_RED_ALL: return Rf_ScalarLogical(!r->any_false);
+  case RSIMD_RED_ANY:
+    if (r->any_true) return Rf_ScalarLogical(TRUE);
+    return Rf_ScalarLogical(!o->na_rm && r->saw_na ? NA_LOGICAL : FALSE);
+  case RSIMD_RED_ALL:
+    if (r->any_false) return Rf_ScalarLogical(FALSE);
+    return Rf_ScalarLogical(!o->na_rm && r->saw_na ? NA_LOGICAL : TRUE);
   case RSIMD_RED_ANY_NA: return Rf_ScalarLogical(r->saw_na || r->saw_nan);
   case RSIMD_RED_COUNT_NA: return scalar_index((double) r->i64, n);
   default: Rf_error("internal error: unknown reduction %d", op);
   }
   Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[type]);
   return R_NilValue; /* not reached */
+}
+
+void rsimd_warn_int_overflow(void) {
+  Rf_warning("NAs produced by integer overflow");
 }
 
 /* ---- Results ------------------------------------------------------------ */

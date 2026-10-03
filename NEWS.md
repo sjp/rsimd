@@ -22,3 +22,11 @@
   in chunks without being expanded, long vectors are supported, long
   computations can be interrupted, and binary operations accept equal lengths
   or a length-1 operand only.
+* `simd_precision()` selects how floating-point sums are accumulated:
+  `"fast"` (the default), `"pairwise"` or `"compensated"` (Neumaier, which
+  agrees with base R's long double `sum()` without needing long double).
+  The options and environment variables are documented in `?rsimd_options`.
+* Internal rules for missing values and integer overflow that all functions
+  follow: `NA` and `NaN` stay distinct, a reduction over both returns `NA`
+  whatever their order, `na.rm = TRUE` removes both, and checked integer
+  arithmetic returns `NA` with base R's overflow warning.

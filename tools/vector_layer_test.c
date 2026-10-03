@@ -1,5 +1,7 @@
 /*
- * Behavioural test of the vector layer in src/kernels/common.inc.h.
+ * Behavioural test of the vector layer in src/kernels/common.inc.h and of
+ * the vector forms of the NA, precision and overflow helpers in src/na.h,
+ * which must agree with their scalar forms.
  *
  * Compiled once per tier by tools/check_vector_layer.sh with
  * -DRSIMD_TIER=<tier> and that tier's flags, then run (natively or under
@@ -98,7 +100,9 @@ static double fa[N + 1], fb[N + 1], fc[N + 1], fint[N + 1], fout[N + 1];
 #ifndef RSIMD_NO_F64_SIMD
 static double fref[N + 1];
 #endif
+static double fconv[N + 1]; /* within the int32 range, for storeu_i32 */
 static int32_t ia[N + 1], ib[N + 1], iout[N + 1], iref[N + 1];
+static int32_t ismall[N + 1], ismall2[N + 1]; /* near the int32 multiply limits */
 static int64_t la[N + 1], lb[N + 1], lout[N + 1], lref[N + 1];
 
 static uint64_t rng = UINT64_C(0x9E3779B97F4A7C15);
@@ -140,6 +144,7 @@ static void init_inputs(void) {
       fc[i] = i % 5 == 0 ? fa[i] : (double) (int64_t) (next_rand() >> 11) / 1e12;
     }
     fint[i] = (double) ((int) (next_rand() % 2001) - 1000);
+    fconv[i] = fint[i] * 2147483.0 + (double) (i % 7) * (i % 2 ? -0.37 : 0.37);
     if (i < 3 * ni) {
       ia[i] = ivals[i % ni];
       ib[i] = ivals[(i / ni + i * 5 + 1) % ni];
@@ -155,6 +160,30 @@ static void init_inputs(void) {
       lb[i] = i % 4 == 0 ? la[i] : (int64_t) next_rand();
     }
   }
+  {
+    const int32_t edges[] = {46340, 46341, -46341, 65536, -65536, 32768, -32768, 0, 1, -1,
+                             INT32_MIN, INT32_MAX, -INT32_MAX};
+    const int ne = (int) (sizeof edges / sizeof edges[0]);
+    for (i = 0; i < N; i++) {
+      ismall[i] = i < 2 * ne ? edges[i % ne] : (int32_t) (next_rand() % 131073) - 65536;
+      ismall2[i] =
+        i < 2 * ne ? edges[(i * 5 + 2) % ne] : (int32_t) (next_rand() % 131073) - 65536;
+    }
+    /* Results of exactly INT32_MIN, which is NA: add, sub, mul. */
+    ismall[0] = -INT32_MAX;
+    ismall2[0] = -1;
+    ismall[1] = -INT32_MAX;
+    ismall2[1] = 1;
+    ismall[2] = -65536;
+    ismall2[2] = 32768;
+    ismall[3] = INT32_MAX;
+    ismall2[3] = 1;
+  }
+  fconv[0] = 2147483647.0;
+  fconv[1] = -2147483648.0;
+  fconv[2] = -2147483647.9;
+  fconv[3] = -0.5;
+  fconv[4] = 0.999;
 }
 
 static void reset_out(void) {
@@ -223,6 +252,7 @@ static void test_f64(ptrdiff_t n) {
   F64_OP("f64 abs", rsimd_vf64_abs(x), from_bits(bits(a) & ~(UINT64_C(1) << 63)), 1);
   F64_OP("f64 neg", rsimd_vf64_neg(x), from_bits(bits(a) ^ (UINT64_C(1) << 63)), 1);
   F64_OP("f64 sqrt", rsimd_vf64_sqrt(x), sqrt(a), 0);
+  F64_OP("f64 floor", rsimd_vf64_floor(x), floor(a), 0);
   F64_OP("f64 and", rsimd_vf64_and(x, y), from_bits(bits(a) & bits(b)), 1);
   F64_OP("f64 or", rsimd_vf64_or(x, y), from_bits(bits(a) | bits(b)), 1);
   F64_OP("f64 xor", rsimd_vf64_xor(x, y), from_bits(bits(a) ^ bits(b)), 1);
@@ -311,6 +341,8 @@ static void test_int(ptrdiff_t n) {
   I32_OP("i32 add", rsimd_vi32_add(x, y), (int32_t) ((uint32_t) a + (uint32_t) b));
   I32_OP("i32 sub", rsimd_vi32_sub(x, y), (int32_t) ((uint32_t) a - (uint32_t) b));
   I32_OP("i32 mul", rsimd_vi32_mul(x, y), (int32_t) ((uint32_t) a * (uint32_t) b));
+  I32_OP("i32 mulhi", rsimd_vi32_mulhi(x, y),
+         (int32_t) (uint32_t) ((uint64_t) ((int64_t) a * b) >> 32));
   I32_OP("i32 min", rsimd_vi32_min(x, y), a < b ? a : b);
   I32_OP("i32 max", rsimd_vi32_max(x, y), a > b ? a : b);
   I32_OP("i32 and", rsimd_vi32_and(x, y), a & b);
@@ -404,6 +436,260 @@ static void test_int_horizontal(void) {
   }
 }
 
+/* int32 elements <-> 64-bit lanes: RSIMD_LANES_64 elements per step. */
+#define CONV_LOOP(STEP_FULL, STEP_PART)                                        \
+  do {                                                                         \
+    ptrdiff_t i = 0;                                                           \
+    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                     \
+      STEP_FULL;                                                               \
+    }                                                                          \
+    if (i < n) {                                                               \
+      rsimd_p64 pg = rsimd_p64_while(i, n);                                    \
+      STEP_PART;                                                               \
+    }                                                                          \
+  } while (0)
+
+static void test_convert(ptrdiff_t n) {
+  ptrdiff_t j;
+  reset_out();
+  CONV_LOOP(rsimd_vi64_storeu(lout + i, rsimd_vi64_loadu_i32(ia + i)),
+            rsimd_vi64_storeu_p(pg, lout + i, rsimd_vi64_loadu_i32_p(pg, ia + i, 7)));
+  for (j = 0; j < n; j++) lref[j] = ia[j];
+  check_i64("i64 loadu_i32", n, lout, lref);
+
+  reset_out();
+  CONV_LOOP(rsimd_vi64_storeu_i32(iout + i, rsimd_vi64_loadu(la + i)),
+            rsimd_vi64_storeu_i32_p(pg, iout + i, rsimd_vi64_loadu_p(pg, la + i, 7)));
+  for (j = 0; j < n; j++) iref[j] = (int32_t) (uint32_t) (uint64_t) la[j];
+  check_i32("i64 storeu_i32", n, iout, iref);
+
+  /* Fill values of inactive lanes. */
+  if (n % RSIMD_LANES_64 != 0) {
+    ptrdiff_t i = n - n % RSIMD_LANES_64;
+    rsimd_vi64 v = rsimd_vi64_loadu_i32_p(rsimd_p64_while(i, n), ia + i, -5);
+    int64_t s = rsimd_vi64_reduce_add(v), want = 0;
+    for (j = i; j < n; j++) want += ia[j];
+    want += -5 * (RSIMD_LANES_64 - (n - i));
+    n_checks++;
+    if (s != want) fail("i64 loadu_i32_p fill", n, i, "mismatch");
+  }
+
+#ifndef RSIMD_NO_F64_SIMD
+  reset_out();
+  CONV_LOOP(rsimd_vf64_storeu(fout + i, rsimd_vf64_loadu_i32(ia + i)),
+            rsimd_vf64_storeu_p(pg, fout + i, rsimd_vf64_loadu_i32_p(pg, ia + i, 7)));
+  for (j = 0; j < n; j++) fref[j] = (double) ia[j];
+  check_f64("f64 loadu_i32", n, fout, fref, 1);
+
+  reset_out();
+  CONV_LOOP(rsimd_vf64_storeu_i32(iout + i, rsimd_vf64_loadu(fconv + i)),
+            rsimd_vf64_storeu_i32_p(pg, iout + i, rsimd_vf64_loadu_p(pg, fconv + i, 0.0)));
+  for (j = 0; j < n; j++) iref[j] = (int32_t) fconv[j];
+  check_i32("f64 storeu_i32", n, iout, iref);
+#endif
+}
+
+/* ---- na.h: vector forms against scalar forms ---------------------------- */
+
+static int same_result(const rsimd_reduce_result *a, const rsimd_reduce_result *b) {
+  return a->saw_na == b->saw_na && a->saw_nan == b->saw_nan && a->count == b->count &&
+         a->overflow == b->overflow && a->i64 == b->i64;
+}
+
+/* Checked (op 0-2: add, sub, mul) or wrapping (op 3-5) arithmetic through
+   the vector helpers of na.h. */
+static rsimd_vi32 arith_lanes(int op, int check, rsimd_vi32 x, rsimd_vi32 y) {
+  rsimd_vi32 r = op % 3 == 0 ? rsimd_vi32_add(x, y)
+                 : op % 3 == 1 ? rsimd_vi32_sub(x, y)
+                               : rsimd_vi32_mul(x, y);
+  rsimd_mi32 bad = rsimd_mi32_none();
+  if (op == 0) bad = rsimd_vi32_add_ovf(x, y, r);
+  else if (op == 1) bad = rsimd_vi32_sub_ovf(x, y, r);
+  else if (op == 2) bad = rsimd_vi32_mul_ovf(x, y, r);
+  if (check) bad = rsimd_mi32_or(bad, rsimd_vi32_na2(x, y));
+  return rsimd_vi32_set_na(r, bad);
+}
+
+/* 1 in the lanes where checked op 0-2 overflows (NA operands excluded). */
+static rsimd_vi32 ovf_lanes(int op, rsimd_vi32 x, rsimd_vi32 y) {
+  rsimd_vi32 r = op == 0 ? rsimd_vi32_add(x, y) : op == 1 ? rsimd_vi32_sub(x, y)
+                                                          : rsimd_vi32_mul(x, y);
+  rsimd_mi32 bad = op == 0 ? rsimd_vi32_add_ovf(x, y, r)
+                   : op == 1 ? rsimd_vi32_sub_ovf(x, y, r)
+                             : rsimd_vi32_mul_ovf(x, y, r);
+  bad = rsimd_mi32_andnot(rsimd_vi32_na2(x, y), bad);
+  return rsimd_vi32_blend(rsimd_vi32_zero(), rsimd_vi32_set1(1), bad);
+}
+
+static void test_na_int(ptrdiff_t n) {
+  static const rsimd_opts opts[3] = {{0, 1, 0}, {1, 1, 0}, {0, 0, 0}};
+  ptrdiff_t j;
+  int k;
+  char buf[96];
+  for (k = 0; k < 3; k++) {
+    rsimd_reduce_result a, b;
+    memset(&a, 0, sizeof a);
+    memset(&b, 0, sizeof b);
+    rsimd_fold_sum_i32(ia, n, &a, &opts[k]);
+    rsimd_vfold_sum_i32(ia, n, &b, &opts[k]);
+    n_checks++;
+    if (!same_result(&a, &b)) {
+      snprintf(buf, sizeof buf, "opts %d: sum %lld/%lld count %ld/%ld na %d/%d", k,
+               (long long) a.i64, (long long) b.i64, (long) a.count, (long) b.count, a.saw_na,
+               b.saw_na);
+      fail("na sum_i32", n, 0, buf);
+    }
+  }
+
+  /* Logical flags: identical without early exit; with it, the same answer. */
+  for (k = 0; k < 3; k++) {
+    int stop;
+    for (stop = RSIMD_STOP_NONE; stop <= RSIMD_STOP_FALSE; stop++) {
+      rsimd_reduce_result a, b;
+      memset(&a, 0, sizeof a);
+      memset(&b, 0, sizeof b);
+      rsimd_fold_lgl(ib, n, stop, &a, &opts[k]);
+      rsimd_vfold_lgl(ib, n, stop, &b, &opts[k]);
+      n_checks++;
+      if (stop == RSIMD_STOP_NONE
+            ? (a.any_true != b.any_true || a.any_false != b.any_false || a.saw_na != b.saw_na)
+            : stop == RSIMD_STOP_TRUE ? a.any_true != b.any_true
+                                      : a.any_false != b.any_false) {
+        snprintf(buf, sizeof buf, "opts %d stop %d", k, stop);
+        fail("na lgl flags", n, 0, buf);
+      }
+    }
+  }
+
+  /* Checked and wrapping arithmetic, lane by lane. */
+  for (k = 0; k < 2; k++) {
+    const int check = k == 0;
+    const int32_t *xs = n % 2 ? ia : ismall, *ys = n % 2 ? ib : ismall2;
+    int op;
+    for (op = 0; op < 6; op++) {
+      int want_ovf = 0;
+      reset_out();
+      LOOP(RSIMD_LANES_32, p32, vi32, INT_LOADS(vi32, xs, ys, 0), arith_lanes(op, check, x, y),
+           iout);
+      for (j = 0; j < n; j++) {
+        int32_t a = xs[j], b = ys[j];
+        switch (op) {
+        case 0: iref[j] = rsimd_add_i32(a, b, check, &want_ovf); break;
+        case 1: iref[j] = rsimd_sub_i32(a, b, check, &want_ovf); break;
+        case 2: iref[j] = rsimd_mul_i32(a, b, check, &want_ovf); break;
+        case 3: iref[j] = rsimd_add_wrap_i32(a, b, check); break;
+        case 4: iref[j] = rsimd_sub_wrap_i32(a, b, check); break;
+        default: iref[j] = rsimd_mul_wrap_i32(a, b, check); break;
+        }
+      }
+      snprintf(buf, sizeof buf, "na arith op %d check %d", op, check);
+      check_i32(buf, n, iout, iref);
+      if (op < 3) {
+        reset_out();
+        LOOP(RSIMD_LANES_32, p32, vi32, INT_LOADS(vi32, xs, ys, 0), ovf_lanes(op, x, y), iout);
+        for (j = 0; j < n; j++) {
+          int ovf = 0;
+          if (op == 0) rsimd_add_i32(xs[j], ys[j], 1, &ovf);
+          else if (op == 1) rsimd_sub_i32(xs[j], ys[j], 1, &ovf);
+          else rsimd_mul_i32(xs[j], ys[j], 1, &ovf);
+          iref[j] = ovf;
+        }
+        snprintf(buf, sizeof buf, "na overflow flag op %d", op);
+        check_i32(buf, n, iout, iref);
+      }
+    }
+  }
+  I32_OP("na neg_wrap", rsimd_vi32_neg_wrap(x), rsimd_neg_i32(a));
+  I32_OP("na abs_wrap", rsimd_vi32_abs_wrap(x), rsimd_abs_i32(a));
+
+#ifndef RSIMD_NO_F64_SIMD
+  /* %/% and %% through double lanes. */
+  for (k = 0; k < 2; k++) {
+    int mod;
+    for (mod = 0; mod < 2; mod++) {
+      const int32_t *ys = k ? ib : ismall2;
+      reset_out();
+      CONV_LOOP(rsimd_vf64_storeu_i32(iout + i, rsimd_vf64_intdiv(rsimd_vf64_loadu_i32(ia + i),
+                                                                  rsimd_vf64_loadu_i32(ys + i),
+                                                                  mod, 1)),
+                rsimd_vf64_storeu_i32_p(pg, iout + i,
+                                        rsimd_vf64_intdiv(rsimd_vf64_loadu_i32_p(pg, ia + i, 0),
+                                                          rsimd_vf64_loadu_i32_p(pg, ys + i, 1),
+                                                          mod, 1)));
+      for (j = 0; j < n; j++) iref[j] = rsimd_intdiv_i32(ia[j], ys[j], mod, 1);
+      check_i32(mod ? "na mod" : "na idiv", n, iout, iref);
+    }
+  }
+#endif
+}
+
+#ifndef RSIMD_NO_F64_SIMD
+/* Missing values are found in every lane, and integer-valued data sums
+   exactly in every mode, so vector and scalar folds must agree exactly. */
+static void test_na_fold(ptrdiff_t n) {
+  static const rsimd_opts base[3] = {{0, 1, 0}, {1, 1, 0}, {0, 0, 0}};
+  static double xs[N + 1], ys[N + 1];
+  ptrdiff_t j;
+  int k, prec, term;
+  char buf[160];
+  for (j = 0; j < n; j++) {
+    xs[j] = fint[j];
+    ys[j] = fint[(j * 7 + 3) % N];
+    if (j % 13 == 5) xs[j] = from_bits(UINT64_C(0x7FF00000000007A2)); /* NA */
+    if (j % 17 == 9) ys[j] = from_bits(UINT64_C(0x7FF8000000000000)); /* NaN */
+  }
+  for (k = 0; k < 3; k++) {
+    for (prec = 0; prec < 3; prec++) {
+      for (term = 0; term < 4; term++) {
+        rsimd_opts o = base[k];
+        rsimd_reduce_result a, b;
+        double va, vb;
+        o.precision = prec;
+        memset(&a, 0, sizeof a);
+        memset(&b, 0, sizeof b);
+        rsimd_fold_f64(xs, ys, n, term, &a, &o);
+        switch (term) {
+        case RSIMD_TERM_X: rsimd_vfold_f64(xs, ys, n, RSIMD_TERM_X, &b, &o); break;
+        case RSIMD_TERM_SQ: rsimd_vfold_f64(xs, ys, n, RSIMD_TERM_SQ, &b, &o); break;
+        case RSIMD_TERM_ABS: rsimd_vfold_f64(xs, ys, n, RSIMD_TERM_ABS, &b, &o); break;
+        default: rsimd_vfold_f64(xs, ys, n, RSIMD_TERM_XY, &b, &o); break;
+        }
+        va = rsimd_reduce_value(&a, prec);
+        vb = rsimd_reduce_value(&b, prec);
+        n_checks++;
+        if (!same_result(&a, &b) || !(bits(va) == bits(vb) || (isnan(va) && isnan(vb)))) {
+          snprintf(buf, sizeof buf, "opts %d prec %d term %d: %g/%g count %ld/%ld na %d/%d",
+                   k, prec, term, va, vb, (long) a.count, (long) b.count, a.saw_na, b.saw_na);
+          fail("na fold_f64", n, 0, buf);
+        }
+      }
+    }
+  }
+  /* Elementwise NA merge. */
+  F64_OP("na merge", rsimd_vf64_na_merge(rsimd_vf64_add(x, y), x, y),
+         rsimd_na_merge_f64(a + b, a, b), 0);
+}
+
+/* Cancellation that every lane width leaves to accumulator 0, lane 0. */
+static void test_na_cancel(void) {
+  static double x[257];
+  static const double want[3] = {0.0, 0.0, 1.0};
+  rsimd_opts o = {0, 1, 0};
+  int prec;
+  memset(x, 0, sizeof x);
+  x[0] = 1e16;
+  x[128] = 1.0;
+  x[256] = -1e16;
+  for (prec = 0; prec < 3; prec++) {
+    rsimd_reduce_result r;
+    memset(&r, 0, sizeof r);
+    o.precision = prec;
+    rsimd_vfold_f64(x, x, 257, RSIMD_TERM_X, &r, &o);
+    check_int("na cancel", 257, prec, (long) rsimd_reduce_value(&r, prec), (long) want[prec]);
+  }
+}
+#endif
+
 /* Predicates and fill values. */
 static void test_predicates(ptrdiff_t n) {
   ptrdiff_t L64 = RSIMD_LANES_64, L32 = RSIMD_LANES_32, i;
@@ -444,8 +730,16 @@ int main(void) {
     test_f64(n);
 #endif
     test_int(n);
+    test_convert(n);
     test_predicates(n);
+    test_na_int(n);
+#ifndef RSIMD_NO_F64_SIMD
+    test_na_fold(n);
+#endif
   }
+#ifndef RSIMD_NO_F64_SIMD
+  test_na_cancel();
+#endif
 #ifndef RSIMD_NO_F64_SIMD
   test_f64_horizontal();
 #endif

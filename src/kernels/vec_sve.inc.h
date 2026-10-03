@@ -192,3 +192,30 @@ RSIMD_INLINE rsimd_mi64 rsimd_vi64_is_na(rsimd_vi64 a) {
 /* SADDV widens 32-bit lanes to a 64-bit sum, so this is exact. */
 RSIMD_INLINE int64_t rsimd_vi32_reduce_add(rsimd_vi32 a) { return svaddv_s32(RSIMD_PT32, a); }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 a) { return svaddv_s64(RSIMD_PT64, a); }
+
+/* Width conversions and extras. The 64-bit-lane conversions move
+   svcntd() int32 elements. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
+  return svmulh_s32_x(RSIMD_PT32, a, b);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) { return svld1sw_s64(RSIMD_PT64, p); }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
+  return svsel_s64(pg, svld1sw_s64(pg, p), svdup_n_s64(fill));
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) { svst1w_s64(RSIMD_PT64, p, v); }
+RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v) {
+  svst1w_s64(pg, p, v);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return svrintm_f64_x(RSIMD_PT64, a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
+  return svcvt_f64_s64_x(RSIMD_PT64, rsimd_vi64_loadu_i32(p));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
+  return svcvt_f64_s64_x(RSIMD_PT64, rsimd_vi64_loadu_i32_p(pg, p, fill));
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
+  svst1w_s64(RSIMD_PT64, p, svcvt_s64_f64_x(RSIMD_PT64, v));
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vf64 v) {
+  svst1w_s64(pg, p, svcvt_s64_f64_x(RSIMD_PT64, v));
+}

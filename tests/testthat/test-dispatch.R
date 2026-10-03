@@ -206,13 +206,15 @@ test_that("every slot of an available tier resolves to an available tier", {
   for (tier in simd_available()) {
     k <- simd_kernel_tiers(tier)
     expect_type(k, "character")
-    expect_identical(names(k), c("tier_name", "fill_probe"))
+    expect_identical(names(k)[1:2], c("tier_name", "fill_probe"))
+    expect_false(anyNA(names(k)) || anyDuplicated(names(k)) > 0)
     expect_true(all(k %in% simd_available()))
     # A slot never runs a kernel of a better tier than the one selected.
     avail <- simd_available()
     expect_true(all(match(k, avail) >= match(tier, avail)))
   }
-  expect_identical(simd_kernel_tiers("none"), c(tier_name = "none", fill_probe = "none"))
+  k <- simd_kernel_tiers("none")
+  expect_identical(unname(k), rep("none", length(k)))
 })
 
 test_that("an empty slot is filled from below: fill_probe always runs none", {
@@ -222,7 +224,8 @@ test_that("an empty slot is filled from below: fill_probe always runs none", {
   })
   for (tier in names(res)) {
     expect_identical(res[[tier]]$reported[["fill_probe"]], "none")
-    expect_identical(res[[tier]]$called, res[[tier]]$reported)
+    called <- res[[tier]]$called
+    expect_identical(called, res[[tier]]$reported[names(called)])
     if (hole != "tier_name") {
       expect_identical(res[[tier]]$reported[["tier_name"]], tier)
     }

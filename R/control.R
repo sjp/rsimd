@@ -55,6 +55,49 @@ simd_use <- function(impl) {
   invisible(previous)
 }
 
+simd_precision <- function(mode) {
+  old <- .precision_mode()
+  if (missing(mode)) {
+    return(old)
+  }
+  problem <- .precision_problem(mode)
+  if (!is.null(problem)) {
+    stop(problem, call. = FALSE)
+  }
+  options(rsimd.precision = mode)
+  invisible(old)
+}
+
+.precision_modes <- c("fast", "pairwise", "compensated")
+
+# For a candidate value of rsimd.precision: NULL if valid, else the error.
+.precision_problem <- function(mode) {
+  if (!is.character(mode) || length(mode) != 1L || is.na(mode) ||
+    !mode %in% .precision_modes) {
+    return(paste0(
+      "precision mode must be one of ",
+      paste0("\"", .precision_modes, "\"", collapse = ", ")
+    ))
+  }
+  NULL
+}
+
+# The precision mode in effect: the rsimd.precision option, which the user
+# may have set directly, validated.
+.precision_mode <- function() {
+  mode <- getOption("rsimd.precision", "fast")
+  problem <- .precision_problem(mode)
+  if (!is.null(problem)) {
+    stop("invalid option rsimd.precision: ", problem, call. = FALSE)
+  }
+  mode
+}
+
+# The precision mode as the integer code the C side takes (RSIMD_PREC_*).
+.precision_code <- function() {
+  match(.precision_mode(), .precision_modes) - 1L
+}
+
 simd_with_impl <- function(impl, expr) {
   old <- simd_use(impl)
   on.exit(simd_use(old))

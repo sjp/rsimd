@@ -18,6 +18,7 @@
 
 #include <stddef.h>
 #include "kernel_types.h"
+#include "na.h"
 
 /* ---- Element types ----------------------------------------------------- */
 
@@ -64,7 +65,7 @@ int rsimd_promote_warns(rsimd_etype a, rsimd_etype b);
 /* ---- Chunked read access ----------------------------------------------- */
 
 /* Elements per region on the ALTREP path; the region buffer is at most
-   64 KiB (complex). */
+   64 KiB (complex). A multiple of RSIMD_PAIRWISE_LEAF. */
 #define RSIMD_CHUNK 4096
 
 typedef struct {
@@ -93,7 +94,10 @@ const void *rsimd_in_region(const rsimd_in *v, R_xlen_t i, R_xlen_t *len, void *
 
 /* The stride in effect: RSIMD_INTERRUPT_STRIDE, or the value of the
    environment variable RSIMD_DEBUG_STRIDE (a positive integer) when the
-   library was loaded. A small stride exercises chunking in tests. */
+   library was loaded, rounded up to a multiple of RSIMD_PAIRWISE_LEAF
+   (128). A small stride exercises chunking in tests. Every chunk boundary
+   is a multiple of 128 (RSIMD_CHUNK is one too), which pairwise summation
+   relies on to give the same result however the input is chunked. */
 extern R_xlen_t rsimd_stride;
 
 /* Reads RSIMD_DEBUG_STRIDE; called once at load. */
@@ -224,7 +228,8 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
 /* The R value of a finished reduction over n elements of type `type`, with
    base R's result types:
      sum        I32/LGL -> integer, or double when the 64-bit accumulator
-                exceeds INT_MAX in magnitude; F64 -> double; I64 -> integer64
+                exceeds INT_MAX in magnitude (or overflowed into f64);
+                F64 -> double; I64 -> integer64
      prod, mean, var, sd, sum_sq, sum_abs, dot, norm, dist, cosine
                 -> double
      min, max   I32/LGL -> integer; F64 -> double; I64 -> integer64
@@ -233,11 +238,26 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
                 double when n > INT_MAX
      any, all, any_na -> logical
      count_na   i64; integer, or double when n > INT_MAX
-   The double value is f64, plus comp in compensated mode. Errors with
+   The double value is rsimd_reduce_value() for o->precision (f64, the
+   compensated pair or the pairwise leaf tree). Errors with
    "invalid 'type' (<type>) of argument" for a type the op does not take.
-   NA/NaN, na.rm and empty-input rules are applied on top of this. */
+
+   Missing values and empty input (na.h describes the rules):
+     - with na.rm = FALSE, saw_na gives NA of the result type, else saw_nan
+       gives NaN, for every op but which_*, any, all, any_na and count_na;
+     - any/all use three-valued logic from any_true, any_false, saw_na;
+     - count is the number of surviving elements: mean of none is NaN,
+       var and sd of fewer than two are NA, min and max of none are Inf and
+       -Inf (double, whatever the type) with base R's warning "no
+       non-missing arguments to min; returning Inf". integer64 min and max
+       are not covered by the empty rule yet. */
 SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduce_result *r,
                          const rsimd_opts *o);
+
+/* Base R's warning for checked integer arithmetic, "NAs produced by integer
+   overflow"; entry points call it once per call when a kernel reported
+   overflow. */
+void rsimd_warn_int_overflow(void);
 
 /* ---- Results ------------------------------------------------------------ */
 

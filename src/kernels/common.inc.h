@@ -28,9 +28,11 @@
  *   all vector types  loadu storeu loadu_p storeu_p set1 zero add sub mul
  *                     min max and or xor andnot cmp_eq cmp_gt cmp_lt blend
  *                     is_na reduce_add reduce_min reduce_max
- *   rsimd_vf64 also   div fma abs neg sqrt cmp_ne cmp_le cmp_ge is_nan
- *                     as_vi64
- *   rsimd_vi64 also   as_vf64
+ *   rsimd_vf64 also   div fma abs neg sqrt floor cmp_ne cmp_le cmp_ge
+ *                     is_nan as_vi64 loadu_i32 loadu_i32_p storeu_i32
+ *                     storeu_i32_p
+ *   rsimd_vi32 also   mulhi
+ *   rsimd_vi64 also   as_vf64 loadu_i32 loadu_i32_p storeu_i32 storeu_i32_p
  *   mask types        and or not andnot any all count; rsimd_mf64_to_mi64
  *                     and rsimd_mi64_to_mf64 convert between the f64 and
  *                     i64 masks
@@ -47,7 +49,14 @@
  *     false then. is_na tests for R's NA_real_ (a NaN whose low 32 bits are
  *     1954), is_nan for any NaN including NA. The integer is_na tests for
  *     INT32_MIN or INT64_MIN.
- *   - Integer add, sub and mul wrap (two's complement).
+ *   - Integer add, sub and mul wrap (two's complement). rsimd_vi32_mulhi
+ *     is the high 32 bits of the signed 64-bit product.
+ *   - loadu_i32 and storeu_i32 convert between int32 elements in memory and
+ *     64-bit lanes, so they move RSIMD_LANES_64 elements (the _p forms take
+ *     a 64-bit predicate). rsimd_vi64 sign-extends on load and keeps the low
+ *     32 bits on store; rsimd_vf64 converts exactly on load and truncates
+ *     toward zero on store, where every lane must be within the int32 range
+ *     (the result for other lanes differs between tiers).
  *     rsimd_vi32_reduce_add returns the exact sum as int64_t;
  *     rsimd_vi64_reduce_add wraps.
  *   - reduce_add of f64 lanes uses a tier-specific order; reduce_min and
@@ -202,6 +211,11 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VF64_ABS rsimd_vf64_abs
 #define RSIMD_VF64_NEG rsimd_vf64_neg
 #define RSIMD_VF64_SQRT rsimd_vf64_sqrt
+#define RSIMD_VF64_FLOOR rsimd_vf64_floor
+#define RSIMD_VF64_LOADU_I32 rsimd_vf64_loadu_i32
+#define RSIMD_VF64_LOADU_I32_P rsimd_vf64_loadu_i32_p
+#define RSIMD_VF64_STOREU_I32 rsimd_vf64_storeu_i32
+#define RSIMD_VF64_STOREU_I32_P rsimd_vf64_storeu_i32_p
 #define RSIMD_VF64_AND rsimd_vf64_and
 #define RSIMD_VF64_OR rsimd_vf64_or
 #define RSIMD_VF64_XOR rsimd_vf64_xor
@@ -240,6 +254,7 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VI32_ADD rsimd_vi32_add
 #define RSIMD_VI32_SUB rsimd_vi32_sub
 #define RSIMD_VI32_MUL rsimd_vi32_mul
+#define RSIMD_VI32_MULHI rsimd_vi32_mulhi
 #define RSIMD_VI32_MIN rsimd_vi32_min
 #define RSIMD_VI32_MAX rsimd_vi32_max
 #define RSIMD_VI32_AND rsimd_vi32_and
@@ -271,6 +286,10 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VI64_ADD rsimd_vi64_add
 #define RSIMD_VI64_SUB rsimd_vi64_sub
 #define RSIMD_VI64_MUL rsimd_vi64_mul
+#define RSIMD_VI64_LOADU_I32 rsimd_vi64_loadu_i32
+#define RSIMD_VI64_LOADU_I32_P rsimd_vi64_loadu_i32_p
+#define RSIMD_VI64_STOREU_I32 rsimd_vi64_storeu_i32
+#define RSIMD_VI64_STOREU_I32_P rsimd_vi64_storeu_i32_p
 #define RSIMD_VI64_MIN rsimd_vi64_min
 #define RSIMD_VI64_MAX rsimd_vi64_max
 #define RSIMD_VI64_AND rsimd_vi64_and
@@ -292,6 +311,9 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_MI64_ANY rsimd_mi64_any
 #define RSIMD_MI64_ALL rsimd_mi64_all
 #define RSIMD_MI64_COUNT rsimd_mi64_count
+
+/* NA, precision and overflow helpers (scalar and vector forms). */
+#include "na.h"
 
 /* Vectorised elementary functions (SLEEF) are included here per tier once
    they are bundled; RSIMD_HAVE_SLEEF_<TIER> then says whether the tier has

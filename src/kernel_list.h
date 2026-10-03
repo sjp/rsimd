@@ -20,3 +20,21 @@
    dispatcher. */
 RSIMD_OP(tier_name, const char *, (void))
 RSIMD_OP(fill_probe, const char *, (void))
+
+/* Internal self-test slots: they apply the NA, precision and overflow
+   helpers of na.h to whole chunks so that the tests can compare every
+   tier with none through unexported .debug_* functions. op codes are in
+   selftest.h. */
+RSIMD_OP(selftest_fold_f64, void,
+         (const double *x, const double *y, R_xlen_t n, int term, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+RSIMD_OP(selftest_sum_i32, void,
+         (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(selftest_lgl, void,
+         (const int *x, R_xlen_t n, int stop, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(selftest_arith_i32, int,
+         (int op, const int *x, const int *y, R_xlen_t n, int x_scalar, int y_scalar, int *out,
+          const rsimd_opts *o))
+RSIMD_OP(selftest_arith_f64, void,
+         (int op, const double *x, const double *y, R_xlen_t n, int x_scalar, int y_scalar,
+          double *out, const rsimd_opts *o))

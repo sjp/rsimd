@@ -2,7 +2,8 @@
    (sse2, neon, avx2): lane-count predicates, predicated loads and stores
    through a stack buffer, and horizontal reductions through a store.
    Included at the end of vec_simde128.inc.h and vec_simde256.inc.h, after
-   the types, RSIMD_WIDTH_* and the full-width loadu/storeu are defined. */
+   the types, RSIMD_WIDTH_* and the full-width loadu/storeu (including the
+   loadu_i32/storeu_i32 conversions) are defined. */
 
 /* A predicate is the number of active lanes, counted from lane 0. */
 typedef int rsimd_p64;
@@ -105,5 +106,33 @@ RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul(rsimd_vi64 a, rsimd_vi64 b) {
   return rsimd_vi64_loadu(x);
 }
 
+/* Predicated forms of the int32 <-> 64-bit-lane conversions, through a
+   buffer of int32 elements. */
+#define RSIMD_FIXED_I32_PARTIAL(v)                                               \
+  RSIMD_INLINE rsimd_##v rsimd_##v##_loadu_i32_p(rsimd_p64 pg, const int32_t *ptr, \
+                                                 int32_t fill) {                 \
+    int32_t buf[RSIMD_WIDTH_I64];                                                \
+    int j;                                                                       \
+    if (pg >= RSIMD_WIDTH_I64) return rsimd_##v##_loadu_i32(ptr);                \
+    for (j = 0; j < RSIMD_WIDTH_I64; j++) buf[j] = j < pg ? ptr[j] : fill;       \
+    return rsimd_##v##_loadu_i32(buf);                                           \
+  }                                                                              \
+  RSIMD_INLINE void rsimd_##v##_storeu_i32_p(rsimd_p64 pg, int32_t *ptr, rsimd_##v x) { \
+    int32_t buf[RSIMD_WIDTH_I64];                                                \
+    int j;                                                                       \
+    if (pg >= RSIMD_WIDTH_I64) {                                                 \
+      rsimd_##v##_storeu_i32(ptr, x);                                            \
+      return;                                                                    \
+    }                                                                            \
+    rsimd_##v##_storeu_i32(buf, x);                                              \
+    for (j = 0; j < pg; j++) ptr[j] = buf[j];                                    \
+  }
+
+RSIMD_FIXED_I32_PARTIAL(vi64)
+#ifndef RSIMD_NO_F64_SIMD
+RSIMD_FIXED_I32_PARTIAL(vf64)
+#endif
+
 #undef RSIMD_FIXED_PARTIAL
 #undef RSIMD_FIXED_MINMAX
+#undef RSIMD_FIXED_I32_PARTIAL

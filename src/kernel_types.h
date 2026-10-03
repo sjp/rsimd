@@ -26,15 +26,25 @@ typedef struct {
   int precision; /* RSIMD_PREC_FAST / PAIRWISE / COMPENSATED */
 } rsimd_opts;
 
+/* Partial sums of pairwise summation: s[k] is the sum of 2^k leaves for
+   every set bit k of `leaves` (see na.h). */
+typedef struct {
+  double s[64];
+  uint64_t leaves;
+} rsimd_pairwise;
+
 /* The running state of a reduction. Entry points initialise it with
    rsimd_reduce_result_init(), call the kernel once per chunk to fold that
    chunk in, and convert it to the R result with rsimd_reduce_finish(). */
 typedef struct {
-  double f64;     /* accumulated value (fast/pairwise/compensated per opts) */
-  double comp;    /* compensation term, compensated mode only */
-  int64_t i64;    /* integer accumulator (sum/count), int64 min/max */
-  R_xlen_t idx;   /* 0-based index of the extremum, -1 if none */
-  R_xlen_t count; /* non-NA elements seen (for mean/var, na.rm) */
+  double f64;       /* accumulated value (fast and compensated modes) */
+  double comp;      /* compensation term, compensated mode only */
+  rsimd_pairwise pw; /* leaf sums, pairwise mode only */
+  int64_t i64;      /* integer accumulator (sum/count), int64 min/max */
+  R_xlen_t idx;     /* 0-based index of the extremum, -1 if none */
+  R_xlen_t count;   /* elements that survived na.rm (all of them without) */
+  /* saw_na: an NA was seen; saw_nan: a NaN (NA included) was seen;
+     overflow: an integer sum left int64 and continues in f64. */
   unsigned saw_na : 1, saw_nan : 1, overflow : 1, any_true : 1, any_false : 1;
 } rsimd_reduce_result;
 

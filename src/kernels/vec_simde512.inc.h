@@ -31,6 +31,10 @@
 #include "x86/avx512/blend.h"
 #include "x86/avx512/cast.h"
 #include "x86/avx512/reduce.h"
+#include "x86/avx512/srli.h"
+#include "x86/avx512/cvt.h"
+#include "x86/avx512/extract.h"
+#include "x86/avx512/roundscale.h"
 
 #define RSIMD_WIDTH_F64 8
 #define RSIMD_WIDTH_I64 8
@@ -254,3 +258,47 @@ RSIMD_INLINE int64_t rsimd_vi64_reduce_min(rsimd_vi64 a) { return simde_mm512_re
 RSIMD_INLINE int64_t rsimd_vi64_reduce_max(rsimd_vi64 a) { return simde_mm512_reduce_max_epi64(a); }
 
 #undef RSIMD_S512_BITWISE
+
+/* Width conversions and extras. The 64-bit-lane conversions move
+   RSIMD_WIDTH_I64 (8) int32 elements. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
+  /* See the 128-bit layer. */
+  simde__m512i even = simde_mm512_mul_epi32(a, b);
+  simde__m512i odd =
+    simde_mm512_mul_epi32(simde_mm512_srli_epi64(a, 32), simde_mm512_srli_epi64(b, 32));
+  return simde_mm512_mask_blend_epi32((simde__mmask16) 0xAAAA, simde_mm512_srli_epi64(even, 32),
+                                      odd);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
+  return simde_mm512_cvtepi32_epi64(simde_mm256_loadu_si256((const simde__m256i *) (const void *) p));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
+  return simde_mm512_cvtepi32_epi64(simde_mm256_mask_loadu_epi32(simde_mm256_set1_epi32(fill), pg, p));
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
+  simde_mm256_storeu_si256((simde__m256i *) (void *) p, simde_mm512_cvtepi64_epi32(v));
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v) {
+  simde_mm256_mask_storeu_epi32(p, pg, simde_mm512_cvtepi64_epi32(v));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) {
+  return simde_mm512_roundscale_pd(a, SIMDE_MM_FROUND_TO_NEG_INF | SIMDE_MM_FROUND_NO_EXC);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
+  return simde_mm512_cvtepi64_pd(rsimd_vi64_loadu_i32(p));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
+  return simde_mm512_cvtepi64_pd(rsimd_vi64_loadu_i32_p(pg, p, fill));
+}
+/* The vendored SIMDe subset has no 512-bit double -> int32 conversion, so
+   convert the two 256-bit halves. */
+RSIMD_INLINE simde__m256i rsimd_s512_cvttpd_epi32(rsimd_vf64 v) {
+  return simde_mm256_set_m128i(simde_mm256_cvttpd_epi32(simde_mm512_extractf64x4_pd(v, 1)),
+                               simde_mm256_cvttpd_epi32(simde_mm512_castpd512_pd256(v)));
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
+  simde_mm256_storeu_si256((simde__m256i *) (void *) p, rsimd_s512_cvttpd_epi32(v));
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vf64 v) {
+  simde_mm256_mask_storeu_epi32(p, pg, rsimd_s512_cvttpd_epi32(v));
+}

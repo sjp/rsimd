@@ -144,9 +144,23 @@ RSIMD_INLINE void rsimd_vi32_storeu(int32_t *p, rsimd_vi32 v) {
 }
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_set1(int32_t x) { return simde_mm_set1_epi32(x); }
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_zero(void) { return simde_mm_setzero_si128(); }
+#if defined(SIMDE_ARM_NEON_A32V7_NATIVE)
+/* GCC's arm_neon.h implements the signed NEON add, sub and mul (which SIMDe
+   uses for these) as C arithmetic on signed vector types, so
+   -fsanitize=undefined reports every wrap as signed overflow. The unsigned
+   intrinsics are the same instructions without that problem. */
+#define RSIMD_NEON_U32(op, a, b) \
+  simde__m128i_from_neon_u32(op(simde__m128i_to_neon_u32(a), simde__m128i_to_neon_u32(b)))
+#define RSIMD_NEON_U64(op, a, b) \
+  simde__m128i_from_neon_u64(op(simde__m128i_to_neon_u64(a), simde__m128i_to_neon_u64(b)))
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_add(rsimd_vi32 a, rsimd_vi32 b) { return RSIMD_NEON_U32(vaddq_u32, a, b); }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sub(rsimd_vi32 a, rsimd_vi32 b) { return RSIMD_NEON_U32(vsubq_u32, a, b); }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_mul(rsimd_vi32 a, rsimd_vi32 b) { return RSIMD_NEON_U32(vmulq_u32, a, b); }
+#else
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_add(rsimd_vi32 a, rsimd_vi32 b) { return simde_mm_add_epi32(a, b); }
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_sub(rsimd_vi32 a, rsimd_vi32 b) { return simde_mm_sub_epi32(a, b); }
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_mul(rsimd_vi32 a, rsimd_vi32 b) { return simde_mm_mullo_epi32(a, b); }
+#endif
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_min(rsimd_vi32 a, rsimd_vi32 b) { return simde_mm_min_epi32(a, b); }
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_max(rsimd_vi32 a, rsimd_vi32 b) { return simde_mm_max_epi32(a, b); }
 RSIMD_S128_BITWISE(vi32)
@@ -175,8 +189,15 @@ RSIMD_INLINE void rsimd_vi64_storeu(int64_t *p, rsimd_vi64 v) {
 }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_set1(int64_t x) { return simde_mm_set1_epi64x(x); }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_zero(void) { return simde_mm_setzero_si128(); }
+#if defined(SIMDE_ARM_NEON_A32V7_NATIVE)
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_add(rsimd_vi64 a, rsimd_vi64 b) { return RSIMD_NEON_U64(vaddq_u64, a, b); }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sub(rsimd_vi64 a, rsimd_vi64 b) { return RSIMD_NEON_U64(vsubq_u64, a, b); }
+#undef RSIMD_NEON_U32
+#undef RSIMD_NEON_U64
+#else
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_add(rsimd_vi64 a, rsimd_vi64 b) { return simde_mm_add_epi64(a, b); }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_sub(rsimd_vi64 a, rsimd_vi64 b) { return simde_mm_sub_epi64(a, b); }
+#endif
 RSIMD_S128_BITWISE(vi64)
 RSIMD_INLINE rsimd_mi64 rsimd_vi64_cmp_eq(rsimd_vi64 a, rsimd_vi64 b) { return simde_mm_cmpeq_epi64(a, b); }
 RSIMD_INLINE rsimd_mi64 rsimd_vi64_cmp_gt(rsimd_vi64 a, rsimd_vi64 b) { return simde_mm_cmpgt_epi64(a, b); }
@@ -202,5 +223,42 @@ RSIMD_INLINE int rsimd_mi64_count(rsimd_mi64 a) {
 
 #undef RSIMD_S128_BITWISE
 #undef RSIMD_S128_MASK
+
+/* Width conversions and extras. The 64-bit-lane conversions move
+   RSIMD_WIDTH_I64 (2) int32 elements. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
+  /* Signed 32x32->64 products of the even lanes, then of the odd lanes
+     shifted down; keep the high word of each. */
+  simde__m128i even = simde_mm_mul_epi32(a, b);
+  simde__m128i odd = simde_mm_mul_epi32(simde_mm_srli_epi64(a, 32), simde_mm_srli_epi64(b, 32));
+  return rsimd_s128_blend(simde_mm_srli_epi64(even, 32), odd, simde_mm_set_epi32(-1, 0, -1, 0));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
+  simde__m128i v = simde_mm_loadl_epi64((const simde__m128i *) (const void *) p);
+  return simde_mm_unpacklo_epi32(v, simde_mm_srai_epi32(v, 31));
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
+  simde_mm_storel_epi64((simde__m128i *) (void *) p,
+                        simde_mm_shuffle_epi32(v, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
+}
+#ifndef RSIMD_NO_F64_SIMD
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return simde_mm_floor_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
+  return simde_mm_cvtepi32_pd(simde_mm_loadl_epi64((const simde__m128i *) (const void *) p));
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
+#if defined(__aarch64__) || defined(_M_ARM64)
+  /* SIMDe's NEON version of cvttpd_epi32 maps 2147483647.0 to INT32_MIN.
+     Truncate, then add 2^52 + 2^51: the low word of the sum is the integer
+     in two's complement, exactly, for every value in the int32 range. */
+  simde__m128d t = simde_mm_round_pd(v, SIMDE_MM_FROUND_TO_ZERO);
+  simde__m128i w = simde_mm_castpd_si128(simde_mm_add_pd(t, simde_mm_set1_pd(6755399441055744.0)));
+  simde_mm_storel_epi64((simde__m128i *) (void *) p,
+                        simde_mm_shuffle_epi32(w, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
+#else
+  simde_mm_storel_epi64((simde__m128i *) (void *) p, simde_mm_cvttpd_epi32(v));
+#endif
+}
+#endif
 
 #include "vec_fixed.inc.h"

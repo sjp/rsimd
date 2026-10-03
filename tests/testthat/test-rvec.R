@@ -275,7 +275,8 @@ test_that("integer64 promotes to integer64, or to double with a warning", {
 })
 
 test_that("reductions start from their identity", {
-  init <- function(op) .debug_finish(op, "double", 0)$init
+  # Finishing an empty min or max warns; only the identity matters here.
+  init <- function(op) suppressWarnings(.debug_finish(op, "double", 0))$init
   sum0 <- init("sum")
   expect_identical(sum0$f64, 0)
   expect_identical(sum0$comp, 0)
@@ -295,7 +296,9 @@ test_that("reductions start from their identity", {
 })
 
 test_that("finished reductions have base R's result types", {
+  # Every element survived unless the test says otherwise.
   fin <- function(op, type, fields = list(), n = 10, precision = 0L) {
+    if (is.null(fields$count)) fields$count <- n
     .debug_finish(op, type, n, fields, precision)$value
   }
   # sum
@@ -373,8 +376,10 @@ test_that("RSIMD_DEBUG_STRIDE sets the chunk stride at load", {
   expect_identical(res$bin$value, 2 * as.double(1:10000))
   expect_length(res$warnings, 0)
 
-  # A stride below the region size also caps ALTREP regions.
+  # A stride below the region size also caps ALTREP regions. Strides are
+  # rounded up to a multiple of 128 (the pairwise summation leaf).
   res <- callr::r(child, env = env("1000"))
+  expect_identical(res$regions$stride, 1024)
   expect_identical(res$alt$regions, 10)
   expect_identical(res$alt$sum, 50005000)
   expect_identical(res$bin$regions, 10)

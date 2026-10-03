@@ -192,9 +192,9 @@ static SEXP result_fields(const rsimd_reduce_result *r) {
 /* Starts reduction `op` from its identity, overrides the fields named in
    the list `fields` (f64, comp, i64, idx, count, saw_na, saw_nan, overflow,
    any_true, any_false) and finishes it as a reduction over n elements of
-   `type` with precision code `precision`. Returns list(init, value): the
-   identity's fields and the finished R value. */
-SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision) {
+   `type` with precision code `precision` and na.rm `na_rm`. Returns
+   list(init, value): the identity's fields and the finished R value. */
+SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision, SEXP na_rm) {
   const char *names[] = {"init", "value", ""};
   int o_idx = lookup(rsimd_arg_str(op, "op"), rsimd_reduce_op_names, RSIMD_RED_OP_COUNT,
                      "reduction");
@@ -206,7 +206,7 @@ SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision
   rsimd_opts o;
   R_xlen_t i;
 
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, precision, 0);
+  rsimd_opts_init(&o, na_rm, R_NilValue, precision, 0);
   rsimd_reduce_result_init(&r, o_idx);
   out = PROTECT(Rf_mkNamed(VECSXP, names));
   SET_VECTOR_ELT(out, 0, result_fields(&r));

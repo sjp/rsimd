@@ -192,4 +192,28 @@ RSIMD_INLINE int rsimd_mi64_count(rsimd_mi64 a) {
 #undef RSIMD_S256_BITWISE
 #undef RSIMD_S256_MASK
 
+/* Width conversions and extras. The 64-bit-lane conversions move
+   RSIMD_WIDTH_I64 (4) int32 elements. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
+  /* See the 128-bit layer. */
+  simde__m256i even = simde_mm256_mul_epi32(a, b);
+  simde__m256i odd =
+    simde_mm256_mul_epi32(simde_mm256_srli_epi64(a, 32), simde_mm256_srli_epi64(b, 32));
+  return simde_mm256_blend_epi32(simde_mm256_srli_epi64(even, 32), odd, 0xAA);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
+  return simde_mm256_cvtepi32_epi64(simde_mm_loadu_si128((const simde__m128i *) (const void *) p));
+}
+RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
+  simde__m256i low = simde_mm256_permutevar8x32_epi32(v, simde_mm256_set_epi32(7, 5, 3, 1, 6, 4, 2, 0));
+  simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm256_castsi256_si128(low));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return simde_mm256_floor_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
+  return simde_mm256_cvtepi32_pd(simde_mm_loadu_si128((const simde__m128i *) (const void *) p));
+}
+RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
+  simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm256_cvttpd_epi32(v));
+}
+
 #include "vec_fixed.inc.h"

@@ -4,6 +4,9 @@
 # Classes whose S3 methods must be registered with S3method() in NAMESPACE.
 s3_classes <- "simd_vec"
 
+# Rd topics that document no function (options, concepts).
+doc_topics <- "rsimd_options"
+
 pkg_dir <- function() dirname(system.file(package = "rsimd"))
 
 rd_aliases <- function(rd) {
@@ -47,7 +50,7 @@ test_that("every function-like Rd alias is exported, an S3 method or a topic", {
     use.names = FALSE
   )
   function_like <- aliases[grepl("^[A-Za-z.][A-Za-z0-9._]*$", aliases)]
-  stray <- setdiff(function_like, c(exports, s3_names))
+  stray <- setdiff(function_like, c(exports, s3_names, doc_topics))
   expect_identical(stray, character(0),
     info = paste("aliases that are not exports or S3 methods:", toString(stray))
   )

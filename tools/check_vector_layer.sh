@@ -3,8 +3,9 @@
 # tier, against plain C references (tools/vector_layer_test.c).
 #
 # Each tier is compiled with its flags from tools/tiers.txt plus
-# -ffp-contract=off and -Wall -Wextra -pedantic -Werror, linked statically,
-# and run:
+# -ffp-contract=off and -Wall -Wextra -pedantic -Werror (R's headers, which
+# src/kernel_types.h needs for R_xlen_t, are included as system headers),
+# linked statically, and run:
 #   - natively when the tier's arch is the host's;
 #   - under qemu-x86_64 -cpu max (sse2, avx2) or qemu-i386 -cpu max (i686
 #     sse2) or qemu-arm (armv7 neon) when the cross compiler and qemu-user
@@ -28,6 +29,12 @@ export LC_ALL
 root=$(cd "$(dirname "$0")/.." && pwd -P)
 tiers="$root/tools/tiers.txt"
 test_src="$root/tools/vector_layer_test.c"
+
+r_include=$(Rscript -e 'cat(R.home("include"))' 2> /dev/null) || r_include=
+if [ -z "$r_include" ] || [ ! -f "$r_include/Rinternals.h" ]; then
+  echo "check_vector_layer.sh: cannot find R's include directory (is Rscript on PATH?)" >&2
+  exit 1
+fi
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
@@ -129,7 +136,7 @@ while IFS='|' read -r tier arch os flags headers enabled; do
     bin="$tmp/test_${tier}_$a"
     # shellcheck disable=SC2086 # $flags is a word list
     if ! "$cc" -std=gnu11 -O2 -Wall -Wextra -pedantic -Werror -ffp-contract=off $flags \
-      -DRSIMD_TIER="$tier" -I"$root/src" -I"$root/src/vendor/simde" \
+      -DRSIMD_TIER="$tier" -I"$root/src" -I"$root/src/vendor/simde" -isystem "$r_include" \
       "$test_src" -o "$bin" -static -lm > "$tmp/log" 2>&1; then
       echo "FAIL $label: does not compile with $cc${flags:+ $flags}"
       sed 's/^/    /' "$tmp/log" | head -40
