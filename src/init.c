@@ -8,6 +8,7 @@ static const R_CallMethodDef CallEntries[] = {
   {"C_simd_version", (DL_FUNC) &C_simd_version, 0},
   {"C_simd_cpu_features", (DL_FUNC) &C_simd_cpu_features, 0},
   {"C_simd_cpu_tiers", (DL_FUNC) &C_simd_cpu_tiers, 0},
+  {"C_simd_compiled_tiers", (DL_FUNC) &C_simd_compiled_tiers, 0},
   {NULL, NULL, 0}
 };
 

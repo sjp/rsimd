@@ -5,3 +5,7 @@ src/*.dll
 .RData
 *.Rcheck/
 *.tar.gz
+src/Makevars
+src/Makevars.win
+src/rsimd_config.h
+config.log

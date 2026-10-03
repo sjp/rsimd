@@ -1,0 +1,18 @@
+# Template for the Makevars that configure generates. configure fills in the
+# tier objects the compiler can build and one explicit rule per tier object,
+# since each tier is compiled with its own instruction-set flags.
+
+PKG_CPPFLAGS = -I. -Ivendor/simde @RSIMD_CPPFLAGS@
+
+OBJECTS = init.o version.o tiers.o cpu_features.o api_control.o @RSIMD_OBJECTS@
+
+RSIMD_TIER_DEPS = rsimd_config.h tiers.h kernels/common.inc.h kernels/tier_info.inc.c \
+  kernels/vec_none.inc.h kernels/vec_fixed.inc.h kernels/vec_simde128.inc.h \
+  kernels/vec_simde256.inc.h kernels/vec_simde512.inc.h kernels/vec_sve.inc.h
+
+# The rules below must not become make's default goal.
+all: $(SHLIB)
+
+cpu_features.o api_control.o: rsimd_config.h
+
+@RSIMD_TIER_RULES@

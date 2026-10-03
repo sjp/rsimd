@@ -8,10 +8,11 @@
 #
 # Rows for the host architecture use $CC (default gcc). Rows for another
 # architecture use a cross compiler if one is on the PATH
-# (x86_64-linux-gnu-gcc, aarch64-linux-gnu-gcc, i686-linux-gnu-gcc), or the
+# (x86_64-linux-gnu-gcc, aarch64-linux-gnu-gcc, i686-linux-gnu-gcc,
+# arm-linux-gnueabihf-gcc), or the
 # one named by RSIMD_CC_<arch> (e.g. RSIMD_CC_x86_64=x86_64-w64-mingw32-gcc);
 # otherwise the tier is reported as skipped. Tiers that do not use SIMDe
-# (none, sve, sve2, armv7 neon) are not checked here.
+# (none, sve, sve2) are not checked here.
 #
 # Usage: sh tools/check_simde_subset.sh
 # Exit status is non-zero if any checked tier fails to compile.
@@ -53,14 +54,26 @@ compiler_for() {
     x86_64) echo x86_64-linux-gnu-gcc ;;
     aarch64) echo aarch64-linux-gnu-gcc ;;
     i686) echo i686-linux-gnu-gcc ;;
+    armv7) echo arm-linux-gnueabihf-gcc ;;
     *) echo none ;;
   esac
 }
 
 # Representative operations and the SIMDe macros that prove native codegen.
+# Arguments: tier, arch.
 tier_body() {
-  case "$1" in
-    sse2) cat <<'EOF'
+  case "$1/$2" in
+    neon/armv7) cat <<'EOF'
+#if !defined(SIMDE_ARM_NEON_A32V7_NATIVE)
+#  error "SIMDe is not using native ARMv7 NEON"
+#endif
+void rsimd_probe(int *out, const int *in) {
+  simde__m128i a = simde_mm_loadu_si128((const simde__m128i *) in);
+  simde_mm_storeu_si128((simde__m128i *) out, simde_mm_mullo_epi32(a, simde_mm_add_epi32(a, a)));
+}
+EOF
+      ;;
+    sse2/*) cat <<'EOF'
 #if !defined(SIMDE_X86_SSE2_NATIVE)
 #  error "SIMDe is not using native SSE2"
 #endif
@@ -70,7 +83,7 @@ void rsimd_probe(double *out, const double *in) {
 }
 EOF
       ;;
-    neon) cat <<'EOF'
+    neon/*) cat <<'EOF'
 #if !defined(SIMDE_ARM_NEON_A64V8_NATIVE)
 #  error "SIMDe is not using native AArch64 NEON"
 #endif
@@ -81,7 +94,7 @@ void rsimd_probe(double *out, const double *in) {
 }
 EOF
       ;;
-    avx2) cat <<'EOF'
+    avx2/*) cat <<'EOF'
 #if !defined(SIMDE_X86_AVX2_NATIVE) || !defined(SIMDE_X86_FMA_NATIVE)
 #  error "SIMDe is not using native AVX2 and FMA"
 #endif
@@ -91,7 +104,7 @@ void rsimd_probe(double *out, const double *in) {
 }
 EOF
       ;;
-    avx512) cat <<'EOF'
+    avx512/*) cat <<'EOF'
 #if !defined(SIMDE_X86_AVX512F_NATIVE) || !defined(SIMDE_X86_AVX512BW_NATIVE) || \
     !defined(SIMDE_X86_AVX512DQ_NATIVE) || !defined(SIMDE_X86_AVX512VL_NATIVE)
 #  error "SIMDe is not using native AVX-512 F+BW+DQ+VL"
@@ -112,8 +125,8 @@ pass=0
 fail=0
 skip=0
 
-# Fields: tier | arch | flags | headers | enabled
-while IFS='|' read -r tier arch flags headers enabled; do
+# Fields: tier | arch | os | flags | headers | enabled
+while IFS='|' read -r tier arch os flags headers enabled; do
   tier=$(echo "$tier" | tr -d ' \t')
   case "$tier" in '' | '#'*) continue ;; esac
   arch=$(echo "$arch" | tr -d ' \t')
@@ -145,7 +158,7 @@ while IFS='|' read -r tier arch flags headers enabled; do
       echo "#include \"$h\"" >> "$tu"
     fi
   done
-  if ! tier_body "$tier" >> "$tu"; then
+  if ! tier_body "$tier" "$arch" >> "$tu"; then
     echo "FAIL $label: no probe body defined for this tier"
     fail=$((fail + 1))
     continue

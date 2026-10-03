@@ -1,6 +1,23 @@
 #ifndef RSIMD_TIERS_H
 #define RSIMD_TIERS_H
 
+/* Target architecture, from the compiler's predefined macros so it always
+   matches the code being compiled. RSIMD_ARCH_X86 and RSIMD_ARCH_ARM cover
+   both the 64-bit and the 32-bit variants. */
+#if defined(__x86_64__) || defined(_M_X64)
+#define RSIMD_ARCH_X86 1
+#define RSIMD_ARCH_X86_64 1
+#elif defined(__i386__) || defined(_M_IX86)
+#define RSIMD_ARCH_X86 1
+#define RSIMD_ARCH_X86_32 1
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define RSIMD_ARCH_ARM 1
+#define RSIMD_ARCH_ARM64 1
+#elif defined(__arm__) || defined(_M_ARM)
+#define RSIMD_ARCH_ARM 1
+#define RSIMD_ARCH_ARM32 1
+#endif
+
 /* Implementation tiers. The enum order is fixed and matches simd_tiers();
    it is not the preference order used by "auto". This header has no R
    dependencies so plain C code (CPU detection) can use it. */

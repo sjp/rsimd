@@ -1,0 +1,407 @@
+#!/bin/sh
+# configure for rsimd (POSIX sh; no autoconf). configure.win runs this
+# script too.
+#
+# What it does
+# ------------
+# rsimd compiles its kernels once per instruction-set tier: src/tier_none.c
+# (plain C), tier_sse2.c, tier_avx2.c, tier_avx512.c (x86-64), tier_neon.c
+# (arm64, armv7) and tier_sve.c, tier_sve2.c (arm64 Linux and FreeBSD). Each
+# file is a separate translation unit compiled with that tier's flags, for
+# example -mavx2 -mfma for tier_avx2.c. The kernels use the SIMDe headers,
+# which choose native instructions at include time from the compiler's
+# predefined macros (__AVX2__ ...), so per-function target attributes cannot
+# be used: per-file flags are the only way to get native code.
+#
+# This script asks R for its compiler and flags (R CMD config), then
+# test-compiles a small probe for every tier listed for the target in
+# tools/tiers.txt, with R's flags plus the tier's flags. Tiers whose probe
+# compiles are built; the others are dropped with a message. It writes
+#   src/Makevars (src/Makevars.win on Windows) from the .in template, adding
+#     the tier objects and one explicit rule per tier object, and
+#   src/rsimd_config.h, defining RSIMD_HAVE_<TIER> for every built tier.
+# The none tier and the platform baseline (sse2 on x86-64, neon on arm64)
+# must compile: if they do not, configure fails.
+#
+# Why the tier flags are safe
+# ---------------------------
+# Tier flags such as -mavx2 or -march=armv8-a+sve apply only to that tier's
+# translation unit. Code in it runs only after a run-time check that the CPU
+# and operating system support the tier (src/cpu_features.c); every other
+# file is compiled with R's flags alone, so the package runs on any CPU of
+# the target architecture. -march=native is never used, and tiers do not
+# depend on the machine that builds the package: a tier is built whenever
+# the compiler can build it. The same arrangement (configure-probed tier
+# objects with per-file flags) is used by the CRAN package RsimdDispatch.
+#
+# Every tier object is also compiled with -ffp-contract=off (when the
+# compiler accepts it), so a * b + c is never fused behind the kernels' back
+# and the tiers round identically.
+#
+# Environment variables
+# ---------------------
+#   RSIMD_DISABLE_TIERS     comma-separated tiers not to build, for example
+#                           "avx512,sve2". none cannot be disabled.
+#   RSIMD_DISABLE_SLEEF=1   do not use SLEEF elementary functions in any
+#                           tier (math falls back to the none tier).
+#   RSIMD_CONFIGURE_VERBOSE=1  show the compiler output of failed probes.
+# A tier that fails to compile cannot be forced on.
+#
+# Adding a tier
+# -------------
+# Add its rows to tools/tiers.txt, a probe body to probe_body() below, the
+# tier id to src/tiers.h and src/tiers.c, its macros to
+# src/kernels/common.inc.h, and src/tier_<tier>.c (copy an existing one).
+
+LC_ALL=C
+export LC_ALL
+
+target_os_override=${_RSIMD_CONFIGURE_WIN:-}
+
+if [ -z "${R_HOME:-}" ]; then
+  R_HOME=$(R RHOME 2> /dev/null) || R_HOME=
+fi
+if [ -z "$R_HOME" ]; then
+  echo "configure: error: R_HOME is not set and R could not be found" >&2
+  exit 1
+fi
+R_BIN="${R_HOME}/bin${R_ARCH_BIN:-}/R"
+
+CC=$("$R_BIN" CMD config CC)
+CFLAGS=$("$R_BIN" CMD config CFLAGS)
+CPPFLAGS=$("$R_BIN" CMD config CPPFLAGS)
+CPICFLAGS=$("$R_BIN" CMD config CPICFLAGS)
+if [ -z "$CC" ]; then
+  echo "configure: error: 'R CMD config CC' returned nothing" >&2
+  exit 1
+fi
+
+# Target architecture and operating system.
+machine=$($CC -dumpmachine 2> /dev/null) || machine=
+[ -n "$machine" ] || machine=$(uname -m)
+case "$machine" in
+  x86_64* | amd64*) arch=x86_64 ;;
+  i?86*) arch=i686 ;;
+  aarch64* | arm64*) arch=aarch64 ;;
+  arm*) arch=armv7 ;;
+  *) arch=unknown ;;
+esac
+if [ -n "$target_os_override" ]; then
+  os=windows
+else
+  case "$(uname -s)" in
+    Linux*) os=linux ;;
+    Darwin*) os=darwin ;;
+    FreeBSD*) os=freebsd ;;
+    MINGW* | MSYS* | CYGWIN*) os=windows ;;
+    *) os=other ;;
+  esac
+fi
+case "$arch" in
+  x86_64) baseline=sse2 ;;
+  aarch64) baseline=neon ;;
+  *) baseline= ;;
+esac
+
+if [ "$os" = windows ]; then
+  makevars=src/Makevars.win
+else
+  makevars=src/Makevars
+fi
+tiers_file=tools/tiers.txt
+simde=src/vendor/simde
+for f in "$tiers_file" "$makevars.in" "$simde/simde-common.h"; do
+  if [ ! -f "$f" ]; then
+    echo "configure: error: $f not found (run configure from the package root)" >&2
+    exit 1
+  fi
+done
+
+echo "rsimd: compiler $CC, target $arch-$os"
+
+verbose=${RSIMD_CONFIGURE_VERBOSE:-0}
+tmp=$(mktemp -d 2> /dev/null || mktemp -d -t rsimd)
+if [ -z "$tmp" ] || [ ! -d "$tmp" ]; then
+  echo "configure: error: could not create a temporary directory" >&2
+  exit 1
+fi
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+# Probe bodies: one representative operation per tier, plus a check that
+# SIMDe (or the compiler) really selected the tier's native instructions.
+probe_body() {
+  case "$1/$2" in
+    none/*)
+      cat << 'EOF'
+double rsimd_probe(double x, double y, double z);
+double rsimd_probe(double x, double y, double z) { return fma(x, y, z) + sqrt(x); }
+EOF
+      ;;
+    sse2/*)
+      cat << 'EOF'
+#if !defined(SIMDE_X86_SSE2_NATIVE)
+#  error "SIMDe is not using native SSE2"
+#endif
+void rsimd_probe(double *out, const double *in);
+void rsimd_probe(double *out, const double *in) {
+  simde__m128d a = simde_mm_loadu_pd(in);
+  simde_mm_storeu_pd(out, simde_mm_add_pd(a, simde_mm_set1_pd(1.0)));
+}
+EOF
+      ;;
+    avx2/*)
+      cat << 'EOF'
+#if !defined(SIMDE_X86_AVX2_NATIVE) || !defined(SIMDE_X86_FMA_NATIVE)
+#  error "SIMDe is not using native AVX2 and FMA"
+#endif
+void rsimd_probe(double *out, const double *in);
+void rsimd_probe(double *out, const double *in) {
+  simde__m256d a = simde_mm256_loadu_pd(in);
+  simde_mm256_storeu_pd(out, simde_mm256_fmadd_pd(a, a, simde_mm256_set1_pd(1.0)));
+}
+EOF
+      ;;
+    avx512/*)
+      cat << 'EOF'
+#if !defined(SIMDE_X86_AVX512F_NATIVE) || !defined(SIMDE_X86_AVX512BW_NATIVE) || \
+    !defined(SIMDE_X86_AVX512DQ_NATIVE) || !defined(SIMDE_X86_AVX512VL_NATIVE)
+#  error "SIMDe is not using native AVX-512 F+BW+DQ+VL"
+#endif
+void rsimd_probe(double *out, const double *in);
+void rsimd_probe(double *out, const double *in) {
+  simde__m512d a = simde_mm512_loadu_pd(in);
+  simde__mmask8 m = simde_mm512_cmp_pd_mask(a, a, SIMDE_CMP_UNORD_Q);
+  simde_mm512_storeu_pd(out, simde_mm512_mask_blend_pd(m, simde_mm512_fmadd_pd(a, a, a), a));
+}
+EOF
+      ;;
+    neon/armv7)
+      cat << 'EOF'
+#if !defined(SIMDE_ARM_NEON_A32V7_NATIVE)
+#  error "SIMDe is not using native ARMv7 NEON"
+#endif
+void rsimd_probe(int *out, const int *in);
+void rsimd_probe(int *out, const int *in) {
+  simde__m128i a = simde_mm_loadu_si128((const simde__m128i *) (const void *) in);
+  simde_mm_storeu_si128((simde__m128i *) (void *) out, simde_mm_add_epi32(a, a));
+}
+EOF
+      ;;
+    neon/*)
+      cat << 'EOF'
+#if !defined(SIMDE_ARM_NEON_A64V8_NATIVE)
+#  error "SIMDe is not using native AArch64 NEON"
+#endif
+void rsimd_probe(double *out, const double *in);
+void rsimd_probe(double *out, const double *in) {
+  simde__m128d a = simde_mm_loadu_pd(in);
+  simde_mm_storeu_pd(out, simde_mm_fmadd_pd(a, a, simde_mm_min_pd(a, a)));
+}
+EOF
+      ;;
+    sve/*)
+      cat << 'EOF'
+#if !defined(__ARM_FEATURE_SVE)
+#  error "the compiler did not enable SVE"
+#endif
+void rsimd_probe(double *out, const double *in, long n);
+void rsimd_probe(double *out, const double *in, long n) {
+  long i;
+  for (i = 0; i < n; i += (long) svcntd()) {
+    svbool_t pg = svwhilelt_b64((int64_t) i, (int64_t) n);
+    svfloat64_t a = svld1_f64(pg, in + i);
+    svst1_f64(pg, out + i, svmla_f64_x(pg, a, a, a));
+  }
+}
+EOF
+      ;;
+    sve2/*)
+      cat << 'EOF'
+#if !defined(__ARM_FEATURE_SVE2)
+#  error "the compiler did not enable SVE2"
+#endif
+void rsimd_probe(long *out, const long *in, long n);
+void rsimd_probe(long *out, const long *in, long n) {
+  long i;
+  for (i = 0; i < n; i += (long) svcntd()) {
+    svbool_t pg = svwhilelt_b64((int64_t) i, (int64_t) n);
+    svint64_t a = svld1_s64(pg, (const int64_t *) in + i);
+    svst1_s64(pg, (int64_t *) out + i, svhadd_s64_x(pg, a, a));
+  }
+}
+EOF
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Writes the probe for a tier: its headers from tools/tiers.txt, then the
+# body. "@avx512" stands for the curated AVX-512 header list in
+# tools/simde_probe.c.
+write_probe() {
+  : > "$4"
+  for h in $3; do
+    case "$h" in
+      -) ;;
+      @avx512) grep '^#include "x86/avx512/' tools/simde_probe.c >> "$4" ;;
+      '<'*) echo "#include $h" >> "$4" ;;
+      *) echo "#include \"$h\"" >> "$4" ;;
+    esac
+  done
+  probe_body "$1" "$2" >> "$4"
+}
+
+# Compiles a probe: try_compile <source> <extra flags>.
+try_compile() {
+  # shellcheck disable=SC2086 # flag variables are word lists
+  $CC $CPPFLAGS $CFLAGS $CPICFLAGS $2 -I"$simde" -c "$1" -o "$tmp/conftest.o" \
+    > "$tmp/conftest.log" 2>&1
+}
+
+show_log() {
+  if [ "$verbose" = 1 ]; then
+    sed 's/^/  | /' "$tmp/conftest.log"
+  fi
+}
+
+# Tier names known to the table, and the requested exclusions.
+known=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$tiers_file" | cut -d'|' -f1 | tr -d ' \t' | awk '!seen[$0]++')
+disabled=" "
+for t in $(echo "${RSIMD_DISABLE_TIERS:-}" | tr ',A-Z' ' a-z'); do
+  if [ "$t" = none ]; then
+    echo "configure: warning: RSIMD_DISABLE_TIERS: the none tier cannot be disabled" >&2
+  elif ! echo "$known" | grep -qx "$t"; then
+    echo "configure: warning: RSIMD_DISABLE_TIERS: unknown tier '$t' ignored" >&2
+  else
+    disabled="$disabled$t "
+  fi
+done
+
+# -ffp-contract=off for every tier object, if accepted.
+probe_none="$tmp/conftest_fp.c"
+write_probe none all "<math.h>" "$probe_none"
+printf "checking whether %s accepts -ffp-contract=off... " "$CC"
+if try_compile "$probe_none" "-ffp-contract=off"; then
+  fpflag=-ffp-contract=off
+  echo yes
+else
+  fpflag=
+  echo no
+  show_log
+fi
+
+enabled=" "
+reported=" "
+config_rules=
+objects=
+
+# Fields: tier | arch | os | flags | headers | enabled
+while IFS='|' read -r tier row_arch row_os flags headers row_enabled; do
+  tier=$(echo "$tier" | tr -d ' \t')
+  case "$tier" in '' | '#'*) continue ;; esac
+  row_arch=$(echo "$row_arch" | tr -d ' \t')
+  row_os=$(echo "$row_os" | tr -d ' \t')
+  row_enabled=$(echo "$row_enabled" | tr -d ' \t')
+  flags=$(echo "$flags" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  [ "$flags" = - ] && flags=
+  headers=$(echo "$headers" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+  [ "$row_enabled" = yes ] || continue
+  [ "$row_arch" = all ] || [ "$row_arch" = "$arch" ] || continue
+  case ",$row_os," in
+    *,any,* | *",$os,"*) ;;
+    *) continue ;;
+  esac
+  case "$enabled" in *" $tier "*) continue ;; esac
+
+  case "$disabled" in
+    *" $tier "*)
+      case "$reported" in *" $tier "*) ;; *)
+        echo "checking whether $CC can build the $tier tier... no (disabled by RSIMD_DISABLE_TIERS)"
+        reported="$reported$tier "
+        ;;
+      esac
+      continue
+      ;;
+  esac
+
+  src="$tmp/conftest_$tier.c"
+  write_probe "$tier" "$arch" "$headers" "$src"
+  printf "checking whether %s can build the %s tier%s... " "$CC" "$tier" "${flags:+ with $flags}"
+  if try_compile "$src" "$flags $fpflag"; then
+    echo yes
+    enabled="$enabled$tier "
+    objects="$objects tier_$tier.o"
+    config_rules="$config_rules$tier|$flags
+"
+    if [ "$tier" = none ] || [ "$tier" = "$baseline" ]; then
+      printf "checking whether the %s tier compiles cleanly with -Wall -Wextra -pedantic... " "$tier"
+      if try_compile "$src" "$flags $fpflag -Wall -Wextra -pedantic -Werror"; then
+        echo yes
+      else
+        echo "no (informational)"
+        show_log
+      fi
+    fi
+  else
+    echo "no (dropped)"
+    show_log
+  fi
+done < "$tiers_file"
+
+# The none tier and the baseline must build (unless the baseline was
+# disabled on purpose).
+for t in none $baseline; do
+  case "$enabled$disabled" in *" $t "*) ;; *)
+    echo "configure: error: $CC cannot build the $t tier, which rsimd requires on $arch" >&2
+    echo "configure: error: set RSIMD_CONFIGURE_VERBOSE=1 to see the compiler output" >&2
+    exit 1
+    ;;
+  esac
+done
+
+if [ "${RSIMD_DISABLE_SLEEF:-0}" = 1 ]; then
+  echo "rsimd: RSIMD_DISABLE_SLEEF is set: SLEEF elementary functions are not used"
+fi
+
+tier_list=$(echo $enabled | tr ' ' ',')
+
+# src/rsimd_config.h
+{
+  echo "/* Generated by configure; do not edit. */"
+  echo "#ifndef RSIMD_CONFIG_H"
+  echo "#define RSIMD_CONFIG_H"
+  for t in $known; do
+    macro=$(echo "$t" | tr 'a-z' 'A-Z')
+    case "$enabled" in
+      *" $t "*) echo "#define RSIMD_HAVE_$macro 1" ;;
+      *) echo "/* #undef RSIMD_HAVE_$macro */" ;;
+    esac
+  done
+  echo "#define RSIMD_CONFIG_ARCH \"$arch\""
+  echo "#define RSIMD_CONFIG_OS \"$os\""
+  echo "#define RSIMD_CONFIG_TIERS \"$tier_list\""
+  echo "#define RSIMD_CONFIG_DISABLED \"$(echo $disabled | tr ' ' ',')\""
+  echo "#endif"
+} > src/rsimd_config.h
+
+# Per-tier rules for the Makevars.
+{
+  echo "# Tier objects are compiled with their tier's flags and only entered"
+  echo "# after a run-time CPU check (src/cpu_features.c)."
+  echo "$config_rules" | while IFS='|' read -r t f; do
+    [ -n "$t" ] || continue
+    echo "tier_$t.o: tier_$t.c \$(RSIMD_TIER_DEPS)"
+    printf '\t$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) %s -c tier_%s.c -o tier_%s.o\n' \
+      "$(echo "$f $fpflag" | sed 's/^ *//; s/ *$//')" "$t" "$t"
+    echo
+  done
+} > "$tmp/rules"
+
+sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@||" "$makevars.in" |
+  awk -v rules="$tmp/rules" '
+    $0 == "@RSIMD_TIER_RULES@" { while ((getline l < rules) > 0) print l; next }
+    { print }' > "$makevars"
+
+echo "rsimd: building tiers $tier_list"
+exit 0

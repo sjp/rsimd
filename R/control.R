@@ -11,3 +11,10 @@ simd_cpu_features <- function() {
 simd_cpu_tiers <- function() {
   .Call(C_simd_cpu_tiers)
 }
+
+# Tiers compiled into this build (named by the tier objects), with
+# configure's list and the tiers disabled at build time as attributes
+# "configured" and "disabled". Internal, used by tests.
+simd_compiled_tiers <- function() {
+  .Call(C_simd_compiled_tiers)
+}

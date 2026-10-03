@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cpu_features.h"
+#include "rsimd_config.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 #define RSIMD_CPU_X86 1

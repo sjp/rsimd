@@ -7,3 +7,7 @@
   detected at load time on x86, x86-64, arm64 and 32-bit arm (Linux, macOS, Windows and
   FreeBSD). The `RSIMD_CPU_FEATURES_MASK` environment variable switches features off for
   testing fallback paths.
+* A `configure` script (also used on Windows) probes which instruction-set tiers
+  the compiler can build (`sse2`, `avx2`, `avx512` on x86; `neon`, `sve`, `sve2`
+  on arm) and compiles each tier's kernels in a separate file with that tier's
+  flags. `RSIMD_DISABLE_TIERS` skips tiers at install time.

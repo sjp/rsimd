@@ -1,0 +1,5 @@
+#!/bin/sh
+# configure.win for rsimd: runs ./configure, which handles Windows (it writes
+# src/Makevars.win and never builds the SVE tiers there). See ./configure for
+# how the instruction-set tiers are probed and built.
+_RSIMD_CONFIGURE_WIN=1 exec sh ./configure "$@"

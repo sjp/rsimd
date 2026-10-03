@@ -4,7 +4,7 @@
 ^\.github$
 ^\.lintr$
 ^CONTRIBUTING\.md$
-^tools$
+^tools/(?!(tiers\.txt|simde_probe\.c)$)
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
