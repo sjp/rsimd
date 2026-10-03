@@ -6,6 +6,7 @@
     options(rsimd.na_check = TRUE)
   }
   warn_unknown_cpu_mask()
+  warn_bad_debug_stride()
   init_impl()
   invisible()
 }
@@ -44,6 +45,19 @@ warn_unknown_cpu_mask <- function() {
     warning(
       "unknown CPU feature name(s) in RSIMD_CPU_FEATURES_MASK ignored: ",
       paste(unknown, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  invisible()
+}
+
+# The C side ignores an RSIMD_DEBUG_STRIDE that is not a positive integer
+# and keeps the default interrupt stride; say so.
+warn_bad_debug_stride <- function() {
+  stride <- Sys.getenv("RSIMD_DEBUG_STRIDE", "")
+  if (nzchar(stride) && !grepl("^[0-9]*[1-9][0-9]*$", stride)) {
+    warning(
+      "RSIMD_DEBUG_STRIDE must be a positive integer; ignoring \"", stride, "\"",
       call. = FALSE
     )
   }

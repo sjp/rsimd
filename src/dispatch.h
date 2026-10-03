@@ -21,6 +21,7 @@
  */
 
 #include "tiers.h"
+#include "kernel_types.h" /* types used in kernel signatures */
 
 #define RSIMD_OP(name, ret, args) typedef ret (*rsimd_fn_##name) args;
 #include "kernel_list.h"

@@ -4,6 +4,7 @@
 #include "rsimd.h" /* declares every C_simd_* entry point */
 #include "cpu_features.h"
 #include "dispatch.h"
+#include "rvec.h"
 
 /* The cast through void (*)(void), the generic function type, avoids
    -Wcast-function-type: R calls each routine with its declared arguments. */
@@ -19,6 +20,12 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_current, 0),
   CALLDEF(C_simd_kernel_tiers, 1),
   CALLDEF(C_simd_probe_slots, 0),
+  CALLDEF(C_simd_promote, 2),
+  CALLDEF(C_simd_debug_regions, 1),
+  CALLDEF(C_simd_debug_copy, 2),
+  CALLDEF(C_simd_debug_bin, 2),
+  CALLDEF(C_simd_debug_finish, 5),
+  CALLDEF(C_simd_debug_opts, 4),
   {NULL, NULL, 0}
 };
 
@@ -28,4 +35,5 @@ void R_init_rsimd(DllInfo *dll) {
   R_forceSymbols(dll, TRUE);
   rsimd_cpu_init();
   rsimd_dispatch_init();
+  rsimd_rvec_init();
 }

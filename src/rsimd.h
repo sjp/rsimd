@@ -16,4 +16,12 @@ SEXP C_simd_current(void);
 SEXP C_simd_kernel_tiers(SEXP tier);
 SEXP C_simd_probe_slots(void);
 
+/* access layer */
+SEXP C_simd_promote(SEXP x, SEXP y);
+SEXP C_simd_debug_regions(SEXP x);
+SEXP C_simd_debug_copy(SEXP x, SEXP no_na);
+SEXP C_simd_debug_bin(SEXP x, SEXP y);
+SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision);
+SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
+
 #endif /* RSIMD_H */

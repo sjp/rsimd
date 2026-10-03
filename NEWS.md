@@ -18,3 +18,7 @@
   selected temporarily. The selection can also be set with the `rsimd.impl`
   option or, at load time, the `RSIMD_IMPL` environment variable. Operations a
   tier lacks use the next lower tier's version.
+* Internal access layer for R vectors: compact sequences such as `1:n` are read
+  in chunks without being expanded, long vectors are supported, long
+  computations can be interrupted, and binary operations accept equal lengths
+  or a length-1 operand only.
