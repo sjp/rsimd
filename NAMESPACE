@@ -1,5 +1,10 @@
 useDynLib(rsimd, .registration = TRUE)
 
 # control
+export(simd_available)
 export(simd_cpu_features)
+export(simd_current)
+export(simd_tiers)
+export(simd_use)
 export(simd_version)
+export(simd_with_impl)

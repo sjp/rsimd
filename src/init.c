@@ -3,12 +3,22 @@
 #include <R_ext/Rdynload.h>
 #include "rsimd.h" /* declares every C_simd_* entry point */
 #include "cpu_features.h"
+#include "dispatch.h"
+
+/* The cast through void (*)(void), the generic function type, avoids
+   -Wcast-function-type: R calls each routine with its declared arguments. */
+#define CALLDEF(name, n) {#name, (DL_FUNC) (void (*)(void)) &name, n}
 
 static const R_CallMethodDef CallEntries[] = {
-  {"C_simd_version", (DL_FUNC) &C_simd_version, 0},
-  {"C_simd_cpu_features", (DL_FUNC) &C_simd_cpu_features, 0},
-  {"C_simd_cpu_tiers", (DL_FUNC) &C_simd_cpu_tiers, 0},
-  {"C_simd_compiled_tiers", (DL_FUNC) &C_simd_compiled_tiers, 0},
+  CALLDEF(C_simd_version, 0),
+  CALLDEF(C_simd_cpu_features, 0),
+  CALLDEF(C_simd_cpu_tiers, 0),
+  CALLDEF(C_simd_compiled_tiers, 0),
+  CALLDEF(C_simd_available, 0),
+  CALLDEF(C_simd_select, 1),
+  CALLDEF(C_simd_current, 0),
+  CALLDEF(C_simd_kernel_tiers, 1),
+  CALLDEF(C_simd_probe_slots, 0),
   {NULL, NULL, 0}
 };
 
@@ -17,4 +27,5 @@ void R_init_rsimd(DllInfo *dll) {
   R_useDynamicSymbols(dll, FALSE);
   R_forceSymbols(dll, TRUE);
   rsimd_cpu_init();
+  rsimd_dispatch_init();
 }

@@ -3,5 +3,5 @@
 #define RSIMD_TIER sve2
 #include "kernels/common.inc.h"
 #include "kernels/tier_info.inc.c"
-/* Kernel sources (kernels/<family>.inc.c) are included here, followed by
-   the tier's dispatch table. */
+/* Kernel sources (kernels/<family>.inc.c) are included here. */
+#include "kernels/table.inc.c"

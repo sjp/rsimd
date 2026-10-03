@@ -3,27 +3,7 @@
 #include "rsimd.h"
 #include "cpu_features.h"
 #include "rsimd_config.h"
-
-/* Defined in each tier's translation unit (kernels/tier_info.inc.c). */
-const char *rsimd_tier_name_none(void);
-#ifdef RSIMD_HAVE_SSE2
-const char *rsimd_tier_name_sse2(void);
-#endif
-#ifdef RSIMD_HAVE_AVX2
-const char *rsimd_tier_name_avx2(void);
-#endif
-#ifdef RSIMD_HAVE_AVX512
-const char *rsimd_tier_name_avx512(void);
-#endif
-#ifdef RSIMD_HAVE_NEON
-const char *rsimd_tier_name_neon(void);
-#endif
-#ifdef RSIMD_HAVE_SVE
-const char *rsimd_tier_name_sve(void);
-#endif
-#ifdef RSIMD_HAVE_SVE2
-const char *rsimd_tier_name_sve2(void);
-#endif
+#include "dispatch.h"
 
 SEXP C_simd_cpu_features(void) {
   const rsimd_cpu_features *f = rsimd_cpu();
@@ -75,45 +55,93 @@ SEXP C_simd_cpu_tiers(void) {
   return out;
 }
 
-/* Tiers compiled into the package, in simd_tiers() order. Each tier object
-   names itself when the CPU can run it (tier code is never entered
-   otherwise; referencing the function still proves the object is linked).
-   Attributes: "configured", configure's list, and
-   "disabled", the tiers excluded by RSIMD_DISABLE_TIERS at build time. */
+/* Tiers compiled into the package, in simd_tiers() order. Each tier's
+   table names its tier through the tier_name slot when the CPU can run it
+   (tier code is never entered otherwise; referencing the table still proves
+   the object is linked). Attributes: "configured", configure's list,
+   "disabled", the tiers excluded by RSIMD_DISABLE_TIERS at build time, and
+   "test_hole", the slot emptied by RSIMD_TEST_HOLE ("" if none). */
 SEXP C_simd_compiled_tiers(void) {
-  static const char *(*const name_fns[RSIMD_TIER_COUNT])(void) = {
-    [RSIMD_TIER_NONE] = rsimd_tier_name_none,
-#ifdef RSIMD_HAVE_SSE2
-    [RSIMD_TIER_SSE2] = rsimd_tier_name_sse2,
-#endif
-#ifdef RSIMD_HAVE_AVX2
-    [RSIMD_TIER_AVX2] = rsimd_tier_name_avx2,
-#endif
-#ifdef RSIMD_HAVE_AVX512
-    [RSIMD_TIER_AVX512] = rsimd_tier_name_avx512,
-#endif
-#ifdef RSIMD_HAVE_NEON
-    [RSIMD_TIER_NEON] = rsimd_tier_name_neon,
-#endif
-#ifdef RSIMD_HAVE_SVE
-    [RSIMD_TIER_SVE] = rsimd_tier_name_sve,
-#endif
-#ifdef RSIMD_HAVE_SVE2
-    [RSIMD_TIER_SVE2] = rsimd_tier_name_sve2,
-#endif
-  };
   SEXP out;
   int i, n = 0, k = 0;
-  for (i = 0; i < RSIMD_TIER_COUNT; i++) n += name_fns[i] != NULL;
+  for (i = 0; i < RSIMD_TIER_COUNT; i++) n += rsimd_tier_compiled((rsimd_tier) i);
   out = PROTECT(Rf_allocVector(STRSXP, n));
   for (i = 0; i < RSIMD_TIER_COUNT; i++) {
-    if (name_fns[i] == NULL) continue;
-    SET_STRING_ELT(out, k++, Rf_mkChar(rsimd_cpu_supports((rsimd_tier) i)
-                                         ? name_fns[i]()
+    const struct rsimd_kernels *own = rsimd_tier_table((rsimd_tier) i);
+    if (own == NULL) continue;
+    SET_STRING_ELT(out, k++, Rf_mkChar(rsimd_cpu_supports((rsimd_tier) i) && own->tier_name != NULL
+                                         ? own->tier_name()
                                          : rsimd_tier_names[i]));
   }
   Rf_setAttrib(out, Rf_install("configured"), Rf_mkString(RSIMD_CONFIG_TIERS));
   Rf_setAttrib(out, Rf_install("disabled"), Rf_mkString(RSIMD_CONFIG_DISABLED));
+  Rf_setAttrib(out, Rf_install("test_hole"), Rf_mkString(RSIMD_CONFIG_TEST_HOLE));
+  UNPROTECT(1);
+  return out;
+}
+
+/* Available tiers in preference order, ending with "none". */
+SEXP C_simd_available(void) {
+  SEXP out;
+  int p, n = 0, k = 0;
+  for (p = 0; p < rsimd_tier_preference_count; p++) {
+    n += rsimd_tier_available(rsimd_tier_preference[p]);
+  }
+  out = PROTECT(Rf_allocVector(STRSXP, n));
+  for (p = 0; p < rsimd_tier_preference_count; p++) {
+    rsimd_tier t = rsimd_tier_preference[p];
+    if (rsimd_tier_available(t)) SET_STRING_ELT(out, k++, Rf_mkChar(rsimd_tier_names[t]));
+  }
+  UNPROTECT(1);
+  return out;
+}
+
+/* Selects "auto" or a tier; returns 0, -1 (unknown) or -2 (unavailable). */
+SEXP C_simd_select(SEXP name) {
+  if (!Rf_isString(name) || XLENGTH(name) != 1 || STRING_ELT(name, 0) == NA_STRING) {
+    Rf_error("'impl' must be a single string");
+  }
+  return Rf_ScalarInteger(rsimd_select(CHAR(STRING_ELT(name, 0))));
+}
+
+/* The active tier. */
+SEXP C_simd_current(void) {
+  return Rf_mkString(rsimd_tier_names[rsimd_active_tier]);
+}
+
+/* For an available tier (NULL: the active one), the tier whose kernel each
+   slot runs after fill-down, named by slot. */
+SEXP C_simd_kernel_tiers(SEXP tier) {
+  rsimd_tier t = rsimd_active_tier;
+  SEXP out, nms;
+  int s;
+  if (!Rf_isNull(tier)) {
+    if (!Rf_isString(tier) || XLENGTH(tier) != 1 || STRING_ELT(tier, 0) == NA_STRING) {
+      Rf_error("'tier' must be NULL or a single string");
+    }
+    t = rsimd_tier_from_name(CHAR(STRING_ELT(tier, 0)));
+    if (!rsimd_tier_available(t)) {
+      Rf_error("tier '%s' is not available", CHAR(STRING_ELT(tier, 0)));
+    }
+  }
+  out = PROTECT(Rf_allocVector(STRSXP, RSIMD_SLOT_COUNT));
+  nms = PROTECT(Rf_allocVector(STRSXP, RSIMD_SLOT_COUNT));
+  for (s = 0; s < RSIMD_SLOT_COUNT; s++) {
+    SET_STRING_ELT(out, s, Rf_mkChar(rsimd_tier_names[rsimd_slot_source(t, s)]));
+    SET_STRING_ELT(nms, s, Rf_mkChar(rsimd_slot_names[s]));
+  }
+  Rf_setAttrib(out, R_NamesSymbol, nms);
+  UNPROTECT(2);
+  return out;
+}
+
+/* Calls the internal slots through the active table: what the tier_name
+   and fill_probe kernels it holds actually return. */
+SEXP C_simd_probe_slots(void) {
+  const char *names[] = {"tier_name", "fill_probe", ""};
+  SEXP out = PROTECT(Rf_mkNamed(STRSXP, names));
+  SET_STRING_ELT(out, 0, Rf_mkChar(rsimd_active->tier_name()));
+  SET_STRING_ELT(out, 1, Rf_mkChar(rsimd_active->fill_probe()));
   UNPROTECT(1);
   return out;
 }

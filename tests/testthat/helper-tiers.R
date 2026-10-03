@@ -1,3 +1,6 @@
-# Runs `f` once per implementation tier. Only the scalar tier exists for now;
-# this is replaced by a loop over simd_available() once dispatch exists.
-for_each_tier <- function(f) f("none")
+# Runs `f(tier)` once per available implementation tier, with that tier
+# selected, and returns the results in a list named by tier.
+for_each_tier <- function(f) {
+  tiers <- simd_available()
+  stats::setNames(lapply(tiers, function(tier) simd_with_impl(tier, f(tier))), tiers)
+}

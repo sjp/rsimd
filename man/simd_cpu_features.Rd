@@ -8,7 +8,7 @@ simd_cpu_features()
 Reports the SIMD instruction set extensions that the CPU and operating
 system support, as detected when \pkg{rsimd} was loaded. This describes the
 hardware, not the package: an extension can be reported here even if the
-package was built without code for it. \code{simd_available()} lists the
+package was built without code for it. \code{\link{simd_available}()} lists the
 implementations that are both compiled in and supported.
 }
 \details{

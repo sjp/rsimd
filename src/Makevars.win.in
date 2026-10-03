@@ -4,15 +4,19 @@
 
 PKG_CPPFLAGS = -I. -Ivendor/simde @RSIMD_CPPFLAGS@
 
-OBJECTS = init.o version.o tiers.o cpu_features.o api_control.o @RSIMD_OBJECTS@
+OBJECTS = init.o version.o tiers.o cpu_features.o dispatch.o api_control.o @RSIMD_OBJECTS@
 
-RSIMD_TIER_DEPS = rsimd_config.h tiers.h kernels/common.inc.h kernels/tier_info.inc.c \
+RSIMD_DISPATCH_DEPS = rsimd_config.h tiers.h dispatch.h kernel_list.h
+
+RSIMD_TIER_DEPS = $(RSIMD_DISPATCH_DEPS) kernels/common.inc.h kernels/tier_info.inc.c \
+  kernels/table.inc.c \
   kernels/vec_none.inc.h kernels/vec_fixed.inc.h kernels/vec_simde128.inc.h \
   kernels/vec_simde256.inc.h kernels/vec_simde512.inc.h kernels/vec_sve.inc.h
 
 # The rules below must not become make's default goal.
 all: $(SHLIB)
 
-cpu_features.o api_control.o: rsimd_config.h
+cpu_features.o: rsimd_config.h
+init.o dispatch.o api_control.o: $(RSIMD_DISPATCH_DEPS)
 
 @RSIMD_TIER_RULES@

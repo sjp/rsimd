@@ -11,3 +11,10 @@
   the compiler can build (`sse2`, `avx2`, `avx512` on x86; `neon`, `sve`, `sve2`
   on arm) and compiles each tier's kernels in a separate file with that tier's
   flags. `RSIMD_DISABLE_TIERS` skips tiers at install time.
+* Implementation selection: `simd_tiers()` lists the tier ids,
+  `simd_available()` the tiers that are compiled in and supported by the CPU
+  (best first), `simd_current()` the one in use, and `simd_use()` selects one
+  by name or `"auto"`. `simd_with_impl()` evaluates an expression with a tier
+  selected temporarily. The selection can also be set with the `rsimd.impl`
+  option or, at load time, the `RSIMD_IMPL` environment variable. Operations a
+  tier lacks use the next lower tier's version.

@@ -45,13 +45,19 @@
 #   RSIMD_DISABLE_SLEEF=1   do not use SLEEF elementary functions in any
 #                           tier (math falls back to the none tier).
 #   RSIMD_CONFIGURE_VERBOSE=1  show the compiler output of failed probes.
+#   RSIMD_DEBUG=1           debug build: compile everything with
+#                           -DRSIMD_DEBUG (extra internal checks at load).
+#   RSIMD_TEST_HOLE=<slot>  test build: leave the kernel slot <slot> (a name
+#                           from src/kernel_list.h) empty in every tier but
+#                           none, so the dispatcher must fill it from below.
 # A tier that fails to compile cannot be forced on.
 #
 # Adding a tier
 # -------------
 # Add its rows to tools/tiers.txt, a probe body to probe_body() below, the
 # tier id to src/tiers.h and src/tiers.c, its macros to
-# src/kernels/common.inc.h, and src/tier_<tier>.c (copy an existing one).
+# src/kernels/common.inc.h, its table and preference to src/dispatch.c, and
+# src/tier_<tier>.c (copy an existing one).
 
 LC_ALL=C
 export LC_ALL
@@ -360,6 +366,23 @@ for t in none $baseline; do
   esac
 done
 
+pkg_cppflags=
+if [ "${RSIMD_DEBUG:-0}" = 1 ]; then
+  pkg_cppflags=-DRSIMD_DEBUG
+  echo "rsimd: RSIMD_DEBUG is set: debug build (-DRSIMD_DEBUG)"
+fi
+
+test_hole=${RSIMD_TEST_HOLE:-}
+if [ -n "$test_hole" ]; then
+  case "$test_hole" in *[!a-z0-9_]*) test_hole_ok=no ;; *) test_hole_ok=yes ;; esac
+  if [ "$test_hole_ok" = yes ] && grep -q "^RSIMD_OP($test_hole," src/kernel_list.h; then
+    echo "rsimd: RSIMD_TEST_HOLE is set: slot $test_hole is left empty in every tier but none"
+  else
+    echo "configure: warning: RSIMD_TEST_HOLE: unknown kernel slot '$test_hole' ignored" >&2
+    test_hole=
+  fi
+fi
+
 if [ "${RSIMD_DISABLE_SLEEF:-0}" = 1 ]; then
   echo "rsimd: RSIMD_DISABLE_SLEEF is set: SLEEF elementary functions are not used"
 fi
@@ -382,13 +405,17 @@ tier_list=$(echo $enabled | tr ' ' ',')
   echo "#define RSIMD_CONFIG_OS \"$os\""
   echo "#define RSIMD_CONFIG_TIERS \"$tier_list\""
   echo "#define RSIMD_CONFIG_DISABLED \"$(echo $disabled | tr ' ' ',')\""
+  echo "#define RSIMD_CONFIG_TEST_HOLE \"$test_hole\""
+  if [ -n "$test_hole" ]; then
+    echo "#define RSIMD_TEST_HOLE_$test_hole 1"
+  fi
   echo "#endif"
 } > src/rsimd_config.h
 
 # Per-tier rules for the Makevars.
 {
   echo "# Tier objects are compiled with their tier's flags and only entered"
-  echo "# after a run-time CPU check (src/cpu_features.c)."
+  echo "# through the dispatch tables after a run-time CPU check (src/dispatch.c)."
   echo "$config_rules" | while IFS='|' read -r t f; do
     [ -n "$t" ] || continue
     echo "tier_$t.o: tier_$t.c \$(RSIMD_TIER_DEPS)"
@@ -398,7 +425,7 @@ tier_list=$(echo $enabled | tr ' ' ',')
   done
 } > "$tmp/rules"
 
-sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@||" "$makevars.in" |
+sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@|$pkg_cppflags|" "$makevars.in" |
   awk -v rules="$tmp/rules" '
     $0 == "@RSIMD_TIER_RULES@" { while ((getline l < rules) > 0) print l; next }
     { print }' > "$makevars"

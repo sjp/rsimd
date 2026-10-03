@@ -45,8 +45,9 @@ CFLAGS = -g -O2 -Wall -Wextra -pedantic
 ## Instruction-set tiers and the build
 
 Kernels are compiled once per instruction-set tier. `src/tier_<tier>.c` is a
-short file that defines `RSIMD_TIER`, includes `src/kernels/common.inc.h` and
-then the kernel sources; it is compiled with that tier's flags (`-mavx2 -mfma`
+short file that defines `RSIMD_TIER`, includes `src/kernels/common.inc.h`,
+then the kernel sources, and finally `src/kernels/table.inc.c`, which defines
+the tier's dispatch table; it is compiled with that tier's flags (`-mavx2 -mfma`
 for `avx2`, `-march=armv8-a+sve` for `sve` ...). Code in a tier file runs only
 after a run-time check that the CPU supports the tier, and everything outside
 the tier files is compiled with R's flags alone. `-march=native` is never used.
@@ -63,7 +64,29 @@ removes the generated files. Useful environment variables:
 
 - `RSIMD_DISABLE_TIERS=avx512,sve2` skips tiers;
 - `RSIMD_DISABLE_SLEEF=1` stops tiers using SLEEF elementary functions;
-- `RSIMD_CONFIGURE_VERBOSE=1` shows the compiler output of failed probes.
+- `RSIMD_CONFIGURE_VERBOSE=1` shows the compiler output of failed probes;
+- `RSIMD_DEBUG=1` makes a debug build (`-DRSIMD_DEBUG`, extra checks at load);
+- `RSIMD_TEST_HOLE=<slot>` leaves one dispatch slot empty in every tier but
+  `none`, for testing the fill-down described below.
+
+## Kernels and dispatch
+
+Every operation has one slot per element type in `struct rsimd_kernels`,
+generated from the one-line-per-slot X-macro list in `src/kernel_list.h`. To
+add an operation, add its `RSIMD_OP(slot, return_type, (arguments))` line
+there and write the kernel, named `RSIMD_KERNEL(slot)`, once in a
+`src/kernels/<family>.inc.c` file; every tier then compiles it with its own
+vector layer. A tier with no useful version of a kernel writes
+`#define RSIMD_SKIP_<slot> 1` in the kernel source instead. The `none` tier
+cannot skip: a missing `none` kernel is a compile error.
+
+`src/dispatch.c` builds, at load, a resolved copy of each available tier's
+table in which every empty slot is taken from the next lower available tier
+(`avx512 > avx2 > sse2 > none`, `sve2 > sve > neon > none`). `simd_use()`
+makes one of them active, and the `.Call` entry points call kernels through
+`rsimd_active`. The internal `simd_kernel_tiers()` shows which tier each slot
+of a table really runs. Every exported compute function starts with
+`.sync_impl()`, so that a change to `options(rsimd.impl =)` takes effect.
 
 `src/kernels/common.inc.h` documents the vector layer that kernels are written
 against: types such as `rsimd_vf64`, operations such as `rsimd_vf64_add`, and
@@ -83,7 +106,8 @@ sh tools/check_tier_symbols.sh   # after building in place: tier symbols end in 
 
 To add a tier, add its rows to `tools/tiers.txt` and a probe to `configure`,
 the tier id to `src/tiers.h` and `src/tiers.c`, its layer to
-`src/kernels/common.inc.h`, and copy an existing `src/tier_<tier>.c`.
+`src/kernels/common.inc.h`, its table and place in the preference order to
+`src/dispatch.c`, and copy an existing `src/tier_<tier>.c`.
 
 ## Vendored code
 

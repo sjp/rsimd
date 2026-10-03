@@ -1,10 +1,4 @@
 .onLoad <- function(libname, pkgname) {
-  impl <- Sys.getenv("RSIMD_IMPL", "")
-  if (nzchar(impl)) {
-    options(rsimd.impl = impl)
-  } else if (is.null(getOption("rsimd.impl"))) {
-    options(rsimd.impl = "auto")
-  }
   if (is.null(getOption("rsimd.precision"))) {
     options(rsimd.precision = "fast")
   }
@@ -12,6 +6,28 @@
     options(rsimd.na_check = TRUE)
   }
   warn_unknown_cpu_mask()
+  init_impl()
+  invisible()
+}
+
+# Initial implementation: the rsimd.impl option if set before loading, else
+# the RSIMD_IMPL environment variable, else "auto". A value that cannot be
+# selected gives a warning and "auto"; loading never fails because of it.
+init_impl <- function() {
+  impl <- getOption("rsimd.impl")
+  source <- "option rsimd.impl"
+  if (is.null(impl)) {
+    impl <- Sys.getenv("RSIMD_IMPL", "")
+    source <- "RSIMD_IMPL"
+    if (!nzchar(impl)) impl <- "auto"
+  }
+  problem <- .impl_problem(impl)
+  if (!is.null(problem)) {
+    warning(source, ": ", problem, "; using \"auto\"", call. = FALSE)
+    impl <- "auto"
+  }
+  .impl_state$requested <- NULL
+  simd_use(impl)
   invisible()
 }
 
