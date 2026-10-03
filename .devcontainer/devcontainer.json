@@ -1,0 +1,27 @@
+{
+	"name": "rsimd development",
+	"image": "mcr.microsoft.com/devcontainers/base:trixie",
+	"features": {
+		"ghcr.io/rocker-org/devcontainer-features/r-apt:0.5": {},
+		"ghcr.io/devcontainers/features/node:2": {
+			"version": "26"
+		},
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"REditorSupport.r-syntax",
+				"RDebugger.r-debugger"
+			]
+		}
+	},
+	"mounts": [
+		"source=claude-code-config,target=/home/vscode/.claude,type=volume"
+	],
+	"remoteUser": "vscode",
+	"containerEnv": {
+		"CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+	},
+	"postCreateCommand": "bash .devcontainer/post-create.sh"
+}
