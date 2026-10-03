@@ -163,6 +163,9 @@ const char *const rsimd_reduce_op_names[RSIMD_RED_OP_COUNT] = {
 void rsimd_reduce_result_init(rsimd_reduce_result *r, int op) {
   memset(r, 0, sizeof *r);
   r->idx = -1;
+  /* min/max kernels compute both extrema: the maximum starts here. */
+  r->f64_hi = R_NegInf;
+  r->i64_hi = INT64_MIN;
   switch (op) {
   case RSIMD_RED_PROD: r->f64 = 1.0; break;
   case RSIMD_RED_MIN:
@@ -200,6 +203,21 @@ static SEXP na_result(int op, rsimd_etype type) {
     if (type == RSIMD_I64) return scalar_i64(RSIMD_NA_I64);
   }
   return Rf_ScalarReal(NA_REAL);
+}
+
+SEXP rsimd_range_pair(SEXP lo, SEXP hi) {
+  SEXP out;
+  if (TYPEOF(lo) == INTSXP && TYPEOF(hi) == INTSXP) {
+    out = PROTECT(Rf_allocVector(INTSXP, 2));
+    INTEGER(out)[0] = INTEGER(lo)[0];
+    INTEGER(out)[1] = INTEGER(hi)[0];
+  } else {
+    out = PROTECT(Rf_allocVector(REALSXP, 2));
+    REAL(out)[0] = Rf_asReal(lo);
+    REAL(out)[1] = Rf_asReal(hi);
+  }
+  UNPROTECT(1);
+  return out;
 }
 
 SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduce_result *r,
@@ -278,7 +296,7 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
     break;
   case RSIMD_RED_WHICH_MIN:
   case RSIMD_RED_WHICH_MAX:
-    if (is_real || type == RSIMD_I64) {
+    if (is_real || type == RSIMD_I64 || type == RSIMD_U8) {
       if (r->idx < 0) return Rf_allocVector(n > INT_MAX ? REALSXP : INTSXP, 0);
       return scalar_index((double) r->idx + 1, n);
     }
@@ -290,7 +308,7 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
     if (r->any_false) return Rf_ScalarLogical(FALSE);
     return Rf_ScalarLogical(!o->na_rm && r->saw_na ? NA_LOGICAL : TRUE);
   case RSIMD_RED_ANY_NA: return Rf_ScalarLogical(r->saw_na || r->saw_nan);
-  case RSIMD_RED_COUNT_NA: return scalar_index((double) r->i64, n);
+  case RSIMD_RED_COUNT_NA: return Rf_ScalarReal((double) r->i64);
   default: Rf_error("internal error: unknown reduction %d", op);
   }
   Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[type]);

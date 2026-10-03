@@ -14,6 +14,7 @@ eps <- 2^-52
 
 # sum(abs(x)) over the finite elements of x, as a double.
 abs_mass <- function(x) {
+  if (!is.numeric(x) && !is.logical(x)) return(0)
   x <- as.double(x)
   sum(abs(x[is.finite(x)]))
 }
@@ -109,8 +110,11 @@ expect_simd_matches_base <- function(simd_fn, base_fn, ..., tolerance = NULL,
   on.exit(simd_precision(old))
   x <- ..1
   expected <- base_fn(...)
-  has_na <- any(is.na(x) & !is.nan(x))
-  makes_nan <- any(is.nan(x)) || (any(x == Inf, na.rm = TRUE) && any(x == -Inf, na.rm = TRUE))
+  # Raw vectors have no is.nan() method, and no missing values.
+  fp <- is.double(x) || is.complex(x)
+  has_na <- if (fp) any(is.na(x) & !is.nan(x)) else anyNA(x)
+  makes_nan <- fp &&
+    (any(is.nan(x)) || (any(x == Inf, na.rm = TRUE) && any(x == -Inf, na.rm = TRUE)))
   nan <- !(has_na && makes_nan)
   base_eps <- if (has_wide_long_double()) 2^-63 else eps
   bound <- mode_bound(x, precision) + max(length(x), 1) * base_eps * abs_mass(x)
@@ -131,6 +135,29 @@ expect_simd_matches_base <- function(simd_fn, base_fn, ..., tolerance = NULL,
       problems <- c(problems, sprintf(
         "tier %s differs from base R (%s mode, n = %.0f): %s",
         tier, precision, length(x), problem
+      ))
+    }
+  }
+  testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
+  invisible(res)
+}
+
+# Evaluates f(...) with each available tier selected and expects every
+# tier's result to be bit-identical to the none tier's, including the sign
+# of zero and NA versus NaN (identical(num.eq = FALSE)). For results that do
+# not depend on the order of operations: min, max, which, any, all, counts.
+# One expectation; returns the results by tier, invisibly.
+expect_simd_identical <- function(f, ...) {
+  x <- ..1
+  res <- with_each_tier(function() f(...))
+  oracle <- res[["none"]]
+  problems <- character(0)
+  for (tier in setdiff(names(res), "none")) {
+    got <- res[[tier]]
+    if (!identical(got, oracle, num.eq = FALSE)) {
+      problems <- c(problems, sprintf(
+        "tier %s differs from none (n = %.0f): %s vs %s",
+        tier, length(x), deparse1(got), deparse1(oracle)
       ))
     }
   }

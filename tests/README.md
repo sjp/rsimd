@@ -26,7 +26,10 @@ The `helper-*.R` files are loaded before the tests:
   base_fn, x, ...)` compares every tier with base R. Values that are not
   doubles must be identical. Doubles must match within a bound that depends
   on the precision mode (see the comments in the file), and their missing
-  and infinite values must match exactly.
+  and infinite values must match exactly. `expect_simd_identical(f, x, ...)`
+  requires every tier to be bit-identical to `none`, including the sign of
+  zero, for results that do not depend on the order of operations (min,
+  max, which, any, all, missing-value counts).
 - `helper-cases.R`: `edge_lengths()`, `edge_doubles()`, `edge_ints()`,
   `edge_lgl()`, `altrep_inputs(n)`, `rand_vec(type, n, ..., seed)` and
   `with_seed(seed, code)`.
@@ -96,5 +99,7 @@ preload the libraries.
 ## Benchmarks
 
 `bench/sum.R` (not part of the built package) times `simd_sum()` on every
-available tier against base `sum()` for 1e7 elements. It is a quick sanity
-check, not a benchmark suite.
+available tier against base `sum()` for 1e7 elements, and
+`bench/reductions.R` does the same for `simd_min()` and `simd_any_na()`
+(and the integer `simd_min()` with `na_check = FALSE`). They are quick
+sanity checks, not a benchmark suite.

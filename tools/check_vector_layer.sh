@@ -1,6 +1,8 @@
 #!/bin/sh
-# Behavioural check of the vector layer (src/kernels/common.inc.h) on every
-# tier, against plain C references (tools/vector_layer_test.c).
+# Behavioural check of the vector layer (src/kernels/common.inc.h), the
+# vector forms of src/na.h and the reduction kernels
+# (src/kernels/reduce.inc.c) on every tier, against plain C references
+# (tools/vector_layer_test.c).
 #
 # Each tier is compiled with its flags from tools/tiers.txt plus
 # -ffp-contract=off and -Wall -Wextra -pedantic -Werror (R's headers, which

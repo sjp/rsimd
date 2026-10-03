@@ -26,6 +26,14 @@ typedef struct {
   int precision; /* RSIMD_PREC_FAST / PAIRWISE / COMPENSATED */
 } rsimd_opts;
 
+/* What the missing-value kernels (na_f64 ...) compute. */
+enum {
+  RSIMD_NAMODE_ANY = 0,
+  RSIMD_NAMODE_COUNT = 1,
+  RSIMD_NAMODE_WHICH_I32 = 2,
+  RSIMD_NAMODE_WHICH_F64 = 3
+};
+
 /* Partial sums of pairwise summation: s[k] is the sum of 2^k leaves for
    every set bit k of `leaves` (see na.h). */
 typedef struct {
@@ -37,10 +45,13 @@ typedef struct {
    rsimd_reduce_result_init(), call the kernel once per chunk to fold that
    chunk in, and convert it to the R result with rsimd_reduce_finish(). */
 typedef struct {
-  double f64;       /* accumulated value (fast and compensated modes) */
+  double f64;       /* accumulated value (fast and compensated modes); the
+                       minimum for min/max kernels */
   double comp;      /* compensation term, compensated mode only */
   rsimd_pairwise pw; /* leaf sums, pairwise mode only */
-  int64_t i64;      /* integer accumulator (sum/count), int64 min/max */
+  int64_t i64;      /* integer accumulator (sum/count), integer minimum */
+  double f64_hi;    /* the maximum for min/max kernels */
+  int64_t i64_hi;   /* integer maximum */
   R_xlen_t idx;     /* 0-based index of the extremum, -1 if none */
   R_xlen_t count;   /* elements that survived na.rm (all of them without) */
   /* saw_na: an NA was seen; saw_nan: a NaN (NA included) was seen;

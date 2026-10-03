@@ -338,7 +338,7 @@ test_that("finished reductions have base R's result types", {
   expect_identical(fin("any_na", "integer", list(saw_na = 1)), TRUE)
   expect_identical(fin("any_na", "double"), FALSE)
   # count_na
-  expect_identical(fin("count_na", "double", list(i64 = 3)), 3L)
+  expect_identical(fin("count_na", "double", list(i64 = 3)), 3)
   expect_identical(fin("count_na", "double", list(i64 = 3), n = long), 3)
   # unsupported types
   expect_error(fin("sum", "raw"), "invalid 'type' (raw) of argument", fixed = TRUE)

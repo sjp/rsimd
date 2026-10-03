@@ -7,12 +7,16 @@
  * -DRSIMD_TIER=<tier> and that tier's flags, then run (natively or under
  * qemu). Every operation is applied through the predicated loop that
  * kernels use, for every length from 0 to N, and compared lane by lane with
- * a plain C reference. Prints a summary and exits non-zero on any mismatch.
+ * a plain C reference. The reduction kernels (src/kernels/reduce.inc.c) are
+ * run on inputs full of ties, signed zeros and missing values, whole and
+ * split into two chunks, and compared with plain C references too. Prints
+ * a summary and exits non-zero on any mismatch.
  */
 
 #include <float.h>
 #include <stdio.h>
 #include "kernels/common.inc.h"
+#include "kernels/reduce.inc.c"
 
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
 #define SENTINEL_F64 -12345.678
@@ -722,6 +726,371 @@ static void test_predicates(ptrdiff_t n) {
   check_int("p64 empty", n, n, rsimd_p64_count(rsimd_p64_while(n, n)), 0);
 }
 
+
+/* ---- Reduction kernels ---------------------------------------------------- */
+
+static double rd[N + 1];
+static int32_t ri[N + 1];
+static Rbyte rb[N + 1];
+static double ridx[N + 1];
+static int iidx[N + 1];
+
+/* variant 0: ties and signed zeros, no missing values; 1: some NaN and NA;
+   2: positive values and zeros; 3: all missing. Doubles are exact in
+   products (powers of two) and in sums of deviations from 0.5. */
+static void fill_reduce(int variant) {
+  const double dv[] = {0.0, -0.0, 1.0, -1.0, 2.0, 0.5, -0.5, 4.0, -2.0, HUGE_VAL, -HUGE_VAL};
+  const double pos[] = {0.0, -0.0, 1.0, 2.0, 0.5};
+  const int32_t iv[] = {0, 1, -1, 2, -2, 5, INT32_MAX, -INT32_MAX};
+  const double nan = from_bits(UINT64_C(0x7FF8000000000000));
+  const double na = from_bits(UINT64_C(0x7FF00000000007A2));
+  int i;
+  for (i = 0; i < N; i++) {
+    uint64_t u = next_rand();
+    if (variant == 3) {
+      rd[i] = u % 2 ? nan : na;
+      ri[i] = RSIMD_NA_I32;
+    } else if (variant == 2) {
+      rd[i] = pos[u % 5];
+      ri[i] = (int32_t) (u % 7);
+    } else {
+      rd[i] = dv[u % 11];
+      ri[i] = iv[(u >> 8) % 8];
+      if (variant == 1 && (u >> 20) % 16 == 0) rd[i] = (u >> 30) % 2 ? nan : na;
+      if (variant == 1 && (u >> 24) % 16 == 0) ri[i] = RSIMD_NA_I32;
+    }
+    rb[i] = (Rbyte) (variant == 3 ? 0 : (variant == 2 ? 1 + u % 255 : ((u >> 12) % 9 ? u >> 40 : 0)));
+  }
+}
+
+static void reduce_init(rsimd_reduce_result *r, double f64) {
+  memset(r, 0, sizeof *r);
+  r->idx = -1;
+  r->f64 = f64;
+  r->f64_hi = -HUGE_VAL;
+  r->i64 = INT64_MAX;
+  r->i64_hi = INT64_MIN;
+}
+
+static void check_flags(const char *what, ptrdiff_t n, const rsimd_reduce_result *got,
+                        const rsimd_reduce_result *want) {
+  check_int(what, n, 0, (long) got->count, (long) want->count);
+  check_int(what, n, 1, got->saw_na, want->saw_na);
+  check_int(what, n, 2, got->saw_nan, want->saw_nan);
+}
+
+/* Three-valued any/all from the flags. */
+static int lgl3(const rsimd_reduce_result *r, int all, int narm) {
+  if (all) return r->any_false ? 0 : (r->saw_na && !narm ? 2 : 1);
+  return r->any_true ? 1 : (r->saw_na && !narm ? 2 : 0);
+}
+
+/* Runs `call` (a statement using px, len, off and &r) on [0, n) whole and
+   on [0, k) then [k, n). */
+#define TWO_WAYS(r, init, call)                                                  \
+  for (way = 0; way < 2; way++) {                                                \
+    ptrdiff_t k = way ? n / 3 : n, off, len;                                     \
+    init;                                                                        \
+    for (off = 0; off < n; off += len) {                                         \
+      len = off < k ? k - off : n - off;                                         \
+      call;                                                                      \
+    }                                                                            \
+    REF_CHECK;                                                                   \
+  }
+
+static void test_reduce(ptrdiff_t n) {
+  int variant, way, narm, check, stop, mode;
+  char what[64];
+  for (variant = 0; variant < 4; variant++) {
+    fill_reduce(variant);
+    for (narm = 0; narm < 2; narm++) {
+      for (check = 0; check < 2; check++) {
+        rsimd_opts o = {narm, check, RSIMD_PREC_FAST};
+        int chk = check || narm;
+        rsimd_reduce_result r, want;
+        ptrdiff_t i;
+        if (!chk && (variant == 1 || variant == 3)) continue;
+
+        /* min/max of int32 */
+        reduce_init(&want, HUGE_VAL);
+        for (i = 0; i < n; i++) {
+          if (chk && ri[i] == RSIMD_NA_I32) {
+            want.saw_na = 1;
+            continue;
+          }
+          want.count++;
+          if (ri[i] < want.i64) want.i64 = ri[i];
+          if (ri[i] > want.i64_hi) want.i64_hi = ri[i];
+        }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "minmax_i32 v%d narm%d way%d", variant, narm, way); \
+  check_flags(what, n, &r, &want);                                               \
+  if (want.count > 0) {                                                          \
+    check_int(what, n, 3, (long) r.i64, (long) want.i64);                        \
+    check_int(what, n, 4, (long) r.i64_hi, (long) want.i64_hi);                  \
+  }
+        TWO_WAYS(r, reduce_init(&r, HUGE_VAL), RSIMD_KERNEL(minmax_i32)(ri + off, len, &r, &o))
+#undef REF_CHECK
+
+        /* prod of int32 (exact) */
+        reduce_init(&want, 1.0);
+        for (i = 0; i < n; i++) {
+          if (chk && ri[i] == RSIMD_NA_I32) {
+            want.saw_na = 1;
+            if (narm) continue;
+          }
+          want.count++;
+          want.f64 *= variant == 2 ? 1.0 : (double) (ri[i] % 3);
+        }
+#ifndef RSIMD_NO_F64_SIMD
+        {
+          static int32_t small[N + 1];
+          for (i = 0; i < n; i++) small[i] = variant == 2 ? 1 : (ri[i] == RSIMD_NA_I32 ? ri[i] : ri[i] % 3);
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "prod_i32 v%d narm%d way%d", variant, narm, way);  \
+  if (!want.saw_na || narm) {                                                    \
+    check_int(what, n, 0, (long) r.count, (long) want.count);                    \
+    n_checks++;                                                                  \
+    if (bits(r.f64) != bits(want.f64)) fail(what, n, 0, "product differs");      \
+  }                                                                              \
+  check_int(what, n, 1, r.saw_na, want.saw_na);
+          TWO_WAYS(r, reduce_init(&r, 1.0), RSIMD_KERNEL(prod_i32)(small + off, len, &r, &o))
+#undef REF_CHECK
+        }
+#endif
+
+        /* find_i32 */
+        for (i = 0; i < 3; i++) {
+          int v = i == 0 ? (n > 0 ? ri[n - 1] : 0) : (i == 1 ? 5 : 77);
+          ptrdiff_t j, wantj = -1;
+          for (j = 0; j < n; j++) {
+            if (ri[j] == v) {
+              wantj = j;
+              break;
+            }
+          }
+          check_int("find_i32", n, i, (long) RSIMD_KERNEL(find_i32)(ri, n, v), (long) wantj);
+        }
+
+        /* any/all of int32, logical and raw */
+        for (stop = 0; stop < 3; stop++) {
+          int all = stop == RSIMD_STOP_FALSE;
+          reduce_init(&want, 0.0);
+          for (i = 0; i < n; i++) {
+            if (chk && ri[i] == RSIMD_NA_I32) want.saw_na = 1;
+            else if (ri[i] == 0) want.any_false = 1;
+            else want.any_true = 1;
+          }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "anyall_i32 v%d stop%d way%d", variant, stop, way); \
+  if (stop == RSIMD_STOP_NONE) {                                                 \
+    check_int(what, n, 0, r.any_true, want.any_true);                            \
+    check_int(what, n, 1, r.any_false, want.any_false);                          \
+    check_int(what, n, 2, r.saw_na, want.saw_na);                                \
+  } else {                                                                       \
+    check_int(what, n, 3, lgl3(&r, all, narm), lgl3(&want, all, narm));          \
+  }
+          TWO_WAYS(r, reduce_init(&r, 0.0),
+                   if (!(stop && (all ? r.any_false : r.any_true)))
+                     RSIMD_KERNEL(anyall_i32)(ri + off, len, stop, &r, &o))
+#undef REF_CHECK
+          reduce_init(&want, 0.0);
+          for (i = 0; i < n; i++) {
+            if (rb[i] == 0) want.any_false = 1;
+            else want.any_true = 1;
+          }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "anyall_u8 v%d stop%d way%d", variant, stop, way); \
+  if (stop == RSIMD_STOP_NONE) {                                                 \
+    check_int(what, n, 0, r.any_true, want.any_true);                            \
+    check_int(what, n, 1, r.any_false, want.any_false);                          \
+  } else {                                                                       \
+    check_int(what, n, 3, lgl3(&r, all, 0), lgl3(&want, all, 0));                \
+  }
+          TWO_WAYS(r, reduce_init(&r, 0.0),
+                   if (!(stop && (all ? r.any_false : r.any_true)))
+                     RSIMD_KERNEL(anyall_u8)(rb + off, len, stop, &r))
+#undef REF_CHECK
+        }
+
+#ifndef RSIMD_NO_F64_SIMD
+        /* min/max of double: exact, including the sign of zero */
+        reduce_init(&want, HUGE_VAL);
+        for (i = 0; i < n; i++) {
+          if (isnan(rd[i])) {
+            if (chk) {
+              want.saw_nan = 1;
+              if (is_na_ref(rd[i])) want.saw_na = 1;
+            } else {
+              want.count++;
+            }
+            continue;
+          }
+          want.count++;
+          if (rd[i] < want.f64) want.f64 = rd[i];
+          if (rd[i] > want.f64_hi) want.f64_hi = rd[i];
+        }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "minmax_f64 v%d narm%d way%d", variant, narm, way); \
+  check_flags(what, n, &r, &want);                                               \
+  n_checks += 2;                                                                 \
+  if (bits(r.f64) != bits(want.f64)) fail(what, n, 3, "minimum differs");        \
+  if (bits(r.f64_hi) != bits(want.f64_hi)) fail(what, n, 4, "maximum differs");
+        TWO_WAYS(r, reduce_init(&r, HUGE_VAL), RSIMD_KERNEL(minmax_f64)(rd + off, len, &r, &o))
+#undef REF_CHECK
+
+        /* prod of double: exact (powers of two), NaN matches any NaN */
+        reduce_init(&want, 1.0);
+        for (i = 0; i < n; i++) {
+          if (chk && isnan(rd[i])) {
+            want.saw_nan = 1;
+            if (is_na_ref(rd[i])) want.saw_na = 1;
+            if (narm) continue;
+          }
+          want.count++;
+          want.f64 *= rd[i];
+        }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "prod_f64 v%d narm%d way%d", variant, narm, way);  \
+  check_flags(what, n, &r, &want);                                               \
+  n_checks++;                                                                    \
+  if (!(bits(r.f64) == bits(want.f64) || (isnan(r.f64) && isnan(want.f64))))     \
+    fail(what, n, 3, "product differs");
+        TWO_WAYS(r, reduce_init(&r, 1.0), RSIMD_KERNEL(prod_f64)(rd + off, len, &r, &o))
+#undef REF_CHECK
+
+        /* sum of deviations from 0.5 (exact in every mode) */
+        for (mode = 0; mode < 3; mode++) {
+          rsimd_opts om = {narm, check, mode};
+          double s = 0;
+          reduce_init(&want, 0.0);
+          for (i = 0; i < n; i++) {
+            if (chk && isnan(rd[i])) {
+              want.saw_nan = 1;
+              if (is_na_ref(rd[i])) want.saw_na = 1;
+              if (narm) continue;
+            }
+            want.count++;
+            s += isinf(rd[i]) ? 0.0 : rd[i] - 0.5;
+          }
+          if (variant != 2) continue; /* finite values only for the value */
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "sum_dev_f64 v%d mode%d way%d", variant, mode, way); \
+  check_flags(what, n, &r, &want);                                               \
+  n_checks++;                                                                    \
+  if (rsimd_reduce_value(&r, mode) != s) fail(what, n, 3, "sum differs");
+          TWO_WAYS(r, reduce_init(&r, 0.0),
+                   RSIMD_KERNEL(sum_dev_f64)(rd + off, len, 0.5, &r, &om))
+#undef REF_CHECK
+        }
+
+        /* find_f64: numeric equality, so 0 finds -0 */
+        for (i = 0; i < 4; i++) {
+          double v = i == 0 ? 0.0 : (i == 1 ? -2.0 : (i == 2 ? 7.0 : -HUGE_VAL));
+          ptrdiff_t j, wantj = -1;
+          for (j = 0; j < n; j++) {
+            if (rd[j] == v) {
+              wantj = j;
+              break;
+            }
+          }
+          check_int("find_f64", n, i, (long) RSIMD_KERNEL(find_f64)(rd, n, v), (long) wantj);
+        }
+
+        /* any/all of double */
+        for (stop = 0; stop < 3; stop++) {
+          int all = stop == RSIMD_STOP_FALSE;
+          reduce_init(&want, 0.0);
+          for (i = 0; i < n; i++) {
+            if (chk && isnan(rd[i])) want.saw_na = 1;
+            else if (rd[i] == 0) want.any_false = 1;
+            else want.any_true = 1;
+          }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "anyall_f64 v%d stop%d way%d", variant, stop, way); \
+  if (stop == RSIMD_STOP_NONE) {                                                 \
+    check_int(what, n, 0, r.any_true, want.any_true);                            \
+    check_int(what, n, 1, r.any_false, want.any_false);                          \
+    check_int(what, n, 2, r.saw_na, want.saw_na);                                \
+  } else {                                                                       \
+    check_int(what, n, 3, lgl3(&r, all, narm), lgl3(&want, all, narm));          \
+  }
+          TWO_WAYS(r, reduce_init(&r, 0.0),
+                   if (!(stop && (all ? r.any_false : r.any_true)))
+                     RSIMD_KERNEL(anyall_f64)(rd + off, len, stop, &r, &o))
+#undef REF_CHECK
+        }
+#endif
+      }
+    }
+
+    /* Missing values: any, count, which (as int and as double). */
+    for (mode = 0; mode < 4; mode++) {
+      rsimd_reduce_result r, want;
+      ptrdiff_t i;
+      reduce_init(&want, 0.0);
+      want.i64 = 0;
+      for (i = 0; i < n; i++) {
+        if (ri[i] == RSIMD_NA_I32) want.i64++;
+      }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "na_i32 v%d mode%d way%d", variant, mode, way);    \
+  if (mode == RSIMD_NAMODE_ANY) {                                                \
+    check_int(what, n, 0, r.saw_na, want.i64 > 0);                               \
+  } else {                                                                       \
+    check_int(what, n, 1, (long) r.i64, (long) want.i64);                        \
+    for (i = 0, j = 0; mode != RSIMD_NAMODE_COUNT && i < n; i++) {               \
+      if (ri[i] != RSIMD_NA_I32) continue;                                       \
+      check_int(what, n, i, mode == RSIMD_NAMODE_WHICH_I32 ? iidx[j] : (long) ridx[j], \
+                (long) (i + 1001));                                              \
+      j++;                                                                       \
+    }                                                                            \
+  }
+      {
+        ptrdiff_t j;
+        TWO_WAYS(r, (reduce_init(&r, 0.0), r.i64 = 0),
+                 if (!r.saw_na) RSIMD_KERNEL(na_i32)(ri + off, len, mode, 1000 + off,
+                                                    mode == RSIMD_NAMODE_WHICH_I32
+                                                        ? (void *) iidx
+                                                        : (void *) ridx,
+                                                    &r))
+      }
+#undef REF_CHECK
+#ifndef RSIMD_NO_F64_SIMD
+      reduce_init(&want, 0.0);
+      want.i64 = 0;
+      for (i = 0; i < n; i++) {
+        if (isnan(rd[i])) want.i64++;
+      }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "na_f64 v%d mode%d way%d", variant, mode, way);    \
+  if (mode == RSIMD_NAMODE_ANY) {                                                \
+    check_int(what, n, 0, r.saw_na, want.i64 > 0);                               \
+  } else {                                                                       \
+    check_int(what, n, 1, (long) r.i64, (long) want.i64);                        \
+    for (i = 0, j = 0; mode != RSIMD_NAMODE_COUNT && i < n; i++) {               \
+      if (!isnan(rd[i])) continue;                                               \
+      check_int(what, n, i, mode == RSIMD_NAMODE_WHICH_I32 ? iidx[j] : (long) ridx[j], \
+                (long) (i + 1001));                                              \
+      j++;                                                                       \
+    }                                                                            \
+  }
+      {
+        ptrdiff_t j;
+        TWO_WAYS(r, (reduce_init(&r, 0.0), r.i64 = 0),
+                 if (!r.saw_na) RSIMD_KERNEL(na_f64)(rd + off, len, mode, 1000 + off,
+                                                    mode == RSIMD_NAMODE_WHICH_I32
+                                                        ? (void *) iidx
+                                                        : (void *) ridx,
+                                                    &r))
+      }
+#undef REF_CHECK
+#endif
+    }
+  }
+}
+#undef TWO_WAYS
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
@@ -736,6 +1105,7 @@ int main(void) {
 #ifndef RSIMD_NO_F64_SIMD
     test_na_fold(n);
 #endif
+    test_reduce(n);
   }
 #ifndef RSIMD_NO_F64_SIMD
   test_na_cancel();

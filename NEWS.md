@@ -34,3 +34,11 @@
   `na.rm` and `na_check` arguments and the accumulation mode set by
   `simd_precision()`. Integer sums are exact and become a double when they
   leave the integer range, as in base R.
+* Added the core reductions `simd_prod()`, `simd_mean()`, `simd_min()`,
+  `simd_max()`, `simd_range()`, `simd_which_min()`, `simd_which_max()`,
+  `simd_any()`, `simd_all()`, `simd_any_na()`, `simd_count_na()` and
+  `simd_which_na()`, with base R's result types, warnings and missing-value
+  rules (`NA` wins over `NaN` whatever the order). Minimum and maximum keep
+  the sign of the first zero, as in base R. `simd_mean()` refines its result
+  with a second pass in the `"pairwise"` and `"compensated"` modes.
+  `simd_count_na()` returns a double.

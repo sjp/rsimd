@@ -191,9 +191,9 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y);
 
 /* ---- Reductions --------------------------------------------------------- */
 
-/* Reductions with a scalar result. simd_range() runs the min and max folds
-   and combines them; scans (cumsum ...) and which_na return vectors and do
-   not use rsimd_reduce_result. */
+/* Reductions with a scalar result. simd_range() finishes the min and the
+   max of one min/max fold and combines them; scans (cumsum ...) and
+   which_na return vectors and do not use rsimd_reduce_finish(). */
 typedef enum {
   RSIMD_RED_SUM,
   RSIMD_RED_PROD,
@@ -222,7 +222,8 @@ extern const char *const rsimd_reduce_op_names[RSIMD_RED_OP_COUNT];
 
 /* The identity of `op`: zero accumulators, idx = -1, no flags, except
    prod (f64 = 1), min and which_min (f64 = Inf, i64 = INT64_MAX), max and
-   which_max (f64 = -Inf, i64 = INT64_MIN). */
+   which_max (f64 = -Inf, i64 = INT64_MIN). For every op the maximum of
+   the min/max kernels starts at f64_hi = -Inf, i64_hi = INT64_MIN. */
 void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
 
 /* The R value of a finished reduction over n elements of type `type`, with
@@ -235,9 +236,9 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
      min, max   I32/LGL -> integer; F64 -> double; I64 -> integer64
      which_min, which_max
                 1-based idx + 1 (integer(0) when idx < 0); integer, or
-                double when n > INT_MAX
+                double when n > INT_MAX; also for U8
      any, all, any_na -> logical
-     count_na   i64; integer, or double when n > INT_MAX
+     count_na   i64, as a double
    The double value is rsimd_reduce_value() for o->precision (f64, the
    compensated pair or the pairwise leaf tree). Errors with
    "invalid 'type' (<type>) of argument" for a type the op does not take.
@@ -253,6 +254,10 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
        are not covered by the empty rule yet. */
 SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduce_result *r,
                          const rsimd_opts *o);
+
+/* c(lo, hi) for simd_range(), from the finished min and max (scalars):
+   integer when both are integer, else double. */
+SEXP rsimd_range_pair(SEXP lo, SEXP hi);
 
 /* Base R's warning for checked integer arithmetic, "NAs produced by integer
    overflow"; entry points call it once per call when a kernel reported
