@@ -101,5 +101,6 @@ preload the libraries.
 `bench/sum.R` (not part of the built package) times `simd_sum()` on every
 available tier against base `sum()` for 1e7 elements, and
 `bench/reductions.R` does the same for `simd_min()` and `simd_any_na()`
-(and the integer `simd_min()` with `na_check = FALSE`). They are quick
+(and the integer `simd_min()` with `na_check = FALSE`), and
+`bench/linalg.R` for `simd_dot()` and `simd_cumsum()`. They are quick
 sanity checks, not a benchmark suite.

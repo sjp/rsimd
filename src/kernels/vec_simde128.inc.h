@@ -83,6 +83,14 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
   return simde_mm_or_pd(simde_mm_and_pd(m, b), simde_mm_andnot_pd(m, a));
 }
+/* Lane moves for prefix scans: lanes shifted up by k (k = 1 here), with
+   the lanes of `fill` below k; the last lane in every lane; lane 0. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {
+  (void) k;
+  return simde_mm_shuffle_pd(fill, v, 0);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_bcast_last(rsimd_vf64 v) { return simde_mm_shuffle_pd(v, v, 3); }
+RSIMD_INLINE double rsimd_vf64_first(rsimd_vf64 v) { return simde_mm_cvtsd_f64(v); }
 RSIMD_INLINE rsimd_vi64 rsimd_vf64_as_vi64(rsimd_vf64 a) { return simde_mm_castpd_si128(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vi64_as_vf64(rsimd_vi64 a) { return simde_mm_castsi128_pd(a); }
 

@@ -115,7 +115,9 @@ test_that("finished reductions apply the NA, NaN and empty-input rules", {
   for (op in real_ops) {
     full <- list(count = 10, f64 = 2)
     expect_identical(fin(op, "double", c(full, saw_na = 1, saw_nan = 1)), NA_real_, info = op)
-    expect_identical(fin(op, "double", c(full, saw_nan = 1)), NaN, info = op)
+    # var and sd give NA for NaN too, as base R.
+    want_nan <- if (op %in% c("var", "sd")) NA_real_ else NaN
+    expect_identical(fin(op, "double", c(full, saw_nan = 1)), want_nan, info = op)
     # na.rm = TRUE: the kernel already removed them.
     expect_identical(fin(op, "double", c(full, saw_na = 1, saw_nan = 1), na_rm = TRUE), 2,
       info = op

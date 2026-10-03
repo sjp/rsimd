@@ -95,7 +95,7 @@ tiers, to Arm SVE intrinsics on the SVE tiers and to plain C on `none`. Two
 maintainer checks cover it:
 
 ```sh
-sh tools/check_vector_layer.sh   # run the layer and the reduction kernels on every tier
+sh tools/check_vector_layer.sh   # run the layer, reduction and scan kernels on every tier
 sh tools/check_tier_symbols.sh   # after building in place: tier symbols end in _<tier>
 ```
 

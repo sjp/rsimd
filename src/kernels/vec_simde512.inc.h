@@ -35,6 +35,8 @@
 #include "x86/avx512/cvt.h"
 #include "x86/avx512/extract.h"
 #include "x86/avx512/roundscale.h"
+#include "x86/avx512/set.h"
+#include "x86/avx512/permutexvar.h"
 
 #define RSIMD_WIDTH_F64 8
 #define RSIMD_WIDTH_I64 8
@@ -154,6 +156,19 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 
 RSIMD_INLINE double rsimd_vf64_reduce_add(rsimd_vf64 a) { return simde_mm512_reduce_add_pd(a); }
 RSIMD_INLINE double rsimd_vf64_reduce_min(rsimd_vf64 a) { return simde_mm512_reduce_min_pd(a); }
 RSIMD_INLINE double rsimd_vf64_reduce_max(rsimd_vf64 a) { return simde_mm512_reduce_max_pd(a); }
+/* Lane moves for prefix scans (see the 128-bit layer); k is 1, 2 or 4. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {
+  simde__m512i idx = simde_mm512_set_epi64((7 - k) & 7, (6 - k) & 7, (5 - k) & 7, (4 - k) & 7,
+                                           (3 - k) & 7, (2 - k) & 7, (1 - k) & 7, (0 - k) & 7);
+  return simde_mm512_mask_blend_pd((simde__mmask8) ((1u << k) - 1u),
+                                   simde_mm512_permutexvar_pd(idx, v), fill);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_bcast_last(rsimd_vf64 v) {
+  return simde_mm512_permutexvar_pd(simde_mm512_set1_epi64(7), v);
+}
+RSIMD_INLINE double rsimd_vf64_first(rsimd_vf64 v) {
+  return simde_mm_cvtsd_f64(simde_mm512_castpd512_pd128(v));
+}
 RSIMD_INLINE rsimd_vi64 rsimd_vf64_as_vi64(rsimd_vf64 a) { return simde_mm512_castpd_si512(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vi64_as_vf64(rsimd_vi64 a) { return simde_mm512_castsi512_pd(a); }
 

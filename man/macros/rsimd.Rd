@@ -5,7 +5,8 @@
 
 \newcommand{\rsimdSemantics}{\strong{Missing values.} \code{NA} and \code{NaN} are kept
 apart. With \code{na.rm = FALSE} a reduction returns \code{NA} if the input
-contains an \code{NA}, and otherwise \code{NaN} if it contains a \code{NaN}.
+contains an \code{NA}, and otherwise \code{NaN} if it contains a \code{NaN}
+(\code{var} and \code{sd} return \code{NA} for either, as base R does).
 When \code{na.rm = FALSE} and the input contains both \code{NA} and
 \code{NaN}, \pkg{rsimd} always returns \code{NA}; base R's result depends on
 the order of elements. With \code{na.rm = TRUE} both are removed (as
@@ -68,6 +69,12 @@ platform has it, so no mode promises bit-identical results to base R.
 In \code{"pairwise"} and \code{"compensated"} modes, \code{mean} refines the
 first estimate with a second pass over the data, as base R does; \code{var}
 and \code{sd} always take two passes (mean, then squared deviations).
-\code{cumsum} is sequential, so \code{"pairwise"} works like
-\code{"compensated"} there. \code{norm} and \code{dist} are not protected
-against overflow of the sum of squares.}
+Sums of products (\code{sum_sq}, \code{dot}, \code{dist}, \code{var},
+\code{sd}) use fused multiply-adds in \code{"fast"} mode on implementations
+that have them (all but \code{"sse2"} and \code{"none"}). \code{cumsum}
+works like \code{"fast"} in \code{"pairwise"} mode: it adds the elements of
+each vector register in a tree before adding the running total, so it can
+differ from base R's sequential running sum in the last bits. In
+\code{"compensated"} mode it is a sequential compensated running sum,
+identical on every implementation. \code{norm} and \code{dist} are not
+protected against overflow of the sum of squares.}

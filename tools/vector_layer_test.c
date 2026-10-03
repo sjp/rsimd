@@ -7,16 +7,18 @@
  * -DRSIMD_TIER=<tier> and that tier's flags, then run (natively or under
  * qemu). Every operation is applied through the predicated loop that
  * kernels use, for every length from 0 to N, and compared lane by lane with
- * a plain C reference. The reduction kernels (src/kernels/reduce.inc.c) are
- * run on inputs full of ties, signed zeros and missing values, whole and
- * split into two chunks, and compared with plain C references too. Prints
- * a summary and exits non-zero on any mismatch.
+ * a plain C reference. The reduction and scan kernels
+ * (src/kernels/reduce.inc.c, src/kernels/scan.inc.c) are run on inputs full
+ * of ties, signed zeros and missing values, whole and split into two
+ * chunks, and compared with plain C references too. Prints a summary and
+ * exits non-zero on any mismatch.
  */
 
 #include <float.h>
 #include <stdio.h>
 #include "kernels/common.inc.h"
 #include "kernels/reduce.inc.c"
+#include "kernels/scan.inc.c"
 
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
 #define SENTINEL_F64 -12345.678
@@ -534,8 +536,8 @@ static void test_na_int(ptrdiff_t n) {
     rsimd_reduce_result a, b;
     memset(&a, 0, sizeof a);
     memset(&b, 0, sizeof b);
-    rsimd_fold_sum_i32(ia, n, &a, &opts[k]);
-    rsimd_vfold_sum_i32(ia, n, &b, &opts[k]);
+    rsimd_fold_sum_i32(ia, n, 0, &a, &opts[k]);
+    rsimd_vfold_sum_i32(ia, n, 0, &b, &opts[k]);
     n_checks++;
     if (!same_result(&a, &b)) {
       snprintf(buf, sizeof buf, "opts %d: sum %lld/%lld count %ld/%ld na %d/%d", k,
@@ -1089,6 +1091,301 @@ static void test_reduce(ptrdiff_t n) {
     }
   }
 }
+
+/* ---- Fused reductions and scans ----------------------------------------- */
+
+static double ld[N + 1], ld2[N + 1];
+static int32_t li[N + 1], li2[N + 1];
+
+/* Small integer-valued data, so that every sum, product and square below
+   is exact in every precision mode and with or without fused
+   multiply-adds; variant 1 adds NaN, NA and signed zeros, variant 2 large
+   integers (int32 cumsum overflow). */
+static void fill_linalg(int variant) {
+  const double nan = from_bits(UINT64_C(0x7FF8000000000000));
+  const double na = from_bits(UINT64_C(0x7FF00000000007A2));
+  int i;
+  for (i = 0; i < N; i++) {
+    uint64_t u = next_rand();
+    int32_t a = (int32_t) (u % 41) - 20, b = (int32_t) ((u >> 16) % 41) - 20;
+    if (variant == 2) a = (int32_t) ((u >> 8) % 2 ? INT32_MAX / 3 : -(INT32_MAX / 3)) + a;
+    li[i] = a;
+    li2[i] = b;
+    ld[i] = a == 0 && (u >> 40) % 2 ? -0.0 : (double) a;
+    ld2[i] = (double) b;
+    if (variant == 1) {
+      if ((u >> 44) % 23 == 0) ld[i] = (u >> 50) % 2 ? nan : na;
+      if ((u >> 52) % 29 == 0) ld2[i] = nan;
+      if ((u >> 56) % 31 == 0) li[i] = RSIMD_NA_I32;
+      if ((u >> 58) % 37 == 0) li2[i] = RSIMD_NA_I32;
+    }
+  }
+}
+
+#if !defined(RSIMD_SKIP_sumsq_f64) || !defined(RSIMD_SKIP_cumsum_f64)
+/* Element i of an operand as the kernels read it. */
+static double elt(const void *p, int i32, ptrdiff_t i) {
+  if (i32) {
+    int32_t v = ((const int32_t *) p)[i];
+    return v == RSIMD_NA_I32 ? from_bits(UINT64_C(0x7FF00000000007A2)) : (double) v;
+  }
+  return ((const double *) p)[i];
+}
+#endif
+
+#if !defined(RSIMD_SKIP_sumsq_f64)
+/* The reference of a fold of term (sq 0, abs 1, xy 2, (x-y)^2 3, (x-c)^2 4)
+   over x and y. */
+static void ref_fold(const void *x, int xi, const void *y, int yi, ptrdiff_t n, int term,
+                     double c, int check, int narm, rsimd_reduce_result *want) {
+  ptrdiff_t i;
+  reduce_init(want, 0.0);
+  for (i = 0; i < n; i++) {
+    double a = elt(x, xi, i), b = y ? elt(y, yi, i) : 0.0, t;
+    int pair = term == 2 || term == 3;
+    if (check && (isnan(a) || (pair && isnan(b)))) {
+      want->saw_nan = 1;
+      if (is_na_ref(a) || (pair && is_na_ref(b))) want->saw_na = 1;
+      if (narm) continue;
+    }
+    want->count++;
+    t = term == 0 ? a * a : term == 1 ? fabs(a) : term == 2 ? a * b
+        : term == 3 ? (a - b) * (a - b) : (a - c) * (a - c);
+    want->f64 += t;
+  }
+}
+
+static void check_fold(const char *what, ptrdiff_t n, const rsimd_reduce_result *r, int mode,
+                       const rsimd_reduce_result *want, int narm) {
+  double v = rsimd_reduce_value(r, mode);
+  check_flags(what, n, r, want);
+  n_checks++;
+  if ((!want->saw_nan || narm) && v != want->f64) fail(what, n, 3, "sum differs");
+}
+#endif
+
+static void test_linalg(ptrdiff_t n) {
+  int variant, narm, check, mode, way;
+  char what[80];
+  for (variant = 0; variant < 2; variant++) {
+    fill_linalg(variant);
+    for (narm = 0; narm < 2; narm++) {
+      for (check = 0; check < 2; check++) {
+        int chk = check || narm;
+        if (!chk && variant == 1) continue;
+        for (mode = 0; mode < 3; mode++) {
+          rsimd_opts o = {narm, check, mode};
+          rsimd_reduce_result r;
+          int64_t isum = 0;
+          ptrdiff_t i;
+          int ina = 0;
+          /* sumabs_i32: exact int64 */
+          for (i = 0; i < n; i++) {
+            if (chk && li[i] == RSIMD_NA_I32) {
+              ina = 1;
+              if (narm) continue;
+            }
+            isum += li[i] < 0 ? -(int64_t) li[i] : li[i];
+          }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "sumabs_i32 v%d narm%d chk%d way%d", variant, narm, check, way); \
+  check_int(what, n, 1, r.saw_na, ina);                                          \
+  if (!ina || narm) check_int(what, n, 2, (long) r.i64, (long) isum);
+          TWO_WAYS(r, reduce_init(&r, 0.0); r.i64 = 0,
+                   RSIMD_KERNEL(sumabs_i32)(li + off, len, &r, &o))
+#undef REF_CHECK
+#if !defined(RSIMD_SKIP_sumsq_f64)
+          rsimd_reduce_result want;
+          int t;
+          ref_fold(ld, 0, NULL, 0, n, 0, 0.0, chk, narm, &want);
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "%s v%d narm%d chk%d mode%d way%d", name, variant, narm, check, \
+           mode, way);                                                           \
+  check_fold(what, n, &r, mode, &want, narm);
+          {
+            const char *name = "sumsq_f64";
+            TWO_WAYS(r, reduce_init(&r, 0.0), RSIMD_KERNEL(sumsq_f64)(ld + off, len, &r, &o))
+            name = "sumsq_i32";
+            ref_fold(li, 1, NULL, 0, n, 0, 0.0, chk, narm, &want);
+            TWO_WAYS(r, reduce_init(&r, 0.0), RSIMD_KERNEL(sumsq_i32)(li + off, len, &r, &o))
+            name = "sumabs_f64";
+            ref_fold(ld, 0, NULL, 0, n, 1, 0.0, chk, narm, &want);
+            TWO_WAYS(r, reduce_init(&r, 0.0), RSIMD_KERNEL(sumabs_f64)(ld + off, len, &r, &o))
+            name = "var_pass2_f64";
+            ref_fold(ld, 0, NULL, 0, n, 4, 0.5, chk, narm, &want);
+            TWO_WAYS(r, reduce_init(&r, 0.0),
+                     RSIMD_KERNEL(var_pass2_f64)(ld + off, len, 0.5, &r, &o))
+            name = "var_pass2_i32";
+            ref_fold(li, 1, NULL, 0, n, 4, -1.5, chk, narm, &want);
+            TWO_WAYS(r, reduce_init(&r, 0.0),
+                     RSIMD_KERNEL(var_pass2_i32)(li + off, len, -1.5, &r, &o))
+            for (t = 0; t < 3; t++) {
+              const void *x = t == RSIMD_PAIR_I32_I32 ? (const void *) li : (const void *) ld;
+              const void *y = t == RSIMD_PAIR_F64_F64 ? (const void *) ld2 : (const void *) li2;
+              int xi = t == RSIMD_PAIR_I32_I32, yi = t != RSIMD_PAIR_F64_F64;
+              size_t xs = xi ? sizeof(int32_t) : sizeof(double);
+              size_t ys = yi ? sizeof(int32_t) : sizeof(double);
+              name = t == 0 ? "dot ff" : t == 1 ? "dot ii" : "dot fi";
+              ref_fold(x, xi, y, yi, n, 2, 0.0, chk, narm, &want);
+              TWO_WAYS(r, reduce_init(&r, 0.0),
+                       RSIMD_KERNEL(dot_f64)((const char *) x + off * xs,
+                                             (const char *) y + off * ys, len, t, &r, &o))
+              name = t == 0 ? "dist ff" : t == 1 ? "dist ii" : "dist fi";
+              ref_fold(x, xi, y, yi, n, 3, 0.0, chk, narm, &want);
+              TWO_WAYS(r, reduce_init(&r, 0.0),
+                       RSIMD_KERNEL(dist_f64)((const char *) x + off * xs,
+                                              (const char *) y + off * ys, len, t, &r, &o))
+              if (!narm) {
+                rsimd_reduce_result rc[3], w3[3];
+                int k;
+                ref_fold(x, xi, y, yi, n, 2, 0.0, chk, 0, &w3[0]);
+                ref_fold(x, xi, NULL, 0, n, 0, 0.0, chk, 0, &w3[1]);
+                ref_fold(y, yi, NULL, 0, n, 0, 0.0, chk, 0, &w3[2]);
+                for (way = 0; way < 2; way++) {
+                  ptrdiff_t kk = way ? n / 3 : n, off, len;
+                  for (k = 0; k < 3; k++) reduce_init(&rc[k], 0.0);
+                  for (off = 0; off < n; off += len) {
+                    len = off < kk ? kk - off : n - off;
+                    RSIMD_KERNEL(cosine_f64)((const char *) x + off * xs,
+                                             (const char *) y + off * ys, len, t, rc, &o);
+                  }
+                  for (k = 0; k < 3; k++) {
+                    snprintf(what, sizeof what, "cosine t%d sum%d v%d chk%d mode%d way%d", t, k,
+                             variant, check, mode, way);
+                    check_fold(what, n, &rc[k], mode, &w3[k], 0);
+                  }
+                }
+              }
+            }
+          }
+#undef REF_CHECK
+#endif
+        }
+      }
+    }
+  }
+}
+
+/* Scans: exact on small integer-valued data, including the stop index and
+   the sign of zero. */
+#if !defined(RSIMD_SKIP_cumsum_f64)
+static double lout_f[N + 1], lref_f[N + 1];
+static int32_t lout_i[N + 1], lref_i[N + 1];
+
+static void ref_scan(const void *x, int in_i32, ptrdiff_t n, int op, int out_i32, double init,
+                     ptrdiff_t *stop, int *ovf) {
+  double acc = init;
+  ptrdiff_t i;
+  *stop = -1;
+  *ovf = 0;
+  for (i = 0; i < n; i++) {
+    double v;
+    if (in_i32 ? ((const int32_t *) x)[i] == RSIMD_NA_I32 : isnan(((const double *) x)[i])) {
+      *stop = i;
+      return;
+    }
+    v = elt(x, in_i32, i);
+    acc = op == 0   ? acc + v
+          : op == 1 ? acc * v
+          : op == 2 ? (acc < v ? acc : v)
+                    : (acc > v ? acc : v);
+    if (out_i32) {
+      if (op == 0 && (acc > INT32_MAX || acc < -INT32_MAX)) {
+        *stop = i;
+        *ovf = 1;
+        return;
+      }
+      lref_i[i] = (int32_t) acc;
+    } else {
+      lref_f[i] = acc;
+    }
+  }
+}
+
+static void test_scan(ptrdiff_t n) {
+  static const double inits[4] = {0.0, 1.0, HUGE_VAL, -HUGE_VAL};
+  int variant, op, in_i32, way;
+  char what[80];
+  for (variant = 0; variant < 3; variant++) {
+    fill_linalg(variant);
+    for (op = 0; op < 4; op++) {
+      for (in_i32 = 0; in_i32 < 2; in_i32++) {
+        int out_i32 = in_i32 && op != 1, ovf;
+        ptrdiff_t stop, i;
+        const void *x = in_i32 ? (const void *) li : (const void *) ld;
+        size_t xs = in_i32 ? sizeof(int32_t) : sizeof(double);
+        if (op == 1) {
+          /* products of +-1, +-2 and +-0.5 stay exact */
+          static double pd[N + 1];
+          static int32_t pi[N + 1];
+          for (i = 0; i < n; i++) {
+            int32_t a = li[i] == RSIMD_NA_I32 ? 0 : li[i];
+            pi[i] = li[i] == RSIMD_NA_I32 ? li[i] : (a % 2 ? -1 : 1) * (a % 3 ? 1 : 2);
+            pd[i] = isnan(ld[i]) ? ld[i] : (a % 5 == 0 ? 0.5 : (double) pi[i]);
+          }
+          x = in_i32 ? (const void *) pi : (const void *) pd;
+        }
+        if (in_i32 && variant == 2 && op != 0) continue;
+        ref_scan(x, in_i32, n, op, out_i32, inits[op], &stop, &ovf);
+        for (way = 0; way < 2; way++) {
+          ptrdiff_t k = way ? n / 3 : n, off, len, got = -1;
+          rsimd_scan_state s = {inits[op], 0.0, 0};
+          rsimd_opts o = {0, 1, RSIMD_PREC_FAST};
+          for (i = 0; i <= n; i++) {
+            lout_f[i] = SENTINEL_F64;
+            lout_i[i] = SENTINEL_I32;
+          }
+          for (off = 0; off < n && got < 0; off += len) {
+            const void *px = (const char *) x + off * xs;
+            ptrdiff_t r;
+            len = off < k ? k - off : n - off;
+            if (in_i32) {
+              r = op == 0 ? RSIMD_KERNEL(cumsum_i32)((const int *) px, len, lout_i + off, &s)
+                  : op == 1 ? RSIMD_KERNEL(cumprod_i32)((const int *) px, len, lout_f + off, &s)
+                            : RSIMD_KERNEL(cumminmax_i32)((const int *) px, len, op == 3,
+                                                          lout_i + off, &s);
+            } else {
+              r = op == 0 ? RSIMD_KERNEL(cumsum_f64)((const double *) px, len, lout_f + off, &s, &o)
+                  : op == 1 ? RSIMD_KERNEL(cumprod_f64)((const double *) px, len, lout_f + off, &s)
+                            : RSIMD_KERNEL(cumminmax_f64)((const double *) px, len, op == 3,
+                                                          lout_f + off, &s);
+            }
+            if (r >= 0) got = off + r;
+          }
+          snprintf(what, sizeof what, "scan op%d i32 %d v%d way%d", op, in_i32, variant, way);
+          check_int(what, n, 0, (long) got, (long) stop);
+          check_int(what, n, 1, s.overflow, ovf);
+          if (out_i32) check_i32(what, stop < 0 ? n : stop, lout_i, lref_i);
+          else check_f64(what, stop < 0 ? n : stop, lout_f, lref_f, 0);
+        }
+      }
+    }
+    /* compensated cumsum: the scalar Neumaier sum on every tier */
+    {
+      rsimd_scan_state s = {0.0, 0.0, 0};
+      rsimd_opts o = {0, 1, RSIMD_PREC_COMPENSATED};
+      double S = 0.0, C = 0.0;
+      ptrdiff_t i, stop = -1;
+      for (i = 0; i < n; i++) {
+        if (isnan(ld[i])) {
+          stop = i;
+          break;
+        }
+        rsimd_neumaier_add(&S, &C, ld[i] * 1e15 + 0.25);
+        lref_f[i] = rsimd_neumaier_value(S, C);
+        fc[i] = ld[i] * 1e15 + 0.25;
+      }
+      for (; i < n; i++) fc[i] = ld[i];
+      check_int("cumsum comp stop", n, 0, (long) RSIMD_KERNEL(cumsum_f64)(fc, n, lout_f, &s, &o),
+                (long) stop);
+      check_f64("cumsum comp", stop < 0 ? n : stop, lout_f, lref_f, 0);
+    }
+  }
+}
+#else
+static void test_scan(ptrdiff_t n) { (void) n; }
+#endif
+
 #undef TWO_WAYS
 
 int main(void) {
@@ -1106,6 +1403,8 @@ int main(void) {
     test_na_fold(n);
 #endif
     test_reduce(n);
+    test_linalg(n);
+    test_scan(n);
   }
 #ifndef RSIMD_NO_F64_SIMD
   test_na_cancel();

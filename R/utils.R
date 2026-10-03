@@ -43,12 +43,13 @@
 }
 
 # Errors if x is of one of the element types in `unsupported` ("integer64",
-# "complex"), which function `fun` does not take; the message says "yet"
-# for the types in `later`, which it is planned to take.
-.check_supported <- function(x, fun, unsupported, later = unsupported) {
+# "complex"), which function `fun` does not take for its argument `arg`;
+# the message says "yet" for the types in `later`, which it is planned to
+# take.
+.check_supported <- function(x, fun, unsupported, later = unsupported, arg = "x") {
   type <- if (inherits(x, "integer64")) "integer64" else typeof(x)
   if (type %in% unsupported) {
-    stop(fun, "() does not support 'x' of type ", type, if (type %in% later) " yet",
+    stop(fun, "() does not support '", arg, "' of type ", type, if (type %in% later) " yet",
       call. = FALSE
     )
   }

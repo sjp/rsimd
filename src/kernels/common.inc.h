@@ -63,6 +63,11 @@
  *     reduce_max are unspecified when a lane is NaN.
  *   - Mask any/all/count look at every lane, so the lanes a predicated load
  *     filled with its fill value count too: pick a neutral fill value.
+ *   - Prefix scans (sse2, avx2, avx512, neon only; not none or the SVE
+ *     tiers): rsimd_vf64_shift_up(v, k, fill) moves lane j to lane j + k
+ *     for a power of two k < RSIMD_WIDTH_F64 and takes lanes 0 .. k - 1
+ *     from fill; rsimd_vf64_bcast_last(v) copies the last lane to every
+ *     lane; rsimd_vf64_first(v) is lane 0.
  *
  * Loops
  * -----
@@ -233,6 +238,11 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VF64_REDUCE_MIN rsimd_vf64_reduce_min
 #define RSIMD_VF64_REDUCE_MAX rsimd_vf64_reduce_max
 #define RSIMD_VF64_AS_VI64 rsimd_vf64_as_vi64
+#if !RSIMD_TIER_IS(none) && !RSIMD_TIER_IS(sve) && !RSIMD_TIER_IS(sve2)
+#define RSIMD_VF64_SHIFT_UP rsimd_vf64_shift_up
+#define RSIMD_VF64_BCAST_LAST rsimd_vf64_bcast_last
+#define RSIMD_VF64_FIRST rsimd_vf64_first
+#endif
 #define RSIMD_VI64_AS_VF64 rsimd_vi64_as_vf64
 #define RSIMD_MF64_AND rsimd_mf64_and
 #define RSIMD_MF64_OR rsimd_mf64_or
@@ -311,6 +321,16 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_MI64_ANY rsimd_mi64_any
 #define RSIMD_MI64_ALL rsimd_mi64_all
 #define RSIMD_MI64_COUNT rsimd_mi64_count
+
+/* 1 on the tiers with a native fused multiply-add, which the fast-mode
+   folds use for product terms (na.h). SSE2 has none (its rsimd_vf64_fma
+   calls libm's fma per lane), and the none tier adds rounded products. */
+#if RSIMD_TIER_IS(avx2) || RSIMD_TIER_IS(avx512) || RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2) || \
+  (RSIMD_TIER_IS(neon) && !defined(RSIMD_NO_F64_SIMD))
+#define RSIMD_NATIVE_FMA 1
+#else
+#define RSIMD_NATIVE_FMA 0
+#endif
 
 /* NA, precision and overflow helpers (scalar and vector forms). */
 #include "na.h"

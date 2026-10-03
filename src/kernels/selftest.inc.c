@@ -21,7 +21,7 @@ void RSIMD_KERNEL(selftest_sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_resul
                                     const rsimd_opts *o);
 void RSIMD_KERNEL(selftest_sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
                                     const rsimd_opts *o) {
-  rsimd_fold_sum_i32((const int32_t *) x, n, r, o);
+  rsimd_fold_sum_i32((const int32_t *) x, n, 0, r, o);
 }
 
 void RSIMD_KERNEL(selftest_lgl)(const int *x, R_xlen_t n, int stop, rsimd_reduce_result *r,
@@ -137,7 +137,7 @@ void RSIMD_KERNEL(selftest_sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_resul
                                     const rsimd_opts *o);
 void RSIMD_KERNEL(selftest_sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
                                     const rsimd_opts *o) {
-  rsimd_vfold_sum_i32((const int32_t *) x, n, r, o);
+  rsimd_vfold_sum_i32((const int32_t *) x, n, 0, r, o);
 }
 
 void RSIMD_KERNEL(selftest_lgl)(const int *x, R_xlen_t n, int stop, rsimd_reduce_result *r,

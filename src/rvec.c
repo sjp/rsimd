@@ -248,7 +248,9 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
     }
     if (missing) {
       /* NA wins over NaN, whatever the order; integer inputs have no NaN. */
-      if (r->saw_na || is_int || type == RSIMD_I64) return na_result(op, type);
+      if (r->saw_na || is_int || type == RSIMD_I64 || op == RSIMD_RED_VAR || op == RSIMD_RED_SD) {
+        return na_result(op, type);
+      }
       return Rf_ScalarReal(R_NaN);
     }
     break;

@@ -59,6 +59,21 @@ typedef struct {
   unsigned saw_na : 1, saw_nan : 1, overflow : 1, any_true : 1, any_false : 1;
 } rsimd_reduce_result;
 
+/* Element types of the two operands of dot, dist and cosine: both double,
+   both int32 (integer or logical), or double x with int32 y (entry points
+   swap a pair the other way round, as these ops are symmetric). */
+enum { RSIMD_PAIR_F64_F64 = 0, RSIMD_PAIR_I32_I32 = 1, RSIMD_PAIR_F64_I32 = 2 };
+
+/* The running state of a prefix scan (cumsum ...) between chunks: the
+   last value (the sum, product, minimum or maximum so far), the Neumaier
+   compensation of a compensated cumsum, and whether an integer cumsum
+   overflowed. Entry points start f64 at the identity: 0, 1, Inf or -Inf. */
+typedef struct {
+  double f64;
+  double comp;
+  unsigned overflow : 1;
+} rsimd_scan_state;
+
 /* Signature of every elementwise binary kernel, shown for double; other
    element types substitute their C type. A scalar operand (x_scalar or
    y_scalar set) is read from x[0] or y[0] and broadcast. */

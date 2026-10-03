@@ -42,3 +42,16 @@
   the sign of the first zero, as in base R. `simd_mean()` refines its result
   with a second pass in the `"pairwise"` and `"compensated"` modes.
   `simd_count_na()` returns a double.
+* Added `simd_sum_sq()`, `simd_sum_abs()`, `simd_norm()`, `simd_dot()`,
+  `simd_dist()`, `simd_cosine()`, `simd_var()` and `simd_sd()`, one-pass
+  (two for `var`/`sd`) reductions that read integer and logical elements as
+  doubles without converting the vector. `dot`, `dist` and `cosine` require
+  equal lengths, and their `na.rm = TRUE` drops pairs with a missing element.
+  `simd_var()` and `simd_sd()` return `NA` for any missing value, as base R
+  does. Sums of products use fused multiply-adds in `"fast"` mode where the
+  CPU has them.
+* Added the scans `simd_cumsum()`, `simd_cumprod()`, `simd_cummin()` and
+  `simd_cummax()` with base R's result types, missing-value placement and
+  integer overflow warning. Integer results and running minima/maxima are
+  identical to base R's; `simd_cumsum()` is a sequential compensated sum in
+  the `"compensated"` mode.

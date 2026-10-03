@@ -76,6 +76,19 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
   return simde_mm256_blendv_pd(a, b, m);
 }
+/* Lane moves for prefix scans (see the 128-bit layer); k is 1 or 2. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {
+  if (k == 1) {
+    return simde_mm256_blend_pd(simde_mm256_permute4x64_pd(v, SIMDE_MM_SHUFFLE(2, 1, 0, 3)), fill,
+                                0x1);
+  }
+  return simde_mm256_blend_pd(simde_mm256_permute4x64_pd(v, SIMDE_MM_SHUFFLE(1, 0, 3, 2)), fill,
+                              0x3);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_bcast_last(rsimd_vf64 v) {
+  return simde_mm256_permute4x64_pd(v, 0xFF);
+}
+RSIMD_INLINE double rsimd_vf64_first(rsimd_vf64 v) { return simde_mm256_cvtsd_f64(v); }
 RSIMD_INLINE rsimd_vi64 rsimd_vf64_as_vi64(rsimd_vf64 a) { return simde_mm256_castpd_si256(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vi64_as_vf64(rsimd_vi64 a) { return simde_mm256_castsi256_pd(a); }
 

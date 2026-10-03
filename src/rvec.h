@@ -157,26 +157,33 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y);
    px and py point at the chunk's elements of x and y. A scalar operand's
    pointer addresses its single element on every chunk (kernels read x[0]
    when x_scalar is set). */
-#define RSIMD_FOREACH_CHUNK2(b, T, px, py, len, off, ...)                              \
+#define RSIMD_FOREACH_CHUNK2(b, T, px, py, len, off, ...) \
+  RSIMD_FOREACH_CHUNK2T(b, T, T, px, py, len, off, __VA_ARGS__)
+
+/* As RSIMD_FOREACH_CHUNK2 for operands of different element types: TX is
+   the C type of x's elements, TY that of y's. */
+#define RSIMD_FOREACH_CHUNK2T(b, TX, TY, px, py, len, off, ...)                        \
   do {                                                                                 \
-    T rsimd_bufx_[RSIMD_CHUNK], rsimd_bufy_[RSIMD_CHUNK];                              \
+    TX rsimd_bufx_[RSIMD_CHUNK];                                                       \
+    TY rsimd_bufy_[RSIMD_CHUNK];                                                       \
     R_xlen_t rsimd_tick_ = 0, rsimd_l_;                                                \
-    const T *rsimd_sx_ =                                                               \
-        (b)->x_scalar ? (const T *) rsimd_in_region(&(b)->x, 0, &rsimd_l_, rsimd_bufx_) \
+    const TX *rsimd_sx_ =                                                              \
+        (b)->x_scalar ? (const TX *) rsimd_in_region(&(b)->x, 0, &rsimd_l_, rsimd_bufx_) \
                       : NULL;                                                          \
-    const T *rsimd_sy_ =                                                               \
-        (b)->y_scalar ? (const T *) rsimd_in_region(&(b)->y, 0, &rsimd_l_, rsimd_bufy_) \
+    const TY *rsimd_sy_ =                                                              \
+        (b)->y_scalar ? (const TY *) rsimd_in_region(&(b)->y, 0, &rsimd_l_, rsimd_bufy_) \
                       : NULL;                                                          \
     for (R_xlen_t off = 0; off < (b)->n;) {                                            \
       R_xlen_t len = (b)->n - off;                                                     \
-      const T *px = rsimd_sx_, *py = rsimd_sy_;                                        \
+      const TX *px = rsimd_sx_;                                                        \
+      const TY *py = rsimd_sy_;                                                        \
       if (len > rsimd_stride) len = rsimd_stride;                                      \
       if (px == NULL) {                                                                \
-        px = (const T *) rsimd_in_region(&(b)->x, off, &rsimd_l_, rsimd_bufx_);        \
+        px = (const TX *) rsimd_in_region(&(b)->x, off, &rsimd_l_, rsimd_bufx_);       \
         if (rsimd_l_ < len) len = rsimd_l_;                                            \
       }                                                                                \
       if (py == NULL) {                                                                \
-        py = (const T *) rsimd_in_region(&(b)->y, off, &rsimd_l_, rsimd_bufy_);        \
+        py = (const TY *) rsimd_in_region(&(b)->y, off, &rsimd_l_, rsimd_bufy_);       \
         if (rsimd_l_ < len) len = rsimd_l_;                                            \
       }                                                                                \
       __VA_ARGS__                                                                      \
@@ -246,6 +253,7 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
    Missing values and empty input (na.h describes the rules):
      - with na.rm = FALSE, saw_na gives NA of the result type, else saw_nan
        gives NaN, for every op but which_*, any, all, any_na and count_na;
+       var and sd give NA for either (base R);
      - any/all use three-valued logic from any_true, any_false, saw_na;
      - count is the number of surviving elements: mean of none is NaN,
        var and sd of fewer than two are NA, min and max of none are Inf and

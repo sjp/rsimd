@@ -33,7 +33,7 @@ void RSIMD_KERNEL(sum_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
 
 void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o);
 void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o) {
-  rsimd_fold_sum_i32((const int32_t *) x, n, r, o);
+  rsimd_fold_sum_i32((const int32_t *) x, n, 0, r, o);
 }
 
 void RSIMD_KERNEL(sum_dev_f64)(const double *x, R_xlen_t n, double c, rsimd_reduce_result *r,
@@ -260,7 +260,7 @@ void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off
 
 void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o);
 void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o) {
-  rsimd_vfold_sum_i32((const int32_t *) x, n, r, o);
+  rsimd_vfold_sum_i32((const int32_t *) x, n, 0, r, o);
 }
 
 /* ---- Integer and logical ---- */
@@ -488,7 +488,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_f64_)(const double *x, R_xlen_t n, co
     rsimd_vf64 v = rsimd_vf64_loadu_p(rsimd_p64_while(i, n), x + i, 1.0);
     RSIMD_PROD_STEP_(a0, v, rsimd_vf64_is_nan(v));
   }
-  if (check) rsimd_vfold_done_(mnan, removed, x, x, n, RSIMD_TERM_X, r);
+  if (check) rsimd_vfold_done_(mnan, removed, x, 0, x, 0, n, RSIMD_TERM_X, r);
   else r->count += n;
   r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(rsimd_vf64_mul(a0, a1),
                                                     rsimd_vf64_mul(a2, a3)));
@@ -715,3 +715,132 @@ void RSIMD_KERNEL(na_f64)(const double *x, R_xlen_t n, int mode, R_xlen_t off, v
 #endif /* vector tiers */
 
 #undef RSIMD_PUT_INDEX
+
+/* ---- Fused reductions: sum_sq, sum_abs, dot, dist, cosine, var ---------- */
+
+/* The none tier folds with the scalar helpers of na.h, the other tiers
+   with their vector forms; both read int32 operands as doubles. */
+#if RSIMD_TIER_IS(none)
+#define RSIMD_FOLD_ rsimd_fold_gen
+#elif !defined(RSIMD_NO_F64_SIMD)
+#define RSIMD_FOLD_ rsimd_vfold_gen
+#endif
+
+void RSIMD_KERNEL(sumabs_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+                              const rsimd_opts *o);
+void RSIMD_KERNEL(sumabs_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+                              const rsimd_opts *o) {
+#if RSIMD_TIER_IS(none)
+  rsimd_fold_sum_i32((const int32_t *) x, n, 1, r, o);
+#else
+  rsimd_vfold_sum_i32((const int32_t *) x, n, 1, r, o);
+#endif
+}
+
+#ifdef RSIMD_FOLD_
+
+/* cosine folds blocks of this many elements three times while they are
+   in cache; a multiple of RSIMD_PAIRWISE_LEAF. */
+#define RSIMD_COSINE_BLOCK 1024
+
+/* Element i of an operand of doubles or int32 elements, as a pointer. */
+static inline const void *RSIMD_KERNEL(elt_ptr_)(const void *p, int i32, R_xlen_t i) {
+  return i32 ? (const void *) ((const int *) p + i) : (const void *) ((const double *) p + i);
+}
+
+void RSIMD_KERNEL(sumsq_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+                             const rsimd_opts *o);
+void RSIMD_KERNEL(sumsq_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+                             const rsimd_opts *o) {
+  RSIMD_FOLD_(x, 0, x, 0, n, RSIMD_TERM_SQ, 0.0, r, o);
+}
+
+void RSIMD_KERNEL(sumsq_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+                             const rsimd_opts *o);
+void RSIMD_KERNEL(sumsq_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+                             const rsimd_opts *o) {
+  RSIMD_FOLD_(x, 1, x, 1, n, RSIMD_TERM_SQ, 0.0, r, o);
+}
+
+void RSIMD_KERNEL(sumabs_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+                              const rsimd_opts *o);
+void RSIMD_KERNEL(sumabs_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+                              const rsimd_opts *o) {
+  RSIMD_FOLD_(x, 0, x, 0, n, RSIMD_TERM_ABS, 0.0, r, o);
+}
+
+void RSIMD_KERNEL(var_pass2_f64)(const double *x, R_xlen_t n, double c, rsimd_reduce_result *r,
+                                 const rsimd_opts *o);
+void RSIMD_KERNEL(var_pass2_f64)(const double *x, R_xlen_t n, double c, rsimd_reduce_result *r,
+                                 const rsimd_opts *o) {
+  RSIMD_FOLD_(x, 0, x, 0, n, RSIMD_TERM_DEVSQ, c, r, o);
+}
+
+void RSIMD_KERNEL(var_pass2_i32)(const int *x, R_xlen_t n, double c, rsimd_reduce_result *r,
+                                 const rsimd_opts *o);
+void RSIMD_KERNEL(var_pass2_i32)(const int *x, R_xlen_t n, double c, rsimd_reduce_result *r,
+                                 const rsimd_opts *o) {
+  RSIMD_FOLD_(x, 1, x, 1, n, RSIMD_TERM_DEVSQ, c, r, o);
+}
+
+/* A pair term over operands of the element types `types`. */
+#define RSIMD_PAIR_FOLD_(term)                                                           \
+  do {                                                                                   \
+    switch (types) {                                                                     \
+    case RSIMD_PAIR_I32_I32: RSIMD_FOLD_(x, 1, y, 1, n, (term), 0.0, r, o); break;       \
+    case RSIMD_PAIR_F64_I32: RSIMD_FOLD_(x, 0, y, 1, n, (term), 0.0, r, o); break;       \
+    default: RSIMD_FOLD_(x, 0, y, 0, n, (term), 0.0, r, o); break;                       \
+    }                                                                                    \
+  } while (0)
+
+void RSIMD_KERNEL(dot_f64)(const void *x, const void *y, R_xlen_t n, int types,
+                           rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(dot_f64)(const void *x, const void *y, R_xlen_t n, int types,
+                           rsimd_reduce_result *r, const rsimd_opts *o) {
+  RSIMD_PAIR_FOLD_(RSIMD_TERM_XY);
+}
+
+void RSIMD_KERNEL(dist_f64)(const void *x, const void *y, R_xlen_t n, int types,
+                            rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(dist_f64)(const void *x, const void *y, R_xlen_t n, int types,
+                            rsimd_reduce_result *r, const rsimd_opts *o) {
+  RSIMD_PAIR_FOLD_(RSIMD_TERM_SQDIFF);
+}
+#undef RSIMD_PAIR_FOLD_
+
+static inline void RSIMD_KERNEL(cosine_)(const void *x, const int xi32, const void *y,
+                                         const int yi32, R_xlen_t n, rsimd_reduce_result *r,
+                                         const rsimd_opts *o) {
+  R_xlen_t i;
+  for (i = 0; i < n; i += RSIMD_COSINE_BLOCK) {
+    R_xlen_t len = n - i < RSIMD_COSINE_BLOCK ? n - i : RSIMD_COSINE_BLOCK;
+    const void *xp = RSIMD_KERNEL(elt_ptr_)(x, xi32, i), *yp = RSIMD_KERNEL(elt_ptr_)(y, yi32, i);
+    RSIMD_FOLD_(xp, xi32, yp, yi32, len, RSIMD_TERM_XY, 0.0, &r[0], o);
+    RSIMD_FOLD_(xp, xi32, xp, xi32, len, RSIMD_TERM_SQ, 0.0, &r[1], o);
+    RSIMD_FOLD_(yp, yi32, yp, yi32, len, RSIMD_TERM_SQ, 0.0, &r[2], o);
+  }
+}
+
+void RSIMD_KERNEL(cosine_f64)(const void *x, const void *y, R_xlen_t n, int types,
+                              rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(cosine_f64)(const void *x, const void *y, R_xlen_t n, int types,
+                              rsimd_reduce_result *r, const rsimd_opts *o) {
+  switch (types) {
+  case RSIMD_PAIR_I32_I32: RSIMD_KERNEL(cosine_)(x, 1, y, 1, n, r, o); break;
+  case RSIMD_PAIR_F64_I32: RSIMD_KERNEL(cosine_)(x, 0, y, 1, n, r, o); break;
+  default: RSIMD_KERNEL(cosine_)(x, 0, y, 0, n, r, o); break;
+  }
+}
+
+#undef RSIMD_FOLD_
+
+#else /* RSIMD_NO_F64_SIMD: the none tier's kernels are used */
+#define RSIMD_SKIP_sumsq_f64 1
+#define RSIMD_SKIP_sumsq_i32 1
+#define RSIMD_SKIP_sumabs_f64 1
+#define RSIMD_SKIP_var_pass2_f64 1
+#define RSIMD_SKIP_var_pass2_i32 1
+#define RSIMD_SKIP_dot_f64 1
+#define RSIMD_SKIP_dist_f64 1
+#define RSIMD_SKIP_cosine_f64 1
+#endif

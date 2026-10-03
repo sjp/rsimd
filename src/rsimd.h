@@ -32,6 +32,10 @@ SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);
 SEXP C_simd_which(SEXP x, SEXP max);
 SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm);
 SEXP C_simd_na(SEXP x, SEXP mode);
+SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision);
+SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision);
+SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision);
+SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision);
 
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);

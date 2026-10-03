@@ -85,3 +85,51 @@ RSIMD_OP(na_i32, void,
 RSIMD_OP(na_c128, void,
          (const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
           rsimd_reduce_result *r))
+
+/* Sums of x^2 and |x| in the precision mode; the _i32 kernels read
+   integer and logical elements as doubles (an NA as NA_real_), except
+   sumabs_i32, which sums exactly in i64 as sum_i32 does. */
+RSIMD_OP(sumsq_f64, void,
+         (const double *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(sumsq_i32, void, (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(sumabs_f64, void,
+         (const double *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(sumabs_i32, void, (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+/* Sums of x*y (dot) and (x - y)^2 (dist) over pairs, in the precision
+   mode, for operands of the element types `types` (RSIMD_PAIR_*); a pair
+   is missing when either element is, and na.rm removes the pair. */
+RSIMD_OP(dot_f64, void,
+         (const void *x, const void *y, R_xlen_t n, int types, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+RSIMD_OP(dist_f64, void,
+         (const void *x, const void *y, R_xlen_t n, int types, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+/* cosine's three sums in one pass over the chunk: x*y into r[0], x^2 into
+   r[1] and y^2 into r[2]. */
+RSIMD_OP(cosine_f64, void,
+         (const void *x, const void *y, R_xlen_t n, int types, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+/* The sum of (x - c)^2 in the precision mode: the second pass of var. */
+RSIMD_OP(var_pass2_f64, void,
+         (const double *x, R_xlen_t n, double c, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(var_pass2_i32, void,
+         (const int *x, R_xlen_t n, double c, rsimd_reduce_result *r, const rsimd_opts *o))
+
+/* Prefix scans. Each writes out[i] for the chunk's elements, continuing
+   from the state s of the previous chunk, and returns the index of the
+   first element it did not write, or -1 when it wrote all n: the first
+   NaN (NA included) of a double input, the first NA of an integer input,
+   or the element where an integer cumsum leaves the int32 range (which
+   also sets s->overflow). The entry point fills the rest. cumsum_f64 uses
+   a sequential compensated sum in compensated mode and a vector scan
+   otherwise; cumminmax takes the minimum (max = 0) or maximum (max = 1),
+   the later element winning ties as in base R. */
+RSIMD_OP(cumsum_f64, R_xlen_t,
+         (const double *x, R_xlen_t n, double *out, rsimd_scan_state *s, const rsimd_opts *o))
+RSIMD_OP(cumsum_i32, R_xlen_t, (const int *x, R_xlen_t n, int *out, rsimd_scan_state *s))
+RSIMD_OP(cumprod_f64, R_xlen_t, (const double *x, R_xlen_t n, double *out, rsimd_scan_state *s))
+RSIMD_OP(cumprod_i32, R_xlen_t, (const int *x, R_xlen_t n, double *out, rsimd_scan_state *s))
+RSIMD_OP(cumminmax_f64, R_xlen_t,
+         (const double *x, R_xlen_t n, int max, double *out, rsimd_scan_state *s))
+RSIMD_OP(cumminmax_i32, R_xlen_t,
+         (const int *x, R_xlen_t n, int max, int *out, rsimd_scan_state *s))
