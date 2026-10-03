@@ -1,0 +1,7 @@
+SIMDe subset vendored by tools/vendor_simde.sh
+repository: https://github.com/simd-everywhere/simde-no-tests
+commit: a3fe1602e0dbad7de46f2563d79ffb132201db3b
+commit date: 2026-09-30
+SIMDE_VERSION: 0.8.4
+headers: 96
+header bytes: 2990005

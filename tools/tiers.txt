@@ -1,0 +1,31 @@
+# rsimd ISA tier table: the single source of truth for tier build settings.
+#
+# Read by the maintainer scripts in tools/ (and by configure once it exists).
+# One row per (tier, arch) pair. Fields are separated by '|'; surrounding
+# whitespace is ignored. Lines starting with '#' and blank lines are skipped.
+#
+#   tier     tier id as used in R, C and file names
+#   arch     target the row applies to: all, x86_64, i686, aarch64, armv7
+#   flags    extra compiler flags for the tier's translation unit ('-' = none)
+#   headers  headers the tier includes, space separated ('-' = none):
+#              x86/...      a SIMDe header under src/vendor/simde
+#              <...>        a system header
+#              @avx512      the curated x86/avx512/*.h list in tools/simde_probe.c
+#   enabled  yes, or no for reserved tiers that have no kernels
+#
+# Tier-specific flags such as -mavx2 apply only to that tier's translation
+# unit, which is entered only after a runtime CPU check. No row may use
+# -march=native.
+#
+# tier   | arch    | flags                                                    | headers                          | enabled
+none     | all     | -                                                        | <math.h>                         | yes
+sse2     | x86_64  | -                                                        | x86/sse2.h                       | yes
+sse2     | i686    | -msse2 -mfpmath=sse                                      | x86/sse2.h                       | yes
+avx2     | x86_64  | -mavx2 -mfma                                             | x86/avx2.h x86/fma.h             | yes
+avx512   | x86_64  | -mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma         | @avx512                          | yes
+neon     | aarch64 | -                                                        | x86/sse2.h x86/sse4.1.h          | yes
+neon     | armv7   | -mfpu=neon                                               | <arm_neon.h>                     | yes
+sve      | aarch64 | -march=armv8-a+sve                                       | <arm_sve.h>                      | yes
+sve2     | aarch64 | -march=armv9-a+sve2                                      | <arm_sve.h>                      | yes
+rvv      | -       | -                                                        | -                                | no
+wasm128  | -       | -                                                        | -                                | no

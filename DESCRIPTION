@@ -2,7 +2,9 @@ Package: rsimd
 Title: SIMD-Accelerated Vector Primitives
 Version: 0.0.0.9000
 Authors@R: c(
-    person("Simon", "Potter", email = "simon@sjp.co.nz", role = c("aut", "cre"))
+    person("Simon", "Potter", email = "simon@sjp.co.nz", role = c("aut", "cre")),
+    person("Evan", "Nemerson", role = "cph", comment = "SIMDe"),
+    person("SIMDe authors", role = "cph", comment = "SIMDe, see inst/COPYRIGHTS")
   )
 Description: Fast vectorised primitives for R atomic vectors, including
     reductions, elementwise arithmetic, predicates, bitwise operations,
