@@ -1,0 +1,89 @@
+# Runs the benchmark suite (bench/run.R) on x86-64 and arm64 runners, on
+# demand and weekly, and uploads bench/results/ as an artifact. The markdown
+# summary goes to the job summary. Informational only: no timing is checked
+# and nothing is committed; a maintainer copies a chosen run's latest.md and
+# csv into vignettes/benchmark-results/ to refresh the benchmarks vignette.
+# Hosted runners share hardware, so expect noise between runs.
+on:
+  schedule:
+    - cron: "0 4 * * 6"
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: "Quick run (sizes 1e3 and 1e5, shorter timing budgets)"
+        type: boolean
+        default: false
+      ops:
+        description: "Comma-separated ops (empty for all), e.g. sum,add"
+        type: string
+        default: ""
+      sizes:
+        description: "Comma-separated sizes (empty for the default), e.g. 1e3,1e5"
+        type: string
+        default: ""
+
+name: benchmarks
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmarks:
+    runs-on: ${{ matrix.os }}
+    name: benchmarks ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-14]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::bench
+
+      - name: Install rsimd
+        run: R CMD INSTALL .
+
+      - name: Run the benchmark suite
+        env:
+          QUICK: ${{ inputs.quick }}
+          OPS: ${{ inputs.ops }}
+          SIZES: ${{ inputs.sizes }}
+        run: |
+          set -- bench/run.R
+          if [ "$QUICK" = "true" ]; then set -- "$@" --quick; fi
+          if [ -n "$OPS" ]; then set -- "$@" --ops "$OPS"; fi
+          if [ -n "$SIZES" ]; then set -- "$@" --sizes "$SIZES"; fi
+          Rscript "$@"
+
+      - name: Add the results to the job summary
+        if: always()
+        run: |
+          if [ -f bench/results/latest.md ]; then
+            cat bench/results/latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: benchmarks-${{ matrix.os }}
+          path: |
+            bench/results/
+            !bench/results/.gitkeep
+          retention-days: 90
+          if-no-files-found: warn

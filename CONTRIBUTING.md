@@ -74,6 +74,7 @@ On a schedule, and on demand with "Run workflow":
 | `noLD` | weekly | R CMD check and the suite per tier on R-hub's `nold` container (R without long double). |
 | `emulation-sde` | weekly | The `avx512` tier under Intel SDE (Sapphire Rapids and Ice Lake models, `tier_emulation` subset), and `auto` choosing `sse2` on a Merom model (quick subset). |
 | `emulation-qemu` | weekly | The `sve` and `sve2` tiers under `qemu-aarch64` at 256- and 512-bit vectors (`tier_emulation` subset), and `auto` choosing `neon` on a Cortex-A72 model (quick subset). |
+| `benchmarks` | weekly | `bench/run.R` on Linux x86-64, Linux arm64 and macOS arm64; results uploaded as an artifact and shown in the job summary (see `bench/README.md`). Informational; never fails on timings. |
 
 The emulated runs use the reduced test subsets described in `tests/README.md`
 (`RSIMD_TEST_SUBSET`, `RSIMD_TEST_TIERS`). To run the jobs locally, install the

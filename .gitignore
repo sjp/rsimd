@@ -12,3 +12,5 @@ config.log
 compile_commands.json
 .cache/
 .sde/
+bench/results/*
+!bench/results/.gitkeep
