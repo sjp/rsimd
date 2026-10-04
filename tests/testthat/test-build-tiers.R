@@ -15,7 +15,11 @@ test_that("every configured tier object is linked and names itself", {
 test_that("the platform baseline tier is compiled unless disabled", {
   tiers <- simd_compiled_tiers()
   disabled <- split_tiers(attr(tiers, "disabled"))
-  baseline <- switch(simd_cpu_features()$arch, x86_64 = "sse2", aarch64 = "neon", NULL)
+  baseline <- switch(simd_cpu_features()$arch,
+    x86_64 = "sse2",
+    aarch64 = "neon",
+    NULL
+  )
   skip_if(is.null(baseline), "no baseline tier on this architecture")
   expect_true(baseline %in% tiers || baseline %in% disabled)
 })

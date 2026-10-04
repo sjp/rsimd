@@ -1,8 +1,10 @@
 # Elementwise comparisons: identical() to base R's operators for every type
 # pair, NA positions included, on every tier.
 
-cmp_ops <- list(simd_eq = `==`, simd_ne = `!=`, simd_lt = `<`, simd_le = `<=`,
-                simd_gt = `>`, simd_ge = `>=`)
+cmp_ops <- list(
+  simd_eq = `==`, simd_ne = `!=`, simd_lt = `<`, simd_le = `<=`,
+  simd_gt = `>`, simd_ge = `>=`
+)
 
 cmp_values <- list(
   double = c(0, -0, 1, -1, 1.5, 200, 255.5, 2147483647, -2147483647, 1e300, Inf, -Inf, NA, NaN),

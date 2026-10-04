@@ -59,21 +59,26 @@ test_that("fused reductions match the oracle on every tier for all edge lengths"
       xd <- as.double(x)
       for (na_rm in c(FALSE, TRUE)) {
         for (mode in modes) {
-          expect_fused_equal(simd_sum_sq, x, na.rm = na_rm,
+          expect_fused_equal(simd_sum_sq, x,
+            na.rm = na_rm,
             mass = finite_mass(xd^2), rel = rel, precision = mode
           )
-          expect_fused_equal(simd_norm, x, na.rm = na_rm,
+          expect_fused_equal(simd_norm, x,
+            na.rm = na_rm,
             mass = sqrt(finite_mass(xd^2)), rel = rel, precision = mode
           )
           if (is.double(x)) {
-            expect_fused_equal(simd_sum_abs, x, na.rm = na_rm,
+            expect_fused_equal(simd_sum_abs, x,
+              na.rm = na_rm,
               mass = finite_mass(xd), rel = rel, precision = mode
             )
           }
-          expect_fused_equal(simd_var, x, na.rm = na_rm,
+          expect_fused_equal(simd_var, x,
+            na.rm = na_rm,
             mass = 0, rel = 8 * rel, precision = mode
           )
-          expect_fused_equal(simd_sd, x, na.rm = na_rm,
+          expect_fused_equal(simd_sd, x,
+            na.rm = na_rm,
             mass = 0, rel = 8 * rel, precision = mode
           )
         }
@@ -91,10 +96,12 @@ test_that("fused reductions match the oracle on every tier for all edge lengths"
       sq <- (as.double(x) - as.double(y))^2
       for (mode in modes) {
         for (na_rm in c(FALSE, TRUE)) {
-          expect_fused_equal(simd_dot, x, y, na.rm = na_rm,
+          expect_fused_equal(simd_dot, x, y,
+            na.rm = na_rm,
             mass = finite_mass(xy), rel = rel, precision = mode
           )
-          expect_fused_equal(simd_dist, x, y, na.rm = na_rm,
+          expect_fused_equal(simd_dist, x, y,
+            na.rm = na_rm,
             mass = sqrt(finite_mass(sq)), rel = rel, precision = mode
           )
         }
@@ -178,8 +185,10 @@ test_that("missing values: NA beats NaN, var and sd give NA, na.rm drops pairs",
   for (x in cases) {
     want_na <- anyNA(x) && any(is.na(x) & !is.nan(x))
     res <- with_each_tier(function() {
-      c(simd_sum_sq(x), simd_sum_abs(x), simd_norm(x), simd_dot(x, x), simd_dist(x, 0 * x),
-        simd_cosine(x, x + 1))
+      c(
+        simd_sum_sq(x), simd_sum_abs(x), simd_norm(x), simd_dot(x, x), simd_dist(x, 0 * x),
+        simd_cosine(x, x + 1)
+      )
     })
     for (tier in names(res)) {
       expect_true(all(is.na(res[[tier]])), info = tier)

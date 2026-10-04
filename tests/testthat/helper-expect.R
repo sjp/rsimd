@@ -14,7 +14,9 @@ eps <- 2^-52
 
 # sum(abs(x)) over the finite elements of x, as a double.
 abs_mass <- function(x) {
-  if (!is.numeric(x) && !is.logical(x)) return(0)
+  if (!is.numeric(x) && !is.logical(x)) {
+    return(0)
+  }
   x <- as.double(x)
   sum(abs(x[is.finite(x)]))
 }
@@ -40,13 +42,19 @@ double_mismatch <- function(a, b, bound, rel, nan = TRUE) {
   if (length(a) != length(b)) {
     return(sprintf("lengths differ: %d vs %d", length(a), length(b)))
   }
-  if (!identical(is.na(a), is.na(b))) return("is.na() differs")
-  if (nan && !identical(is.nan(a), is.nan(b))) return("is.nan() differs")
+  if (!identical(is.na(a), is.na(b))) {
+    return("is.na() differs")
+  }
+  if (nan && !identical(is.nan(a), is.nan(b))) {
+    return("is.nan() differs")
+  }
   ok <- !is.na(a)
   a <- a[ok]
   b <- b[ok]
   inf <- is.infinite(a) | is.infinite(b)
-  if (!identical(a[inf], b[inf])) return("infinite values differ")
+  if (!identical(a[inf], b[inf])) {
+    return("infinite values differ")
+  }
   a <- a[!inf]
   b <- b[!inf]
   diff <- abs(a - b)

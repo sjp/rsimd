@@ -4,9 +4,15 @@
 # same kind (NA or NaN) in the same places, and every other element
 # identical bit for bit (so 0 and -0 differ)? Attributes are compared too.
 same_values <- function(a, b) {
-  if (!identical(typeof(a), typeof(b)) || length(a) != length(b)) return(FALSE)
-  if (!identical(attributes(a), attributes(b))) return(FALSE)
-  if (!is.double(a)) return(identical(a, b))
+  if (!identical(typeof(a), typeof(b)) || length(a) != length(b)) {
+    return(FALSE)
+  }
+  if (!identical(attributes(a), attributes(b))) {
+    return(FALSE)
+  }
+  if (!is.double(a)) {
+    return(identical(a, b))
+  }
   ok <- !is.na(a)
   identical(is.na(a), is.na(b)) && identical(is.nan(a), is.nan(b)) &&
     identical(a[ok], b[ok], num.eq = FALSE)
@@ -14,9 +20,15 @@ same_values <- function(a, b) {
 
 # A short description of the first element where a and b differ.
 first_difference <- function(a, b) {
-  if (!identical(typeof(a), typeof(b))) return(sprintf("types %s vs %s", typeof(a), typeof(b)))
-  if (length(a) != length(b)) return(sprintf("lengths %d vs %d", length(a), length(b)))
-  if (!identical(attributes(a), attributes(b))) return("attributes differ")
+  if (!identical(typeof(a), typeof(b))) {
+    return(sprintf("types %s vs %s", typeof(a), typeof(b)))
+  }
+  if (length(a) != length(b)) {
+    return(sprintf("lengths %d vs %d", length(a), length(b)))
+  }
+  if (!identical(attributes(a), attributes(b))) {
+    return("attributes differ")
+  }
   kind <- function(v) {
     if (is.double(v)) {
       ifelse(is.na(v) & !is.nan(v), "NA", ifelse(is.nan(v), "NaN", sprintf("%a", v)))

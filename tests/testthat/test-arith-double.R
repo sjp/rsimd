@@ -44,10 +44,14 @@ test_that("%/% and %% reproduce base R's special cases", {
   expect_tiers_give(c(Inf, -Inf, NaN, NaN), simd_idiv, c(5, -5, 0, NaN), 0)
   expect_tiers_give(c(-4, -4, -4, -4), simd_idiv, c(-7, 7, -7.5, 7.5), c(2, -2, 2, -2))
   expect_tiers_give(c(1, -1, 0.5, 1.5), simd_mod, c(-7, 7, -5.5, 5.5), c(2, -2, 2, 2))
-  expect_tiers_give(c(NaN, 2, Inf, -Inf, -2, NaN, NaN), simd_mod, c(Inf, 2, -2, 2, -2, -Inf, Inf),
-                    c(2, Inf, Inf, -Inf, -Inf, -Inf, Inf))
-  expect_tiers_give(c(-1, 0, 0, -1, 0, Inf), simd_idiv, c(-2, 2, -2, 2, 0, Inf),
-                    c(Inf, Inf, -Inf, -Inf, Inf, 2))
+  expect_tiers_give(
+    c(NaN, 2, Inf, -Inf, -2, NaN, NaN), simd_mod, c(Inf, 2, -2, 2, -2, -Inf, Inf),
+    c(2, Inf, Inf, -Inf, -Inf, -Inf, Inf)
+  )
+  expect_tiers_give(
+    c(-1, 0, 0, -1, 0, Inf), simd_idiv, c(-2, 2, -2, 2, 0, Inf),
+    c(Inf, Inf, -Inf, -Inf, Inf, 2)
+  )
   expect_tiers_give(1, simd_mod, 1e20, 3)
   expect_tiers_give(NaN, simd_mod, 5, 0)
   # A zero remainder is +0, except that an infinite divisor returns x.
@@ -99,8 +103,10 @@ test_that("%/% and %% match base R on random doubles", {
   i <- rand_vec("integer", 500, seed = 13L)
   j <- c(-7, 2.5, 0, 3)
   expect_tiers_give(na_merged(i %% 2.5, i), simd_mod, i, 2.5)
-  expect_tiers_give(na_merged(rep(i, 4) %/% rep(j, each = 500), i), simd_idiv, rep(i, 4),
-                    rep(j, each = 500))
+  expect_tiers_give(
+    na_merged(rep(i, 4) %/% rep(j, each = 500), i), simd_idiv, rep(i, 4),
+    rep(j, each = 500)
+  )
 })
 
 test_that("fma is fused on every tier; mul_add and add_mul are not", {

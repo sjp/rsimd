@@ -69,8 +69,10 @@ test_that("sinpi, cospi and tanpi are exact at the integers and half-integers", 
 
 test_that("the pi functions reduce huge arguments exactly", {
   # 2^53 + 1 rounds to 2^53; 2^52 + 1 and 1e9 + 1 are odd.
-  x <- c(1e300, -1e300, 2^53 + 2, 2^53 + 1, 1e17, -1e17, 2^52 + 1, 2^51 + 0.5,
-         2.5e8 + 0.5, 1e9 + 1, -(2^51 + 0.5))
+  x <- c(
+    1e300, -1e300, 2^53 + 2, 2^53 + 1, 1e17, -1e17, 2^52 + 1, 2^51 + 0.5,
+    2.5e8 + 0.5, 1e9 + 1, -(2^51 + 0.5)
+  )
   expect_tiers_give(c(0, -0, 0, 0, 0, -0, 0, 1, 1, 0, -1), simd_sinpi, x)
   expect_tiers_give(c(1, 1, 1, 1, 1, 1, -1, 0, 0, -1, 0), simd_cospi, x)
   expect_tiers_give(
@@ -98,8 +100,10 @@ test_that("the pi functions give NaN with a warning for infinities", {
 })
 
 test_that("simd_pow() is bit-identical to base R's ^ at its special cases", {
-  v <- c(0, -0, 1, -1, 2, -2, 3, 0.5, -0.5, 1 / 3, -8, 11, -11, 11.5, 12, 4, 10, 1e300, 1e-300,
-         Inf, -Inf, NaN, NA)
+  v <- c(
+    0, -0, 1, -1, 2, -2, 3, 0.5, -0.5, 1 / 3, -8, 11, -11, 11.5, 12, 4, 10, 1e300, 1e-300,
+    Inf, -Inf, NaN, NA
+  )
   p <- all_pairs(v)
   # Missing values by the package's rule: 1 when x is 1 or y is 0,
   # otherwise NA when either operand is NA. (Base R warns about its own

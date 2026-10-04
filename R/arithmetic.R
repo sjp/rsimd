@@ -152,7 +152,9 @@ simd_round <- function(x, digits = 0) {
   if (!(is.numeric(digits) || is.logical(digits)) || length(digits) != 1L) {
     stop("'digits' must be a single number", call. = FALSE)
   }
-  if (!is.na(digits) && digits == 0) return(.ew1(x, "round", "simd_round"))
+  if (!is.na(digits) && digits == 0) {
+    return(.ew1(x, "round", "simd_round"))
+  }
   .sync_impl()
   .ew_check("simd_round", list(x = x))
   .Call(C_simd_round_digits, x, digits)

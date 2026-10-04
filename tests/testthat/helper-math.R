@@ -13,7 +13,9 @@ zero_sign <- function(x) ifelse(!is.na(x) & x == 0, sign(1 / x), NA)
 # place, or within `abs` where both are below `abs_below` in magnitude; else
 # a description of the first difference.
 math_mismatch <- function(a, b, ulps, x = NULL, zeros = TRUE, abs = 0, abs_below = 0) {
-  if (!is.double(a) || length(a) != length(b)) return("types or lengths differ")
+  if (!is.double(a) || length(a) != length(b)) {
+    return("types or lengths differ")
+  }
   kind <- function(v) ifelse(is.na(v) & !is.nan(v), "NA", ifelse(is.nan(v), "NaN", ""))
   bad <- kind(a) != kind(b) | xor(is.infinite(a), is.infinite(b))
   both_zero <- !is.na(a) & !is.na(b) & a == 0 & b == 0
@@ -23,7 +25,9 @@ math_mismatch <- function(a, b, ulps, x = NULL, zeros = TRUE, abs = 0, abs_below
   small <- num & pmax(abs(a), abs(b)) < abs_below & abs(a - b) <= abs
   bad <- bad | (num & d > ulps & !small) | (is.infinite(a) & a != b)
   bad[is.na(bad)] <- TRUE
-  if (!any(bad)) return(NULL)
+  if (!any(bad)) {
+    return(NULL)
+  }
   i <- which(bad)[1L]
   sprintf(
     "%d of %d differ; first at %s: %a vs %a (%g ULP, bound %g)", sum(bad), length(bad),

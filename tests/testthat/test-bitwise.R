@@ -15,7 +15,9 @@ boundary_bits <- function() {
 sar_ref <- function(x, k) as.integer(floor(as.double(x) / 2^k))
 rotl_ref <- function(x, k) {
   u <- u32(x)
-  if (k == 0) return(x)
+  if (k == 0) {
+    return(x)
+  }
   from_u32((u * 2^k) %% 2^32 + u %/% 2^(32 - k))
 }
 rotr_ref <- function(x, k) if (k == 0) x else rotl_ref(x, 32 - k)
