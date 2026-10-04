@@ -1,0 +1,52 @@
+# Checks whether the vendored SIMDe and SLEEF are behind upstream releases
+# with tools/check_upstream.sh. Dependabot cannot see these pins, so for each
+# library that is behind this opens an issue, or updates the open one when a
+# newer release has appeared since.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+name: upstream-check
+
+permissions: read-all
+
+jobs:
+  upstream-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare vendored versions with upstream releases
+        run: sh tools/check_upstream.sh | tee upstream.txt
+
+      - name: Open or update issues
+        run: |
+          while read -r name vendored latest repo status; do
+            [ "$status" = behind ] || continue
+            title="Vendored $name is behind upstream"
+            case "$name" in
+              SIMDe) script=tools/vendor_simde.sh ;;
+              SLEEF) script=tools/vendor_sleef.sh ;;
+            esac
+            body="The vendored $name is $vendored; the newest upstream release is $latest ($repo/tags).
+
+          To update, follow the instructions at the top of \`$script\`.
+
+          Reported by the upstream-check workflow."
+            number=$(gh issue list --state open --search "in:title \"$title\"" \
+              --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+            if [ -z "$number" ]; then
+              gh issue create --title "$title" --body "$body"
+            elif [ "$(gh issue view "$number" --json body --jq .body)" != "$body" ]; then
+              gh issue edit "$number" --body "$body"
+            else
+              echo "$title: issue #$number is up to date"
+            fi
+          done < upstream.txt
