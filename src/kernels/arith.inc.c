@@ -271,29 +271,63 @@ int RSIMD_KERNEL(ew1_i32)(int op, const int *x, R_xlen_t n, int *out, const rsim
   return 0;
 }
 
-/* %/% or %% of int32 operands through double lanes (exact, na.h). */
-static inline void rsimd_ew_intdiv_i32(const int *x, const int *y, R_xlen_t n, int flags,
-                                       int mod, int check, int *out) {
+/* %/% or %% of an int32 vector x by a scalar d other than 0 and
+   INT32_MIN, by multiplication (rsimd_vi32_intdiv_const, na.h). */
+static inline void rsimd_ew_intdiv_const_i32(const int *x, int32_t d, R_xlen_t n, int mod,
+                                             int check, int *out) {
+  const rsimd_divmagic_i32 g = rsimd_divmagic_i32_make(d);
+  ptrdiff_t i = 0;
+  for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
+    rsimd_vi32_storeu(out + i, rsimd_vi32_intdiv_const(rsimd_vi32_loadu(x + i), &g, mod, check));
+  }
+  if (i < n) {
+    rsimd_p32 pg = rsimd_p32_while(i, n);
+    rsimd_vi32_storeu_p(pg, out + i,
+                        rsimd_vi32_intdiv_const(rsimd_vi32_loadu_p(pg, x + i, 0), &g, mod, check));
+  }
+}
+
+/* %/% or %% of int32 operands through double lanes (exact, na.h), two
+   vectors per step. Inlined with constant arguments for the common case,
+   so that the tests of xs, ys, mod and check leave the loop. */
+RSIMD_ALWAYS_INLINE void rsimd_ew_intdiv_i32_(const int *x, const int *y, R_xlen_t n, const int xs,
+                                              const int ys, const int mod, const int check,
+                                              int *out) {
 #ifdef RSIMD_NO_F64_SIMD
-  const R_xlen_t sx = RSIMD_EW_IS_SCALAR(flags, 0) ? 0 : 1, sy = RSIMD_EW_IS_SCALAR(flags, 1) ? 0 : 1;
+  const R_xlen_t sx = xs ? 0 : 1, sy = ys ? 0 : 1;
   R_xlen_t i;
   for (i = 0; i < n; i++) out[i] = rsimd_intdiv_i32(x[i * sx], y[i * sy], mod, check);
 #else
+  const ptrdiff_t W = RSIMD_LANES_64;
   const rsimd_vf64 bx = rsimd_vf64_set1((double) x[0]), by = rsimd_vf64_set1((double) y[0]);
-  const int xs = RSIMD_EW_IS_SCALAR(flags, 0), ys = RSIMD_EW_IS_SCALAR(flags, 1);
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_vf64 a = xs ? bx : rsimd_vf64_loadu_i32(x + i);
-    rsimd_vf64 b = ys ? by : rsimd_vf64_loadu_i32(y + i);
-    rsimd_vf64_storeu_i32(out + i, rsimd_vf64_intdiv(a, b, mod, check));
+  for (; i + 2 * W <= n; i += 2 * W) {
+    rsimd_vf64 a0 = xs ? bx : rsimd_vf64_loadu_i32(x + i);
+    rsimd_vf64 a1 = xs ? bx : rsimd_vf64_loadu_i32(x + i + W);
+    rsimd_vf64 b0 = ys ? by : rsimd_vf64_loadu_i32(y + i);
+    rsimd_vf64 b1 = ys ? by : rsimd_vf64_loadu_i32(y + i + W);
+    rsimd_vf64_storeu_i32(out + i, rsimd_vf64_intdiv(a0, b0, mod, check));
+    rsimd_vf64_storeu_i32(out + i + W, rsimd_vf64_intdiv(a1, b1, mod, check));
   }
-  if (i < n) {
+  for (; i < n; i += W) {
     rsimd_p64 pg = rsimd_p64_while(i, n);
     rsimd_vf64 a = xs ? bx : rsimd_vf64_loadu_i32_p(pg, x + i, x[i]);
     rsimd_vf64 b = ys ? by : rsimd_vf64_loadu_i32_p(pg, y + i, y[i]);
     rsimd_vf64_storeu_i32_p(pg, out + i, rsimd_vf64_intdiv(a, b, mod, check));
   }
 #endif
+}
+static void rsimd_ew_intdiv_i32(const int *x, const int *y, R_xlen_t n, int flags, int mod,
+                                int check, int *out) {
+  const int xs = RSIMD_EW_IS_SCALAR(flags, 0), ys = RSIMD_EW_IS_SCALAR(flags, 1);
+  if (xs || ys) rsimd_ew_intdiv_i32_(x, y, n, xs, ys, mod, check, out);
+  else if (mod) {
+    if (check) rsimd_ew_intdiv_i32_(x, y, n, 0, 0, 1, 1, out);
+    else rsimd_ew_intdiv_i32_(x, y, n, 0, 0, 1, 0, out);
+  } else {
+    if (check) rsimd_ew_intdiv_i32_(x, y, n, 0, 0, 0, 1, out);
+    else rsimd_ew_intdiv_i32_(x, y, n, 0, 0, 0, 0, out);
+  }
 }
 
 int RSIMD_KERNEL(ew2_i32)(int op, const int *x, const int *y, R_xlen_t n, int flags, int *out,
@@ -322,7 +356,12 @@ int RSIMD_KERNEL(ew2_i32)(int op, const int *x, const int *y, R_xlen_t n, int fl
   case RSIMD_EW_MUL_WRAP: RSIMD_EW_I32_LOOP(2, RSIMD_EW_I32_WRAP(r, a, b, rsimd_vi32_mul)); break;
   case RSIMD_EW_IDIV:
   case RSIMD_EW_MOD:
-    rsimd_ew_intdiv_i32(x, y, n, flags, op == RSIMD_EW_MOD, check, out);
+    if (!RSIMD_EW_IS_SCALAR(flags, 0) && RSIMD_EW_IS_SCALAR(flags, 1) && y[0] != 0 &&
+        y[0] != RSIMD_NA_I32) {
+      rsimd_ew_intdiv_const_i32(x, y[0], n, op == RSIMD_EW_MOD, check, out);
+    } else {
+      rsimd_ew_intdiv_i32(x, y, n, flags, op == RSIMD_EW_MOD, check, out);
+    }
     break;
   /* NA is INT32_MIN, so min propagates it and max ignores it by itself. */
   case RSIMD_EW_PMIN: RSIMD_EW_I32_LOOP(2, r = rsimd_vi32_min(a, b)); break;

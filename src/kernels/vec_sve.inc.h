@@ -194,6 +194,12 @@ RSIMD_INLINE rsimd_mi32 rsimd_vi32_is_na(rsimd_vi32 a) {
 RSIMD_INLINE rsimd_mi64 rsimd_vi64_is_na(rsimd_vi64 a) {
   return svcmpeq_n_s64(RSIMD_PT64, a, INT64_MIN);
 }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_inc(rsimd_vi32 acc, rsimd_mi32 m) {
+  return svadd_n_s32_m(m, acc, 1);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_inc(rsimd_vi64 acc, rsimd_mi64 m) {
+  return svadd_n_s64_m(m, acc, 1);
+}
 /* SADDV widens 32-bit lanes to a 64-bit sum, so this is exact. */
 RSIMD_INLINE int64_t rsimd_vi32_reduce_add(rsimd_vi32 a) { return svaddv_s32(RSIMD_PT32, a); }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 a) { return svaddv_s64(RSIMD_PT64, a); }

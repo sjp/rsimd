@@ -92,6 +92,31 @@ test_that("integer %/% and %% match base R, zero divisor NA without warning", {
   expect_tiers_give(x %% y, simd_mod, x, y)
 })
 
+test_that("integer %/% and %% by a scalar match base R for every kind of divisor", {
+  # A scalar divisor takes a division-free path (multiplication by a magic
+  # number), which differs by divisor: small, powers of two and their
+  # neighbours, +-1, the extremes.
+  p2 <- as.integer(2^(1:30))
+  divisors <- c(
+    -9:-1, 1:9, p2, -p2, p2 - 1L, 1L - p2, p2 + 1L, -p2 - 1L,
+    imax, -imax, imax - 1L, 641L, -6700417L, 1000000007L
+  )
+  x <- c(
+    0L, 1L, -1L, imax, -imax, imax - 1L, -imax + 1L, NA,
+    rand_vec("integer", 997, seed = 5L), seq(-3000L, 3000L, by = 7L)
+  )
+  for (d in divisors) {
+    info <- paste("divisor", d)
+    expect_tiers_give(x %/% d, simd_idiv, x, d)
+    expect_tiers_give(x %% d, simd_mod, x, d)
+    ok <- x[!is.na(x)]
+    expect_identical(simd_idiv(ok, d, na_check = FALSE), ok %/% d, info = info)
+    expect_identical(simd_mod(ok, d, na_check = FALSE), ok %% d, info = info)
+  }
+  expect_identical(simd_idiv(x, NA_integer_), x %/% NA_integer_)
+  expect_identical(simd_mod(x, 0L), x %% 0L)
+})
+
 test_that("mul_add and add_mul follow base R's composition", {
   vals <- c(0L, 1L, -1L, 2L, 46341L, -46341L, 65536L, imax, -imax, NA)
   g <- expand.grid(x = vals, y = vals, z = c(0L, 1L, -1L, imax, -imax, NA))

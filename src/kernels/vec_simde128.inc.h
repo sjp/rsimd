@@ -10,6 +10,17 @@
 #include "x86/fma.h"
 #endif
 
+/* On AArch64 a few operations use NEON intrinsics directly where SIMDe's
+   translation of the SSE2 call takes several instructions (blend, mask
+   any/all/count, mulhi, shifts by a run-time count, the double -> int32
+   store). */
+#if defined(SIMDE_ARM_NEON_A64V8_NATIVE)
+#define RSIMD_S128_A64 1
+#define RSIMD_A64_U32(a) simde__m128i_to_neon_u32(a)
+#define RSIMD_A64_U64(a) simde__m128i_to_neon_u64(a)
+#define RSIMD_A64_D_U64(a) simde__m128d_to_neon_u64(a)
+#endif
+
 #define RSIMD_WIDTH_F64 2
 #define RSIMD_WIDTH_I64 2
 #define RSIMD_WIDTH_I32 4
@@ -81,7 +92,12 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
   return simde_mm_and_pd(simde_mm_castsi128_pd(lo), simde_mm_cmpunord_pd(a, a));
 }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
+#ifdef RSIMD_S128_A64
+  return simde__m128d_from_neon_f64(
+    vbslq_f64(RSIMD_A64_D_U64(m), simde__m128d_to_neon_f64(b), simde__m128d_to_neon_f64(a)));
+#else
   return simde_mm_or_pd(simde_mm_and_pd(m, b), simde_mm_andnot_pd(m, a));
+#endif
 }
 /* Deinterleave: lanes 0, 2, 4 ... (uzp_even) or 1, 3, 5 ... (uzp_odd) of
    the concatenation a:b, so the real and the imaginary parts of the
@@ -111,18 +127,38 @@ RSIMD_INLINE rsimd_mf64 rsimd_mf64_not(rsimd_mf64 a) {
 RSIMD_INLINE rsimd_mf64 rsimd_mf64_andnot(rsimd_mf64 a, rsimd_mf64 b) {
   return simde_mm_andnot_pd(a, b);
 }
+#ifdef RSIMD_S128_A64
+/* A mask lane is all ones or all zeros, so the unsigned max/min over the
+   32-bit words tells whether any/all lanes are set, and minus the sum of
+   the 64-bit lanes counts them. */
+RSIMD_INLINE int rsimd_mf64_any(rsimd_mf64 a) {
+  return vmaxvq_u32(vreinterpretq_u32_u64(RSIMD_A64_D_U64(a))) != 0;
+}
+RSIMD_INLINE int rsimd_mf64_all(rsimd_mf64 a) {
+  return vminvq_u32(vreinterpretq_u32_u64(RSIMD_A64_D_U64(a))) != 0;
+}
+RSIMD_INLINE int rsimd_mf64_count(rsimd_mf64 a) {
+  return (int) (0 - vaddvq_u64(RSIMD_A64_D_U64(a)));
+}
+#else
 RSIMD_INLINE int rsimd_mf64_any(rsimd_mf64 a) { return simde_mm_movemask_pd(a) != 0; }
 RSIMD_INLINE int rsimd_mf64_all(rsimd_mf64 a) { return simde_mm_movemask_pd(a) == 3; }
 RSIMD_INLINE int rsimd_mf64_count(rsimd_mf64 a) {
   return rsimd_popcount32((uint32_t) simde_mm_movemask_pd(a));
 }
+#endif
 RSIMD_INLINE rsimd_mf64 rsimd_mi64_to_mf64(rsimd_mi64 m) { return simde_mm_castsi128_pd(m); }
 RSIMD_INLINE rsimd_mi64 rsimd_mf64_to_mi64(rsimd_mf64 m) { return simde_mm_castpd_si128(m); }
 #endif /* RSIMD_NO_F64_SIMD */
 
 /* Bitwise operations on the integer register type. */
 RSIMD_INLINE simde__m128i rsimd_s128_blend(simde__m128i a, simde__m128i b, simde__m128i m) {
+#ifdef RSIMD_S128_A64
+  return simde__m128i_from_neon_u32(
+    vbslq_u32(RSIMD_A64_U32(m), RSIMD_A64_U32(b), RSIMD_A64_U32(a)));
+#else
   return simde_mm_or_si128(simde_mm_and_si128(m, b), simde_mm_andnot_si128(m, a));
+#endif
 }
 
 #define RSIMD_S128_BITWISE(v)                                                     \
@@ -191,11 +227,19 @@ RSIMD_INLINE rsimd_mi32 rsimd_vi32_is_na(rsimd_vi32 a) {
   return simde_mm_cmpeq_epi32(a, simde_mm_set1_epi32(INT32_MIN));
 }
 RSIMD_S128_MASK(mi32)
+#ifdef RSIMD_S128_A64
+RSIMD_INLINE int rsimd_mi32_any(rsimd_mi32 a) { return vmaxvq_u32(RSIMD_A64_U32(a)) != 0; }
+RSIMD_INLINE int rsimd_mi32_all(rsimd_mi32 a) { return vminvq_u32(RSIMD_A64_U32(a)) != 0; }
+RSIMD_INLINE int rsimd_mi32_count(rsimd_mi32 a) { return (int) (0 - vaddvq_u32(RSIMD_A64_U32(a))); }
+#else
 RSIMD_INLINE int rsimd_mi32_any(rsimd_mi32 a) { return simde_mm_movemask_epi8(a) != 0; }
 RSIMD_INLINE int rsimd_mi32_all(rsimd_mi32 a) { return simde_mm_movemask_epi8(a) == 0xFFFF; }
 RSIMD_INLINE int rsimd_mi32_count(rsimd_mi32 a) {
   return rsimd_popcount32((uint32_t) simde_mm_movemask_ps(simde_mm_castsi128_ps(a)));
 }
+#endif
+/* acc + 1 in the lanes where m is set (a set lane is -1). */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_inc(rsimd_vi32 acc, rsimd_mi32 m) { return rsimd_vi32_sub(acc, m); }
 
 /* 64-bit integers */
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu(const int64_t *p) {
@@ -232,11 +276,18 @@ RSIMD_INLINE rsimd_mi64 rsimd_vi64_is_na(rsimd_vi64 a) {
   return simde_mm_cmpeq_epi64(a, simde_mm_set1_epi64x(INT64_MIN));
 }
 RSIMD_S128_MASK(mi64)
+#ifdef RSIMD_S128_A64
+RSIMD_INLINE int rsimd_mi64_any(rsimd_mi64 a) { return vmaxvq_u32(RSIMD_A64_U32(a)) != 0; }
+RSIMD_INLINE int rsimd_mi64_all(rsimd_mi64 a) { return vminvq_u32(RSIMD_A64_U32(a)) != 0; }
+RSIMD_INLINE int rsimd_mi64_count(rsimd_mi64 a) { return (int) (0 - vaddvq_u64(RSIMD_A64_U64(a))); }
+#else
 RSIMD_INLINE int rsimd_mi64_any(rsimd_mi64 a) { return simde_mm_movemask_epi8(a) != 0; }
 RSIMD_INLINE int rsimd_mi64_all(rsimd_mi64 a) { return simde_mm_movemask_epi8(a) == 0xFFFF; }
 RSIMD_INLINE int rsimd_mi64_count(rsimd_mi64 a) {
   return rsimd_popcount32((uint32_t) simde_mm_movemask_epi8(a)) / 8;
 }
+#endif
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_inc(rsimd_vi64 acc, rsimd_mi64 m) { return rsimd_vi64_sub(acc, m); }
 
 #undef RSIMD_S128_BITWISE
 #undef RSIMD_S128_MASK
@@ -244,12 +295,31 @@ RSIMD_INLINE int rsimd_mi64_count(rsimd_mi64 a) {
 /* Width conversions and extras. The 64-bit-lane conversions move
    RSIMD_WIDTH_I64 (2) int32 elements. */
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
+#ifdef RSIMD_S128_A64
+  int32x4_t x = simde__m128i_to_neon_i32(a), y = simde__m128i_to_neon_i32(b);
+  int64x2_t lo = vmull_s32(vget_low_s32(x), vget_low_s32(y)), hi = vmull_high_s32(x, y);
+  return simde__m128i_from_neon_i32(
+    vuzp2q_s32(vreinterpretq_s32_s64(lo), vreinterpretq_s32_s64(hi)));
+#else
   /* Signed 32x32->64 products of the even lanes, then of the odd lanes
      shifted down; keep the high word of each. */
   simde__m128i even = simde_mm_mul_epi32(a, b);
   simde__m128i odd = simde_mm_mul_epi32(simde_mm_srli_epi64(a, 32), simde_mm_srli_epi64(b, 32));
   return rsimd_s128_blend(simde_mm_srli_epi64(even, 32), odd, simde_mm_set_epi32(-1, 0, -1, 0));
+#endif
 }
+#ifdef RSIMD_S128_A64
+/* NEON shifts by a lane count, rightwards when it is negative. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sll(rsimd_vi32 a, int k) {
+  return simde__m128i_from_neon_u32(vshlq_u32(RSIMD_A64_U32(a), vdupq_n_s32(k)));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_srl(rsimd_vi32 a, int k) {
+  return simde__m128i_from_neon_u32(vshlq_u32(RSIMD_A64_U32(a), vdupq_n_s32(-k)));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sra(rsimd_vi32 a, int k) {
+  return simde__m128i_from_neon_i32(vshlq_s32(simde__m128i_to_neon_i32(a), vdupq_n_s32(-k)));
+}
+#else
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_sll(rsimd_vi32 a, int k) {
   return simde_mm_sll_epi32(a, simde_mm_cvtsi32_si128(k));
 }
@@ -259,6 +329,7 @@ RSIMD_INLINE rsimd_vi32 rsimd_vi32_srl(rsimd_vi32 a, int k) {
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_sra(rsimd_vi32 a, int k) {
   return simde_mm_sra_epi32(a, simde_mm_cvtsi32_si128(k));
 }
+#endif
 /* Four bytes zero-extended to 32-bit lanes, and back (low 8 bits). */
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8(const uint8_t *p) {
   int32_t w;
@@ -366,9 +437,12 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
   return simde_mm_cvtepi32_pd(simde_mm_loadl_epi64((const simde__m128i *) (const void *) p));
 }
 RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
-#if defined(__aarch64__) || defined(_M_ARM64)
-  /* SIMDe's NEON version of cvttpd_epi32 maps 2147483647.0 to INT32_MIN.
-     Truncate, then add 2^52 + 2^51: the low word of the sum is the integer
+#ifdef RSIMD_S128_A64
+  /* SIMDe's NEON version of cvttpd_epi32 maps 2147483647.0 to INT32_MIN:
+     convert to int64 (truncating) and narrow instead. */
+  vst1_s32(p, vmovn_s64(vcvtq_s64_f64(simde__m128d_to_neon_f64(v))));
+#elif defined(__aarch64__) || defined(_M_ARM64)
+  /* Truncate, then add 2^52 + 2^51: the low word of the sum is the integer
      in two's complement, exactly, for every value in the int32 range. */
   simde__m128d t = simde_mm_round_pd(v, SIMDE_MM_FROUND_TO_ZERO);
   simde__m128i w = simde_mm_castpd_si128(simde_mm_add_pd(t, simde_mm_set1_pd(6755399441055744.0)));
@@ -388,3 +462,10 @@ RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) {
 #endif
 
 #include "vec_fixed.inc.h"
+
+#ifdef RSIMD_S128_A64
+#undef RSIMD_S128_A64
+#undef RSIMD_A64_U32
+#undef RSIMD_A64_U64
+#undef RSIMD_A64_D_U64
+#endif

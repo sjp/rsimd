@@ -202,6 +202,54 @@ static inline int32_t rsimd_intdiv_i32(int32_t x, int32_t y, int mod, int check)
   return (int32_t) (mod ? xd - q * yd : q);
 }
 
+/* Division of int32 values by a constant d other than 0 and INT32_MIN
+   without dividing (Hacker's Delight, 2nd ed., section 10-1): the
+   truncated quotient of x is ((mulhi(m, x) + add * x) >> s) plus one when
+   that is negative, with m == 0 standing for |d| == 1. */
+typedef struct {
+  int32_t d, m;
+  int s, add;
+} rsimd_divmagic_i32;
+static inline rsimd_divmagic_i32 rsimd_divmagic_i32_make(int32_t d) {
+  const uint32_t two31 = UINT32_C(0x80000000);
+  rsimd_divmagic_i32 g;
+  uint32_t ad = d < 0 ? 0u - (uint32_t) d : (uint32_t) d, t, anc, q1, r1, q2, r2, delta, m;
+  int p = 31;
+  g.d = d;
+  g.m = 0;
+  g.s = 0;
+  g.add = 0;
+  if (ad == 1) return g;
+  t = two31 + ((uint32_t) d >> 31);
+  anc = t - 1 - t % ad;
+  q1 = two31 / anc;
+  r1 = two31 - q1 * anc;
+  q2 = two31 / ad;
+  r2 = two31 - q2 * ad;
+  do {
+    p++;
+    q1 *= 2;
+    r1 *= 2;
+    if (r1 >= anc) {
+      q1++;
+      r1 -= anc;
+    }
+    q2 *= 2;
+    r2 *= 2;
+    if (r2 >= ad) {
+      q2++;
+      r2 -= ad;
+    }
+    delta = ad - r2;
+  } while (q1 < delta || (q1 == delta && r1 == 0));
+  m = q2 + 1;
+  if (d < 0) m = 0u - m;
+  memcpy(&g.m, &m, sizeof m);
+  g.s = p - 32;
+  g.add = d > 0 && g.m < 0 ? 1 : (d < 0 && g.m > 0 ? -1 : 0);
+  return g;
+}
+
 /* r, or NA_real_ if x, y or z is NA (elementwise doubles). */
 static inline double rsimd_na_merge3_f64(double r, double x, double y, double z) {
   return rsimd_is_na_f64(z) ? rsimd_na_real() : rsimd_na_merge_f64(r, x, y);
@@ -588,6 +636,33 @@ RSIMD_INLINE rsimd_vi32 rsimd_vi32_neg_wrap(rsimd_vi32 x) {
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_abs_wrap(rsimd_vi32 x) {
   return rsimd_vi32_max(x, rsimd_vi32_neg_wrap(x));
 }
+/* x %/% d (mod = 0) or x %% d (mod = 1) for the constant d of g, as
+   rsimd_intdiv_i32(): the truncated quotient from rsimd_divmagic_i32 is
+   stepped down by one where the remainder is non-zero and of the other
+   sign than d. NA lanes of x give NA when check is set, and so does
+   INT32_MIN for |d| == 1, whose quotient is out of range. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_intdiv_const(rsimd_vi32 x, const rsimd_divmagic_i32 *g, int mod,
+                                                int check) {
+  const rsimd_vi32 zero = rsimd_vi32_zero(), d = rsimd_vi32_set1(g->d);
+  rsimd_vi32 q, r;
+  rsimd_mi32 low;
+  if (g->m == 0) {
+    q = g->d > 0 ? x : rsimd_vi32_neg_wrap(x);
+  } else {
+    q = rsimd_vi32_mulhi(x, rsimd_vi32_set1(g->m));
+    if (g->add > 0) q = rsimd_vi32_add(q, x);
+    else if (g->add < 0) q = rsimd_vi32_sub(q, x);
+    q = rsimd_vi32_sra(q, g->s);
+    q = rsimd_vi32_add(q, rsimd_vi32_srl(q, 31));
+  }
+  r = rsimd_vi32_sub(x, rsimd_vi32_mul(q, d));
+  low = rsimd_mi32_andnot(rsimd_vi32_cmp_eq(r, zero),
+                          rsimd_vi32_cmp_lt(rsimd_vi32_xor(r, d), zero));
+  r = mod ? rsimd_vi32_blend(r, rsimd_vi32_add(r, d), low)
+          : rsimd_vi32_blend(q, rsimd_vi32_sub(q, rsimd_vi32_set1(1)), low);
+  if (check || g->m == 0) r = rsimd_vi32_set_na(r, rsimd_vi32_is_na(x));
+  return r;
+}
 
 #ifndef RSIMD_NO_F64_SIMD
 RSIMD_INLINE rsimd_mf64 rsimd_mf64_none(void) {
@@ -604,16 +679,19 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_na_merge(rsimd_vf64 r, rsimd_vf64 x, rsimd_vf
    rsimd_vf64_loadu_i32); NA lanes come back as RSIMD_NA_I32_AS_F64, so the
    result can be stored with rsimd_vf64_storeu_i32. */
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_intdiv(rsimd_vf64 x, rsimd_vf64 y, int mod, int check) {
+  const rsimd_vf64 na = rsimd_vf64_set1(RSIMD_NA_I32_AS_F64);
   rsimd_vf64 q = rsimd_vf64_floor(rsimd_vf64_div(x, y));
-  rsimd_mf64 ok = rsimd_mf64_and(rsimd_vf64_cmp_ge(q, rsimd_vf64_set1(-(double) INT32_MAX)),
-                                 rsimd_vf64_cmp_le(q, rsimd_vf64_set1((double) INT32_MAX)));
-  rsimd_mf64 bad = rsimd_mf64_or(rsimd_vf64_cmp_eq(y, rsimd_vf64_zero()), rsimd_mf64_not(ok));
   rsimd_vf64 r = mod ? rsimd_vf64_sub(x, rsimd_vf64_mul(q, y)) : q;
+  rsimd_mf64 bad = rsimd_vf64_cmp_eq(y, rsimd_vf64_zero());
+  /* Only an INT32_MIN operand can put a quotient out of the int32 range
+     (INT32_MIN %/% -1, or INT32_MIN %/% 1, which is -2^31), so with the NA
+     check that range test is not needed. */
   if (check) {
-    rsimd_vf64 na = rsimd_vf64_set1(RSIMD_NA_I32_AS_F64);
     bad = rsimd_mf64_or(bad, rsimd_mf64_or(rsimd_vf64_cmp_eq(x, na), rsimd_vf64_cmp_eq(y, na)));
+  } else {
+    bad = rsimd_mf64_or(bad, rsimd_vf64_cmp_gt(rsimd_vf64_abs(q), rsimd_vf64_set1((double) INT32_MAX)));
   }
-  return rsimd_vf64_blend(r, rsimd_vf64_set1(RSIMD_NA_I32_AS_F64), bad);
+  return rsimd_vf64_blend(r, na, bad);
 }
 
 /* r with NA_real_ wherever x, y or z is NA. */

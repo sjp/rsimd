@@ -934,19 +934,21 @@ void RSIMD_KERNEL(sum_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
   else RSIMD_KERNEL(sum_i64_)(x, n, 0, 0, r);
 }
 
-/* The number of NA elements among the n, counted in the lanes (mask
-   counts are slow on the 128-bit tiers). */
+/* The number of NA elements among the n, counted in the lanes of four
+   accumulators (mask counts are slow on the 128-bit tiers). */
 RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_na_i64_)(const int64_t *x, R_xlen_t n) {
   const ptrdiff_t W = RSIMD_LANES_64;
-  const rsimd_vi64 zero = rsimd_vi64_zero(), one = rsimd_vi64_set1(1);
-  rsimd_vi64 acc = zero;
-  int64_t buf[RSIMD_MAX_LANES_64];
-  R_xlen_t i = 0, k = 0, j;
-  for (; i + W <= n; i += W) {
-    acc = rsimd_vi64_add(acc, rsimd_vi64_blend(zero, one, rsimd_vi64_is_na(rsimd_vi64_loadu(x + i))));
+  const rsimd_vi64 zero = rsimd_vi64_zero();
+  rsimd_vi64 c0 = zero, c1 = zero, c2 = zero, c3 = zero;
+  R_xlen_t i = 0, k;
+  for (; i + 4 * W <= n; i += 4 * W) {
+    c0 = rsimd_vi64_inc(c0, rsimd_vi64_is_na(rsimd_vi64_loadu(x + i)));
+    c1 = rsimd_vi64_inc(c1, rsimd_vi64_is_na(rsimd_vi64_loadu(x + i + W)));
+    c2 = rsimd_vi64_inc(c2, rsimd_vi64_is_na(rsimd_vi64_loadu(x + i + 2 * W)));
+    c3 = rsimd_vi64_inc(c3, rsimd_vi64_is_na(rsimd_vi64_loadu(x + i + 3 * W)));
   }
-  rsimd_vi64_storeu(buf, acc);
-  for (j = 0; j < W; j++) k += buf[j];
+  for (; i + W <= n; i += W) c0 = rsimd_vi64_inc(c0, rsimd_vi64_is_na(rsimd_vi64_loadu(x + i)));
+  k = rsimd_vi64_reduce_add(rsimd_vi64_add(rsimd_vi64_add(c0, c1), rsimd_vi64_add(c2, c3)));
   for (; i < n; i++) k += x[i] == RSIMD_NA_I64;
   return k;
 }

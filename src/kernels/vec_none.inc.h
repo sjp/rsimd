@@ -156,6 +156,9 @@ RSIMD_INLINE rsimd_vi32 rsimd_vi32_blend(rsimd_vi32 a, rsimd_vi32 b, rsimd_mi32 
   return m ? b : a;
 }
 RSIMD_INLINE rsimd_mi32 rsimd_vi32_is_na(rsimd_vi32 a) { return a == INT32_MIN; }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_inc(rsimd_vi32 acc, rsimd_mi32 m) {
+  return (int32_t) ((uint32_t) acc + (m != 0));
+}
 RSIMD_INLINE int64_t rsimd_vi32_reduce_add(rsimd_vi32 a) { return a; }
 RSIMD_INLINE int32_t rsimd_vi32_reduce_min(rsimd_vi32 a) { return a; }
 RSIMD_INLINE int32_t rsimd_vi32_reduce_max(rsimd_vi32 a) { return a; }
@@ -193,6 +196,9 @@ RSIMD_INLINE rsimd_vi64 rsimd_vi64_blend(rsimd_vi64 a, rsimd_vi64 b, rsimd_mi64 
   return m ? b : a;
 }
 RSIMD_INLINE rsimd_mi64 rsimd_vi64_is_na(rsimd_vi64 a) { return a == INT64_MIN; }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_inc(rsimd_vi64 acc, rsimd_mi64 m) {
+  return (int64_t) ((uint64_t) acc + (m != 0));
+}
 RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 a) { return a; }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_min(rsimd_vi64 a) { return a; }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_max(rsimd_vi64 a) { return a; }

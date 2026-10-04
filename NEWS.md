@@ -136,3 +136,14 @@
   integer64 operands to double with a warning. New `simd_as_integer64()`
   converts doubles (with the `"checked"`, `"saturating"` and `"truncating"`
   modes), integers, logicals and raw vectors. See `?rsimd-integer64`.
+* Faster `simd_idiv()`, `simd_mod()` and `simd_count_na()`. Integer `%/%`
+  and `%%` by a scalar divisor no longer divide (they multiply by a
+  precomputed constant, 4 to 16 lanes at a time); with a vector divisor the
+  double-lane path does less work per element. `simd_count_na()` keeps
+  per-lane counts instead of counting every vector's mask. On arm64 the
+  neon tier uses NEON instructions directly for blends, mask tests and
+  counts, the high half of 32-bit products, shifts and double-to-integer
+  stores, which SIMDe's SSE2 translation took several instructions for.
+  The elementwise functions also skip their R-level type checks when no
+  operand has a class or is complex, which cuts the fixed cost of a call
+  from about 9 to about 3 microseconds.

@@ -1,8 +1,9 @@
-# Smoke benchmark of simd_min() and simd_any_na() against base R for 1e7
-# doubles and integers, once per available implementation, plus the integer
-# simd_min() with na_check = FALSE against the checked default. A sanity
-# check that the SIMD tiers beat the scalar one and that skipping the NA
-# check costs nothing, not a benchmark suite. (simd_sum() is in sum.R.)
+# Smoke benchmark of simd_min(), simd_any_na() and simd_count_na() against
+# base R for 1e7 doubles and integers, once per available implementation,
+# plus the integer simd_min() with na_check = FALSE against the checked
+# default. A sanity check that the SIMD tiers beat the scalar one and that
+# skipping the NA check costs nothing, not a benchmark suite. count_na runs
+# on copies with 1% NA. (simd_sum() is in sum.R.)
 #
 # Usage: Rscript bench/reductions.R   (with rsimd and bench installed)
 
@@ -25,10 +26,13 @@ rows$list <- list()
 add <- function(...) rows$list[[length(rows$list) + 1L]] <- data.frame(...)
 for (type in names(inputs)) {
   x <- inputs[[type]]
+  xna <- x
+  xna[seq(1, n, by = 100)] <- NA
   for (tier in simd_available()) {
     simd_use(tier)
     add(op = "min", type = type, impl = tier, median_ms = time_ms(simd_min(x)))
     add(op = "any_na", type = type, impl = tier, median_ms = time_ms(simd_any_na(x)))
+    add(op = "count_na", type = type, impl = tier, median_ms = time_ms(simd_count_na(xna)))
     if (type == "integer") {
       add(
         op = "min, na_check = FALSE", type = type, impl = tier,
@@ -38,6 +42,7 @@ for (type in names(inputs)) {
   }
   add(op = "min", type = type, impl = "base::min", median_ms = time_ms(min(x)))
   add(op = "any_na", type = type, impl = "base::anyNA", median_ms = time_ms(anyNA(x)))
+  add(op = "count_na", type = type, impl = "sum(is.na())", median_ms = time_ms(sum(is.na(xna))))
 }
 simd_use("auto")
 

@@ -179,6 +179,8 @@ RSIMD_S256_MASK(mi32)
 RSIMD_INLINE int rsimd_mi32_count(rsimd_mi32 a) {
   return rsimd_popcount32((uint32_t) simde_mm256_movemask_ps(simde_mm256_castsi256_ps(a)));
 }
+/* acc + 1 in the lanes where m is set (a set lane is -1). */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_inc(rsimd_vi32 acc, rsimd_mi32 m) { return simde_mm256_sub_epi32(acc, m); }
 
 /* 64-bit integers */
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu(const int64_t *p) {
@@ -211,6 +213,7 @@ RSIMD_S256_MASK(mi64)
 RSIMD_INLINE int rsimd_mi64_count(rsimd_mi64 a) {
   return rsimd_popcount32((uint32_t) simde_mm256_movemask_pd(simde_mm256_castsi256_pd(a)));
 }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_inc(rsimd_vi64 acc, rsimd_mi64 m) { return simde_mm256_sub_epi64(acc, m); }
 
 #undef RSIMD_S256_BITWISE
 #undef RSIMD_S256_MASK

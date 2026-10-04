@@ -36,14 +36,28 @@
   invisible()
 }
 
+# TRUE for an operand none of the checks below can reject or convert: no
+# class (so not integer64), not complex and, for the _wrap ops, not double.
+# Operands that are all plain go straight to the C side, as the checks cost
+# several microseconds per call.
+.ew_plain <- function(x, wrap) {
+  !is.object(x) && !is.complex(x) && !(wrap && is.double(x))
+}
+
 .ew1 <- function(x, op, fun, wrap = FALSE) {
   .sync_impl()
+  if (.ew_plain(x, wrap)) {
+    return(.Call(C_simd_ew1, x, op))
+  }
   .ew_check(fun, list(x = x), wrap)
   .Call(C_simd_ew1, x, op)
 }
 
 .ew2 <- function(x, y, op, fun, na_check, wrap = FALSE, names = c("x", "y")) {
   .sync_impl()
+  if (.ew_plain(x, wrap) && .ew_plain(y, wrap)) {
+    return(.Call(C_simd_ew2, x, y, op, na_check))
+  }
   args <- list(x, y)
   names(args) <- names
   .ew_check(fun, args, wrap)
@@ -62,6 +76,9 @@
 
 .ew3 <- function(x, y, z, op, fun, na_check, names = c("x", "y", "z")) {
   .sync_impl()
+  if (.ew_plain(x, FALSE) && .ew_plain(y, FALSE) && .ew_plain(z, FALSE)) {
+    return(.Call(C_simd_ew3, x, y, z, op, na_check))
+  }
   args <- list(x, y, z)
   names(args) <- names
   .ew_check(fun, args)

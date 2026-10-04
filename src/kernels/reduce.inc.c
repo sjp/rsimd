@@ -247,10 +247,31 @@ void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, con
 
 /* ---- Integer and logical ---- */
 
-/* The number of NA elements among the n. */
+/* Loop iterations per block of count_na_i32_(): a 32-bit lane count
+   gains at most one per iteration, so it stays below INT32_MAX. The
+   vector layer test sets a small value to cover the flushes. */
+#ifndef RSIMD_COUNT_BLOCK
+#define RSIMD_COUNT_BLOCK ((R_xlen_t) 1 << 24)
+#endif
+
+/* The number of NA elements among the n, counted in the lanes of four
+   accumulators (a mask count per vector is a slow horizontal step) and
+   added up once per block. */
 RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_na_i32_)(const int *x, R_xlen_t n) {
   const ptrdiff_t W = RSIMD_LANES_32;
+  const rsimd_vi32 zero = rsimd_vi32_zero();
   R_xlen_t i = 0, k = 0;
+  while (i + 4 * W <= n) {
+    R_xlen_t end = (n - i) / (4 * W) > RSIMD_COUNT_BLOCK ? i + RSIMD_COUNT_BLOCK * 4 * W : n;
+    rsimd_vi32 c0 = zero, c1 = zero, c2 = zero, c3 = zero;
+    for (; i + 4 * W <= end; i += 4 * W) {
+      c0 = rsimd_vi32_inc(c0, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i)));
+      c1 = rsimd_vi32_inc(c1, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + W)));
+      c2 = rsimd_vi32_inc(c2, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + 2 * W)));
+      c3 = rsimd_vi32_inc(c3, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + 3 * W)));
+    }
+    k += rsimd_vi32_reduce_add(rsimd_vi32_add(rsimd_vi32_add(c0, c1), rsimd_vi32_add(c2, c3)));
+  }
   for (; i + W <= n; i += W) k += rsimd_mi32_count(rsimd_vi32_is_na(rsimd_vi32_loadu(x + i)));
   for (; i < n; i++) k += x[i] == RSIMD_NA_I32;
   return k;
@@ -540,24 +561,24 @@ R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, double v) {
   return RSIMD_KERNEL(find_f64_)(x, n, v);
 }
 
-/* The number of NaN (NA included) elements among the n; sets *na if one
-   of them is NA. */
-RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_nan_f64_)(const double *x, R_xlen_t n, int *na) {
+/* The number of NaN (NA included) elements among the n, counted in the
+   64-bit lanes of four accumulators as count_na_i32_(). */
+RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_nan_f64_)(const double *x, R_xlen_t n) {
   const ptrdiff_t W = RSIMD_LANES_64;
-  R_xlen_t i = 0, k = 0;
-  rsimd_mf64 mna = rsimd_mf64_none();
-  for (; i + W <= n; i += W) {
-    rsimd_vf64 v = rsimd_vf64_loadu(x + i);
-    k += rsimd_mf64_count(rsimd_vf64_is_nan(v));
-    mna = rsimd_mf64_or(mna, rsimd_vf64_is_na(v));
+  const rsimd_vi64 zero = rsimd_vi64_zero();
+  rsimd_vi64 c0 = zero, c1 = zero, c2 = zero, c3 = zero;
+  R_xlen_t i = 0, k;
+#define RSIMD_NAN_MASK_(j) rsimd_mf64_to_mi64(rsimd_vf64_is_nan(rsimd_vf64_loadu(x + i + (j) * W)))
+  for (; i + 4 * W <= n; i += 4 * W) {
+    c0 = rsimd_vi64_inc(c0, RSIMD_NAN_MASK_(0));
+    c1 = rsimd_vi64_inc(c1, RSIMD_NAN_MASK_(1));
+    c2 = rsimd_vi64_inc(c2, RSIMD_NAN_MASK_(2));
+    c3 = rsimd_vi64_inc(c3, RSIMD_NAN_MASK_(3));
   }
-  if (rsimd_mf64_any(mna)) *na = 1;
-  for (; i < n; i++) {
-    if (isnan(x[i])) {
-      k++;
-      if (rsimd_is_na_f64(x[i])) *na = 1;
-    }
-  }
+  for (; i + W <= n; i += W) c0 = rsimd_vi64_inc(c0, RSIMD_NAN_MASK_(0));
+#undef RSIMD_NAN_MASK_
+  k = rsimd_vi64_reduce_add(rsimd_vi64_add(rsimd_vi64_add(c0, c1), rsimd_vi64_add(c2, c3)));
+  for (; i < n; i++) k += isnan(x[i]) != 0;
   return k;
 }
 
@@ -588,10 +609,9 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
   }
 #undef RSIMD_MINMAX_F64_
   if (check && rsimd_mf64_any(mnan)) {
-    int na = 0;
     r->saw_nan = 1;
-    missing = RSIMD_KERNEL(count_nan_f64_)(x, n, &na);
-    if (na) r->saw_na = 1;
+    missing = RSIMD_KERNEL(count_nan_f64_)(x, n);
+    if (rsimd_vf64_any_na(x, n)) r->saw_na = 1;
   }
   r->count += n - missing;
   /* The accumulators hold no NaN, so the lane order of the reduction does
@@ -668,8 +688,7 @@ void RSIMD_KERNEL(na_f64)(const double *x, R_xlen_t n, int mode, R_xlen_t off, v
       }
     }
   } else if (mode == RSIMD_NAMODE_COUNT) {
-    int na = 0;
-    r->i64 += RSIMD_KERNEL(count_nan_f64_)(x, n, &na);
+    r->i64 += RSIMD_KERNEL(count_nan_f64_)(x, n);
   } else {
     for (; i + W <= n; i += W) {
       if (!rsimd_mf64_any(rsimd_vf64_is_nan(rsimd_vf64_loadu(x + i)))) continue;

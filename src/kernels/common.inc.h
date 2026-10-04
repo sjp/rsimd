@@ -32,8 +32,9 @@
  *                     is_nan as_vi64 loadu_i32 loadu_i32_p storeu_i32
  *                     storeu_i32_p uzp_even uzp_odd
  *   rsimd_vi32 also   mulhi sll srl sra loadu_u8 loadu_u8_p storeu_u8
- *                     storeu_u8_p
+ *                     storeu_u8_p inc
  *   rsimd_vi64 also   as_vf64 loadu_i32 loadu_i32_p storeu_i32 storeu_i32_p
+ *                     inc
  *   mask types        and or not andnot any all count; rsimd_mf64_to_mi64
  *                     and rsimd_mi64_to_mf64 convert between the f64 and
  *                     i64 masks
@@ -52,6 +53,9 @@
  *     false then. is_na tests for R's NA_real_ (a NaN whose low 32 bits are
  *     1954), is_nan for any NaN including NA. The integer is_na tests for
  *     INT32_MIN or INT64_MIN.
+ *   - rsimd_vi32_inc(acc, m) and rsimd_vi64_inc(acc, m) add 1 to acc in the
+ *     lanes where m is set (wrapping), for counting a mask without a
+ *     horizontal step per vector.
  *   - Integer add, sub and mul wrap (two's complement). rsimd_vi32_mulhi
  *     is the high 32 bits of the signed 64-bit product.
  *   - loadu_i32 and storeu_i32 convert between int32 elements in memory and
@@ -300,6 +304,7 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VI32_CMP_LT rsimd_vi32_cmp_lt
 #define RSIMD_VI32_BLEND rsimd_vi32_blend
 #define RSIMD_VI32_IS_NA rsimd_vi32_is_na
+#define RSIMD_VI32_INC rsimd_vi32_inc
 #define RSIMD_VI32_REDUCE_ADD rsimd_vi32_reduce_add
 #define RSIMD_VI32_REDUCE_MIN rsimd_vi32_reduce_min
 #define RSIMD_VI32_REDUCE_MAX rsimd_vi32_reduce_max
@@ -335,6 +340,7 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VI64_CMP_LT rsimd_vi64_cmp_lt
 #define RSIMD_VI64_BLEND rsimd_vi64_blend
 #define RSIMD_VI64_IS_NA rsimd_vi64_is_na
+#define RSIMD_VI64_INC rsimd_vi64_inc
 #define RSIMD_VI64_REDUCE_ADD rsimd_vi64_reduce_add
 #define RSIMD_VI64_REDUCE_MIN rsimd_vi64_reduce_min
 #define RSIMD_VI64_REDUCE_MAX rsimd_vi64_reduce_max

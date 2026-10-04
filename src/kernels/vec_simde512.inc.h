@@ -233,6 +233,9 @@ RSIMD_INLINE rsimd_vi32 rsimd_vi32_blend(rsimd_vi32 a, rsimd_vi32 b, rsimd_mi32 
 RSIMD_INLINE rsimd_mi32 rsimd_vi32_is_na(rsimd_vi32 a) {
   return simde_mm512_cmpeq_epi32_mask(a, simde_mm512_set1_epi32(INT32_MIN));
 }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_inc(rsimd_vi32 acc, rsimd_mi32 m) {
+  return simde_mm512_mask_sub_epi32(acc, m, acc, simde_mm512_set1_epi32(-1));
+}
 RSIMD_INLINE int64_t rsimd_vi32_reduce_add(rsimd_vi32 a) {
   int32_t buf[16];
   int64_t r = 0;
@@ -275,6 +278,9 @@ RSIMD_INLINE rsimd_vi64 rsimd_vi64_blend(rsimd_vi64 a, rsimd_vi64 b, rsimd_mi64 
 }
 RSIMD_INLINE rsimd_mi64 rsimd_vi64_is_na(rsimd_vi64 a) {
   return simde_mm512_cmpeq_epi64_mask(a, simde_mm512_set1_epi64(INT64_MIN));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_inc(rsimd_vi64 acc, rsimd_mi64 m) {
+  return simde_mm512_mask_sub_epi64(acc, m, acc, simde_mm512_set1_epi64(-1));
 }
 RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 a) {
   int64_t buf[8];

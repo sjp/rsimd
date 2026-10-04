@@ -26,6 +26,8 @@
 
 #include <float.h>
 #include <stdio.h>
+/* Flush the lane counts of count_na_i32_() every two iterations. */
+#define RSIMD_COUNT_BLOCK 2
 #include "kernels/common.inc.h"
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
@@ -371,6 +373,15 @@ static void test_int(ptrdiff_t n) {
   I32_OP("i32 mul", rsimd_vi32_mul(x, y), (int32_t) ((uint32_t) a * (uint32_t) b));
   I32_OP("i32 mulhi", rsimd_vi32_mulhi(x, y),
          (int32_t) (uint32_t) ((uint64_t) ((int64_t) a * b) >> 32));
+  {
+    int k;
+    for (k = 0; k < 32; k++) {
+      I32_OP("i32 sll", rsimd_vi32_sll(x, k), (int32_t) ((uint32_t) a << k));
+      I32_OP("i32 srl", rsimd_vi32_srl(x, k), (int32_t) ((uint32_t) a >> k));
+      I32_OP("i32 sra", rsimd_vi32_sra(x, k),
+             a < 0 ? (int32_t) ~(~(uint32_t) a >> k) : (int32_t) ((uint32_t) a >> k));
+    }
+  }
   I32_OP("i32 min", rsimd_vi32_min(x, y), a < b ? a : b);
   I32_OP("i32 max", rsimd_vi32_max(x, y), a > b ? a : b);
   I32_OP("i32 and", rsimd_vi32_and(x, y), a & b);
@@ -965,6 +976,14 @@ static void test_int_horizontal(void) {
       hi = ia[i + j] > hi ? ia[i + j] : hi;
     }
     check_int("mi32 count", L, i, rsimd_mi32_count(m), cnt);
+    {
+      int32_t got[2 * RSIMD_MAX_LANES_64];
+      rsimd_vi32_storeu(got, rsimd_vi32_inc(x, m));
+      for (j = 0; j < L; j++) {
+        check_int("i32 inc", L, i + j, got[j],
+                  (int32_t) ((uint32_t) ia[i + j] + (ia[i + j] > ib[i + j])));
+      }
+    }
     check_int("mi32 any", L, i, rsimd_mi32_any(m), cnt > 0);
     check_int("mi32 all", L, i, rsimd_mi32_all(m), cnt == L);
     check_int("mi32 all (true)", L, i, rsimd_mi32_all(rsimd_vi32_cmp_eq(x, x)), 1);
@@ -988,6 +1007,16 @@ static void test_int_horizontal(void) {
       hi = la[i + j] > hi ? la[i + j] : hi;
     }
     check_int("mi64 count", L, i, rsimd_mi64_count(m), cnt);
+    {
+      int64_t got[RSIMD_MAX_LANES_64];
+      rsimd_vi64_storeu(got, rsimd_vi64_inc(x, m));
+      for (j = 0; j < L; j++) {
+        n_checks++;
+        if (got[j] != (int64_t) ((uint64_t) la[i + j] + (la[i + j] > lb[i + j]))) {
+          fail("i64 inc", L, i + j, "mismatch");
+        }
+      }
+    }
     check_int("mi64 any", L, i, rsimd_mi64_any(m), cnt > 0);
     check_int("mi64 all", L, i, rsimd_mi64_all(m), cnt == L);
     check_int("mi64 all (true)", L, i, rsimd_mi64_all(rsimd_vi64_cmp_eq(x, x)), 1);
@@ -995,6 +1024,71 @@ static void test_int_horizontal(void) {
     if (rsimd_vi64_reduce_add(x) != (int64_t) s) fail("i64 reduce_add", L, i, "mismatch");
     if (rsimd_vi64_reduce_min(x) != lo) fail("i64 reduce_min", L, i, "mismatch");
     if (rsimd_vi64_reduce_max(x) != hi) fail("i64 reduce_max", L, i, "mismatch");
+  }
+}
+
+/* x %/% d and x %% d by multiplication (rsimd_ew_intdiv_const_i32) against
+   the scalar rsimd_intdiv_i32(), with and without the NA check, for small
+   divisors, powers of two and their neighbours, the int32 extremes and
+   random ones, on dividends around the multiples of d, the extremes and
+   random ones; lengths 1 .. 2 vectors + 1 cover the predicated tail. */
+static void test_intdiv_const(void) {
+  static int32_t xs[N + 1], got[N + 1], want[N + 1];
+  int32_t ds[2600];
+  int nd = 0, k, check, mod;
+  ptrdiff_t j, n;
+  for (k = -1100; k <= 1100; k++) {
+    if (k != 0) ds[nd++] = k;
+  }
+  for (k = 11; k < 31; k++) {
+    int32_t p = (int32_t) 1 << k;
+    ds[nd++] = p;
+    ds[nd++] = -p;
+    ds[nd++] = p - 1;
+    ds[nd++] = -(p - 1);
+    ds[nd++] = p + 1;
+    ds[nd++] = -(p + 1);
+  }
+  ds[nd++] = INT32_MAX;
+  ds[nd++] = -INT32_MAX;
+  ds[nd++] = INT32_MAX - 1;
+  ds[nd++] = -INT32_MAX + 1;
+  while (nd < 2600) {
+    int32_t d = (int32_t) (uint32_t) next_rand();
+    if (d != 0 && d != INT32_MIN) ds[nd++] = d;
+  }
+  for (k = 0; k < nd; k++) {
+    const int32_t d = ds[k];
+    for (j = 0; j < N; j++) {
+      switch (j % 8) {
+      case 0: xs[j] = (int32_t) (uint32_t) next_rand(); break;
+      case 1: xs[j] = (int32_t) ((uint32_t) d * (uint32_t) (j - 100)); break;
+      case 2: xs[j] = (int32_t) ((uint32_t) d * (uint32_t) (j - 100) + 1u); break;
+      case 3: xs[j] = (int32_t) ((uint32_t) d * (uint32_t) (j - 100) - 1u); break;
+      case 4: xs[j] = (int32_t) (next_rand() % 4001) - 2000; break;
+      case 5: xs[j] = (j / 8) % 2 ? INT32_MAX - (int32_t) (j / 16) : INT32_MIN + (int32_t) (j / 16); break;
+      case 6: xs[j] = j % 3 == 0 ? RSIMD_NA_I32 : (int32_t) (j / 8) - 12; break;
+      default: xs[j] = (int32_t) (uint32_t) (next_rand() >> (next_rand() % 32)); break;
+      }
+    }
+    for (check = 0; check < 2; check++) {
+      for (mod = 0; mod < 2; mod++) {
+        char what[64];
+        snprintf(what, sizeof what, "intdiv_const d=%ld mod %d check %d", (long) d, mod, check);
+        for (j = 0; j < N; j++) want[j] = rsimd_intdiv_i32(xs[j], d, mod, check);
+        n = k % 8 == 0 ? N : 1 + (ptrdiff_t) (k % (2 * RSIMD_LANES_32 + 1));
+        for (j = 0; j <= N; j++) got[j] = SENTINEL_I32;
+#if RSIMD_TIER_IS(none)
+        {
+          const rsimd_divmagic_i32 g = rsimd_divmagic_i32_make(d);
+          for (j = 0; j < n; j++) got[j] = rsimd_vi32_intdiv_const(xs[j], &g, mod, check);
+        }
+#else
+        rsimd_ew_intdiv_const_i32(xs, d, n, mod, check, got);
+#endif
+        check_i32(what, n, got, want);
+      }
+    }
   }
 }
 
@@ -3035,6 +3129,7 @@ int main(void) {
   test_uzp();
 #endif
   test_int_horizontal();
+  test_intdiv_const();
 #ifdef RSIMD_HAVE_SLEEF
   test_sleef();
   test_pi_oracle();
