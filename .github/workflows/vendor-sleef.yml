@@ -1,0 +1,59 @@
+# Regenerates the SLEEF inline headers in src/vendor/sleef with
+# tools/vendor_sleef.sh on an x86-64 and an arm64 machine. Each machine
+# generates its own architecture's headers natively and the other's with a
+# cross compiler, so both routes run on both machines; every run must give
+# headers byte-identical to the vendored ones. The regenerated files are
+# uploaded as artifacts for updating the vendored copy.
+on:
+  workflow_dispatch:
+
+name: vendor-sleef
+
+permissions: read-all
+
+jobs:
+  vendor-sleef:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            cross: gcc-aarch64-linux-gnu
+          - os: ubuntu-24.04-arm
+            cross: gcc-x86-64-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CMake and the cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ${{ matrix.cross }}
+
+      - name: Generate the headers
+        run: |
+          uname -m
+          JOBS=4 sh tools/vendor_sleef.sh --out regenerated
+          SLEEF_FORCE_CROSS=1 JOBS=4 sh tools/vendor_sleef.sh --out regenerated-cross
+
+      - name: Compare with the vendored headers
+        run: |
+          status=0
+          for f in src/vendor/sleef/sleefinline_*.h; do
+            for d in regenerated regenerated-cross; do
+              if cmp "$f" "$d/$(basename "$f")"; then
+                echo "identical: $d/$(basename "$f")"
+              else
+                status=1
+              fi
+            done
+          done
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sleef-headers-${{ matrix.os }}
+          path: |
+            regenerated
+            regenerated-cross

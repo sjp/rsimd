@@ -354,8 +354,166 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 /* NA, precision and overflow helpers (scalar and vector forms). */
 #include "na.h"
 
-/* Vectorised elementary functions (SLEEF) are included here per tier once
-   they are bundled; RSIMD_HAVE_SLEEF_<TIER> then says whether the tier has
-   them. */
+/* Vectorised elementary functions (SLEEF)
+ * ---------------------------------------
+ * configure compiles a tier with -DRSIMD_HAVE_SLEEF_<TIER>=1 when the
+ * tier's SLEEF inline header (src/vendor/sleef, named in tools/tiers.txt;
+ * sve2 uses the sve one) compiles with the tier's flags. RSIMD_HAVE_SLEEF
+ * is then 1 and these wrappers of rsimd_vf64 exist, each also under its
+ * upper-case name (rsimd_sleef_exp is RSIMD_SLEEF_EXP):
+ *
+ *   rsimd_sleef_<f>(v)   exp exp2 exp10 expm1 log log2 log10 log1p cbrt
+ *                        sin cos tan asin acos atan sinh cosh tanh asinh
+ *                        acosh atanh, and sinpi cospi
+ *   rsimd_sleef_<f>(a, b)  pow atan2, and hypot
+ *   rsimd_sleef_sincos(v, &s, &c), rsimd_sleef_sincospi(v, &s, &c)
+ *                        store the sine and cosine through pointers (SVE
+ *                        vectors cannot be struct members)
+ *
+ * Accuracy policy: every function uses SLEEF's 1.0-ULP (_u10) variant,
+ * except sinpi, cospi, sincospi and hypot, which use the 0.5-ULP (_u05)
+ * one; the 3.5-ULP (_u35) variants are never used. SLEEF's functions
+ * handle the special values (NaN, infinities, signed zeros) as C99 does but
+ * do not carry R's NA payload through, so kernels blend NA back in. The none
+ * tier never uses SLEEF: its math kernels call C99 libm, as base R does, and
+ * are the reference the other tiers are tested against. A tier without
+ * RSIMD_HAVE_SLEEF leaves its math slots empty, so the dispatcher takes them
+ * from the next lower tier that has them, ultimately none.
+ *
+ * SLEEF's functions and helpers are static, named with an _<isa>_sleef
+ * suffix and only compiled when used; a tier includes one header. The
+ * headers need -ffp-contract=off, which configure gives every tier. */
+#if (RSIMD_TIER_IS(sse2) && defined(RSIMD_HAVE_SLEEF_SSE2)) ||           \
+  (RSIMD_TIER_IS(avx2) && defined(RSIMD_HAVE_SLEEF_AVX2)) ||             \
+  (RSIMD_TIER_IS(avx512) && defined(RSIMD_HAVE_SLEEF_AVX512)) ||         \
+  (RSIMD_TIER_IS(neon) && defined(RSIMD_HAVE_SLEEF_NEON) &&              \
+   !defined(RSIMD_NO_F64_SIMD)) ||                                       \
+  (RSIMD_TIER_IS(sve) && defined(RSIMD_HAVE_SLEEF_SVE)) ||               \
+  (RSIMD_TIER_IS(sve2) && defined(RSIMD_HAVE_SLEEF_SVE2))
+#define RSIMD_HAVE_SLEEF 1
+#endif
+
+#ifdef RSIMD_HAVE_SLEEF
+/* RSIMD_SLEEF_FN(exp, u10) is the tier's Sleef_expd<W>_u10<isa>;
+   RSIMD_SLEEF_IN and _OUT convert between rsimd_vf64 and SLEEF's vector
+   type; RSIMD_SLEEF_PAIR is the type of a two-result value, read with
+   RSIMD_SLEEF_FIRST and _SECOND. */
+#if RSIMD_TIER_IS(sse2)
+#include <emmintrin.h>
+#include "sleefinline_sse2.h"
+#define RSIMD_SLEEF_FN(f, acc) Sleef_##f##d2_##acc##sse2
+#define RSIMD_SLEEF_PAIR vdouble2_sse2_sleef
+#elif RSIMD_TIER_IS(avx2)
+#include <immintrin.h>
+#include "sleefinline_avx2.h"
+#define RSIMD_SLEEF_FN(f, acc) Sleef_##f##d4_##acc##avx2
+#define RSIMD_SLEEF_PAIR vdouble2_avx2_sleef
+#elif RSIMD_TIER_IS(avx512)
+#include <immintrin.h>
+#include "sleefinline_avx512f.h"
+#define RSIMD_SLEEF_FN(f, acc) Sleef_##f##d8_##acc##avx512f
+#define RSIMD_SLEEF_PAIR vdouble2_avx512f_sleef
+#elif RSIMD_TIER_IS(neon)
+#include <arm_neon.h>
+#include "sleefinline_advsimd.h"
+#define RSIMD_SLEEF_FN(f, acc) Sleef_##f##d2_##acc##advsimd
+#define RSIMD_SLEEF_PAIR vdouble2_advsimd_sleef
+#else /* sve, sve2 */
+#include <arm_sve.h>
+#include "sleefinline_sve.h"
+#define RSIMD_SLEEF_FN(f, acc) Sleef_##f##dx_##acc##sve
+#define RSIMD_SLEEF_PAIR vdouble2_sve_sleef
+#endif
+
+#if RSIMD_TIER_IS(neon)
+#define RSIMD_SLEEF_IN(v) simde__m128d_to_neon_f64(v)
+#define RSIMD_SLEEF_OUT(v) simde__m128d_from_neon_f64(v)
+#else
+#define RSIMD_SLEEF_IN(v) (v)
+#define RSIMD_SLEEF_OUT(v) (v)
+#endif
+#if RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)
+#define RSIMD_SLEEF_FIRST(r) svget2_f64((r), 0)
+#define RSIMD_SLEEF_SECOND(r) svget2_f64((r), 1)
+#else
+#define RSIMD_SLEEF_FIRST(r) ((r).x)
+#define RSIMD_SLEEF_SECOND(r) ((r).y)
+#endif
+
+#define RSIMD_SLEEF_DEF1(f, acc)                                                           \
+  RSIMD_INLINE rsimd_vf64 rsimd_sleef_##f(rsimd_vf64 a) {                                  \
+    return RSIMD_SLEEF_OUT(RSIMD_SLEEF_FN(f, acc)(RSIMD_SLEEF_IN(a)));                     \
+  }
+
+#define RSIMD_SLEEF_DEF2(f, acc)                                                           \
+  RSIMD_INLINE rsimd_vf64 rsimd_sleef_##f(rsimd_vf64 a, rsimd_vf64 b) {                    \
+    return RSIMD_SLEEF_OUT(RSIMD_SLEEF_FN(f, acc)(RSIMD_SLEEF_IN(a), RSIMD_SLEEF_IN(b)));  \
+  }
+
+#define RSIMD_SLEEF_DEFSC(f, acc)                                                          \
+  RSIMD_INLINE void rsimd_sleef_##f(rsimd_vf64 a, rsimd_vf64 *s, rsimd_vf64 *c) {          \
+    RSIMD_SLEEF_PAIR r = RSIMD_SLEEF_FN(f, acc)(RSIMD_SLEEF_IN(a));                        \
+    *s = RSIMD_SLEEF_OUT(RSIMD_SLEEF_FIRST(r));                                            \
+    *c = RSIMD_SLEEF_OUT(RSIMD_SLEEF_SECOND(r));                                           \
+  }
+
+RSIMD_SLEEF_DEF1(exp, u10)
+RSIMD_SLEEF_DEF1(exp2, u10)
+RSIMD_SLEEF_DEF1(exp10, u10)
+RSIMD_SLEEF_DEF1(expm1, u10)
+RSIMD_SLEEF_DEF1(log, u10)
+RSIMD_SLEEF_DEF1(log2, u10)
+RSIMD_SLEEF_DEF1(log10, u10)
+RSIMD_SLEEF_DEF1(log1p, u10)
+RSIMD_SLEEF_DEF1(cbrt, u10)
+RSIMD_SLEEF_DEF1(sin, u10)
+RSIMD_SLEEF_DEF1(cos, u10)
+RSIMD_SLEEF_DEF1(tan, u10)
+RSIMD_SLEEF_DEF1(asin, u10)
+RSIMD_SLEEF_DEF1(acos, u10)
+RSIMD_SLEEF_DEF1(atan, u10)
+RSIMD_SLEEF_DEF1(sinh, u10)
+RSIMD_SLEEF_DEF1(cosh, u10)
+RSIMD_SLEEF_DEF1(tanh, u10)
+RSIMD_SLEEF_DEF1(asinh, u10)
+RSIMD_SLEEF_DEF1(acosh, u10)
+RSIMD_SLEEF_DEF1(atanh, u10)
+RSIMD_SLEEF_DEF1(sinpi, u05)
+RSIMD_SLEEF_DEF1(cospi, u05)
+RSIMD_SLEEF_DEF2(pow, u10)
+RSIMD_SLEEF_DEF2(atan2, u10)
+RSIMD_SLEEF_DEF2(hypot, u05)
+RSIMD_SLEEF_DEFSC(sincos, u10)
+RSIMD_SLEEF_DEFSC(sincospi, u05)
+
+#define RSIMD_SLEEF_EXP rsimd_sleef_exp
+#define RSIMD_SLEEF_EXP2 rsimd_sleef_exp2
+#define RSIMD_SLEEF_EXP10 rsimd_sleef_exp10
+#define RSIMD_SLEEF_EXPM1 rsimd_sleef_expm1
+#define RSIMD_SLEEF_LOG rsimd_sleef_log
+#define RSIMD_SLEEF_LOG2 rsimd_sleef_log2
+#define RSIMD_SLEEF_LOG10 rsimd_sleef_log10
+#define RSIMD_SLEEF_LOG1P rsimd_sleef_log1p
+#define RSIMD_SLEEF_CBRT rsimd_sleef_cbrt
+#define RSIMD_SLEEF_SIN rsimd_sleef_sin
+#define RSIMD_SLEEF_COS rsimd_sleef_cos
+#define RSIMD_SLEEF_TAN rsimd_sleef_tan
+#define RSIMD_SLEEF_ASIN rsimd_sleef_asin
+#define RSIMD_SLEEF_ACOS rsimd_sleef_acos
+#define RSIMD_SLEEF_ATAN rsimd_sleef_atan
+#define RSIMD_SLEEF_SINH rsimd_sleef_sinh
+#define RSIMD_SLEEF_COSH rsimd_sleef_cosh
+#define RSIMD_SLEEF_TANH rsimd_sleef_tanh
+#define RSIMD_SLEEF_ASINH rsimd_sleef_asinh
+#define RSIMD_SLEEF_ACOSH rsimd_sleef_acosh
+#define RSIMD_SLEEF_ATANH rsimd_sleef_atanh
+#define RSIMD_SLEEF_SINPI rsimd_sleef_sinpi
+#define RSIMD_SLEEF_COSPI rsimd_sleef_cospi
+#define RSIMD_SLEEF_POW rsimd_sleef_pow
+#define RSIMD_SLEEF_ATAN2 rsimd_sleef_atan2
+#define RSIMD_SLEEF_HYPOT rsimd_sleef_hypot
+#define RSIMD_SLEEF_SINCOS rsimd_sleef_sincos
+#define RSIMD_SLEEF_SINCOSPI rsimd_sleef_sincospi
+#endif /* RSIMD_HAVE_SLEEF */
 
 #endif /* RSIMD_KERNELS_COMMON_INC_H */

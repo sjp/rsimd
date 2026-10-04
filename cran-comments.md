@@ -26,3 +26,11 @@ instructions at include time from the compiler's predefined macros. The CRAN
 package RsimdDispatch uses the same arrangement. Any other flag in that note
 (for example `-mbranch-protection=standard` on Debian) comes from R's own
 configuration.
+
+### Bundled third-party code
+
+`src/vendor/simde` (MIT, a subset of SIMDe) and `src/vendor/sleef` (Boost Software
+License 1.0, inline headers generated from SLEEF 3.9.0) are bundled; their authors
+are listed as copyright holders in `Authors@R` and their licences and copyright
+notices are in `inst/COPYRIGHTS`. Both are header-only, used only at compile time
+and not installed.

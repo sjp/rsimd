@@ -13,8 +13,9 @@ simd_cpu_tiers <- function() {
 }
 
 # Tiers compiled into this build (named by the tier objects), with
-# configure's list and the tiers disabled at build time as attributes
-# "configured" and "disabled". Internal, used by tests.
+# configure's list, the tiers built with SLEEF elementary functions and the
+# tiers disabled at build time as attributes "configured", "sleef" and
+# "disabled" (comma-separated strings). Internal, used by tests.
 simd_compiled_tiers <- function() {
   .Call(C_simd_compiled_tiers)
 }

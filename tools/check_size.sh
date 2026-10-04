@@ -1,17 +1,22 @@
 #!/bin/sh
-# Report the size of vendored code and of the source tarball.
+# Report the size of vendored code, the source tarball and the shared library.
 #
-# Prints byte totals for src/vendor/simde, src/vendor/sleef (if present) and
-# the source tarball. Fails if the tarball exceeds 5 MB (CRAN's guidance) or
-# the SIMDe subset exceeds its budget.
+# Prints the byte total of src/vendor/simde, the size of every file in
+# src/vendor/sleef, the source tarball and, when an installed rsimd is found,
+# libs/rsimd.so (as installed and stripped of debugging information). Fails
+# if the tarball exceeds 5 MB (CRAN's guidance), the SIMDe subset or the
+# SLEEF headers exceed their budgets, or the stripped library exceeds its.
 #
 # Usage: sh tools/check_size.sh [rsimd_<version>.tar.gz]
 # Without an argument the package is built with R CMD build in a temporary
-# directory and that tarball is measured.
+# directory and that tarball is measured. RSIMD_SO names the shared library
+# to measure (default: the installed package's, found with Rscript).
 
 set -eu
 
 SIMDE_BUDGET_BYTES=3500000
+SLEEF_BUDGET_BYTES=2500000
+SO_BUDGET_BYTES=3000000
 TARBALL_LIMIT_BYTES=5000000
 
 root=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -37,9 +42,41 @@ if [ "$simde_bytes" -gt "$SIMDE_BUDGET_BYTES" ]; then
 fi
 
 if [ -d "$root/src/vendor/sleef" ]; then
-  echo "src/vendor/sleef: $(dir_bytes "$root/src/vendor/sleef") bytes"
+  for f in "$root"/src/vendor/sleef/*; do
+    echo "  src/vendor/sleef/$(basename "$f"): $(wc -c < "$f" | tr -d ' ') bytes"
+  done
+  sleef_bytes=$(cat "$root"/src/vendor/sleef/sleefinline_*.h | wc -c | tr -d ' ')
+  echo "src/vendor/sleef: $(dir_bytes "$root/src/vendor/sleef") bytes, headers $sleef_bytes (budget $SLEEF_BUDGET_BYTES)"
+  if [ "$sleef_bytes" -gt "$SLEEF_BUDGET_BYTES" ]; then
+    echo "  FAIL: SLEEF headers exceed their budget"
+    status=1
+  fi
 else
   echo "src/vendor/sleef: not present"
+fi
+
+so=${RSIMD_SO:-}
+if [ -z "$so" ]; then
+  so=$("${R_HOME:+$R_HOME/bin/}Rscript" -e 'cat(system.file("libs", package = "rsimd"))' 2> /dev/null) || so=
+  for f in "$so"/rsimd.so "$so"/rsimd.dll "$so"/*/rsimd.so "$so"/*/rsimd.dll; do
+    if [ -f "$f" ]; then so=$f; break; fi
+  done
+fi
+if [ -n "$so" ] && [ -f "$so" ]; then
+  so_bytes=$(wc -c < "$so" | tr -d ' ')
+  if command -v "${STRIP:-strip}" > /dev/null 2>&1 &&
+    "${STRIP:-strip}" -S -o "$tmp/stripped" "$so" 2> /dev/null; then
+    stripped=$(wc -c < "$tmp/stripped" | tr -d ' ')
+  else
+    stripped=$so_bytes
+  fi
+  echo "$so: $so_bytes bytes, $stripped without debugging information (budget $SO_BUDGET_BYTES)"
+  if [ "$stripped" -gt "$SO_BUDGET_BYTES" ]; then
+    echo "  FAIL: the shared library exceeds its budget"
+    status=1
+  fi
+else
+  echo "shared library: rsimd is not installed (set RSIMD_SO)"
 fi
 
 if [ $# -ge 1 ]; then

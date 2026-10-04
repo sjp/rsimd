@@ -59,5 +59,6 @@ SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode);
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);
 SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check);
+SEXP C_simd_debug_sleef_exp(SEXP x);
 
 #endif /* RSIMD_H */

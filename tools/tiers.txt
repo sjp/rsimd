@@ -15,6 +15,9 @@
 #              <...>        a system header
 #              @avx512      the curated x86/avx512/*.h list in tools/simde_probe.c
 #   enabled  yes, or no for reserved tiers that have no kernels
+#   sleef    the SLEEF inline header under src/vendor/sleef that gives the
+#            tier vectorised elementary functions, or '-' for none (the
+#            tier then takes them from a lower tier, ultimately none's libm)
 #
 # A tier may have several rows for the same arch: configure uses the first row
 # whose probe compiles (sve2 falls back to an older -march spelling).
@@ -23,16 +26,16 @@
 # unit, which is entered only after a runtime CPU check. No row may use
 # -march=native.
 #
-# tier   | arch    | os            | flags                                            | headers                          | enabled
-none     | all     | any           | -                                                | <math.h>                         | yes
-sse2     | x86_64  | any           | -                                                | x86/sse2.h x86/sse4.2.h          | yes
-sse2     | i686    | any           | -msse2 -mfpmath=sse                              | x86/sse2.h x86/sse4.2.h          | yes
-avx2     | x86_64  | any           | -mavx2 -mfma                                     | x86/avx2.h x86/fma.h             | yes
-avx512   | x86_64  | any           | -mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma | @avx512                          | yes
-neon     | aarch64 | any           | -                                                | x86/sse2.h x86/sse4.2.h x86/fma.h | yes
-neon     | armv7   | linux,freebsd | -mfpu=neon                                       | x86/sse2.h x86/sse4.2.h          | yes
-sve      | aarch64 | linux,freebsd | -march=armv8-a+sve                               | <arm_sve.h>                      | yes
-sve2     | aarch64 | linux,freebsd | -march=armv9-a+sve2                              | <arm_sve.h>                      | yes
-sve2     | aarch64 | linux,freebsd | -march=armv8.5-a+sve2                            | <arm_sve.h>                      | yes
-rvv      | -       | -             | -                                                | -                                | no
-wasm128  | -       | -             | -                                                | -                                | no
+# tier   | arch    | os            | flags                                            | headers                          | enabled | sleef
+none     | all     | any           | -                                                | <math.h>                         | yes     | -
+sse2     | x86_64  | any           | -                                                | x86/sse2.h x86/sse4.2.h          | yes     | sleefinline_sse2.h
+sse2     | i686    | any           | -msse2 -mfpmath=sse                              | x86/sse2.h x86/sse4.2.h          | yes     | sleefinline_sse2.h
+avx2     | x86_64  | any           | -mavx2 -mfma                                     | x86/avx2.h x86/fma.h             | yes     | sleefinline_avx2.h
+avx512   | x86_64  | any           | -mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma | @avx512                          | yes     | sleefinline_avx512f.h
+neon     | aarch64 | any           | -                                                | x86/sse2.h x86/sse4.2.h x86/fma.h | yes     | sleefinline_advsimd.h
+neon     | armv7   | linux,freebsd | -mfpu=neon                                       | x86/sse2.h x86/sse4.2.h          | yes     | -
+sve      | aarch64 | linux,freebsd | -march=armv8-a+sve                               | <arm_sve.h>                      | yes     | sleefinline_sve.h
+sve2     | aarch64 | linux,freebsd | -march=armv9-a+sve2                              | <arm_sve.h>                      | yes     | sleefinline_sve.h
+sve2     | aarch64 | linux,freebsd | -march=armv8.5-a+sve2                            | <arm_sve.h>                      | yes     | sleefinline_sve.h
+rvv      | -       | -             | -                                                | -                                | no      | -
+wasm128  | -       | -             | -                                                | -                                | no      | -

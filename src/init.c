@@ -50,6 +50,7 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_debug_fold, 6),
   CALLDEF(C_simd_debug_lgl, 4),
   CALLDEF(C_simd_debug_arith, 4),
+  CALLDEF(C_simd_debug_sleef_exp, 1),
   {NULL, NULL, 0}
 };
 

@@ -125,8 +125,8 @@ pass=0
 fail=0
 skip=0
 
-# Fields: tier | arch | os | flags | headers | enabled
-while IFS='|' read -r tier arch os flags headers enabled; do
+# Fields: tier | arch | os | flags | headers | enabled | sleef
+while IFS='|' read -r tier arch os flags headers enabled _sleef; do
   tier=$(echo "$tier" | tr -d ' \t')
   case "$tier" in '' | '#'*) continue ;; esac
   arch=$(echo "$arch" | tr -d ' \t')

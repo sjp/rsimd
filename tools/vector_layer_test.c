@@ -15,8 +15,9 @@
  * broadcast and int32 operands, and so are the predicate, comparison,
  * logical, bitwise and conversion kernels (src/kernels/predicates.inc.c,
  * compare.inc.c, bitwise.inc.c, convert.inc.c), against the scalar forms
- * those files define for the none tier. Prints a summary and exits
- * non-zero on any mismatch.
+ * those files define for the none tier. On tiers built with SLEEF the
+ * elementary-function wrappers are compared with C99 libm. Prints a
+ * summary and exits non-zero on any mismatch.
  */
 
 #include <float.h>
@@ -406,6 +407,203 @@ static void test_int(ptrdiff_t n) {
   I64_MASK("mi64 andnot", rsimd_mi64_andnot(rsimd_vi64_cmp_gt(x, y), rsimd_vi64_cmp_lt(x, y)),
            !(a > b) && a < b);
 }
+
+#ifdef RSIMD_HAVE_SLEEF
+/* The SLEEF wrappers of common.inc.h, through the predicated loop, against
+   SLEEF's documented error bounds: 1.0 ULP for the _u10 functions and 0.5
+   ULP for the _u05 ones, measured against the long double libm function
+   (quad precision on aarch64, x87 extended on x86), with a little slack for
+   the reference's own error. Results whose reference rounds to NaN, an
+   infinity or zero must match exactly, sign included. Inputs are random
+   over each function's domain of accuracy, plus special values. SLEEF's
+   bounds only hold for sinh and cosh on [-709, 709] and asinh and acosh on
+   [-1.34e154, 1.34e154] (beyond, they may give infinities); sinpi, cospi
+   and sincospi return 0 and 1 beyond 2.5e8 (SLEEF documents 1e9) and give
+   sinpi(n) = -0 for odd n > 0, so for them a zero matches either zero. */
+static long double ldref[N + 1];
+
+static double ulp_of(double x) {
+  int e;
+  if (x == 0 || !isfinite(x)) return DBL_TRUE_MIN;
+  frexp(x, &e);
+  return ldexp(1.0, e - 53) > DBL_TRUE_MIN ? ldexp(1.0, e - 53) : DBL_TRUE_MIN;
+}
+
+static int sleef_any_zero = 0; /* 1: a zero result matches either zero */
+static double sleef_worst[2] = {0, 0};
+static const char *sleef_worst_name[2] = {"", ""};
+
+static void check_ulp(const char *what, ptrdiff_t n, const double *got, double bound) {
+  ptrdiff_t i;
+  char buf[200];
+  const int k = bound < 1;
+  for (i = 0; i < n; i++) {
+    double g = got[i], w = (double) ldref[i];
+    int ok;
+    n_checks++;
+    if (isnan(w) || isinf(w) || w == 0) {
+      ok = bits(g) == bits(w) || (isnan(g) && isnan(w)) || (sleef_any_zero && g == 0 && w == 0);
+    } else {
+      double err = (double) (fabsl((long double) g - ldref[i]) / ulp_of(w));
+      /* SLEEF's bounds are max(bound, DBL_MIN) for atan2, sinpi and cospi:
+         subnormal results may be off by up to DBL_MIN. */
+      ok = err <= bound + 0.01 ||
+           (fabs(w) < DBL_MIN && fabsl((long double) g - ldref[i]) <= DBL_MIN);
+      if (ok && fabs(w) >= DBL_MIN && err > sleef_worst[k]) {
+        sleef_worst[k] = err;
+        sleef_worst_name[k] = what;
+      }
+    }
+    if (!ok) {
+      snprintf(buf, sizeof buf, "input %a %a: got %a want %a (%.4Lg)", fa[i], fb[i], g, w,
+               ldref[i]);
+      fail(what, n, i, buf);
+    }
+  }
+  n_checks++;
+  if (bits(got[n]) != bits(SENTINEL_F64)) fail(what, n, n, "wrote past the end");
+}
+
+/* Fills v with n values: specials first, then uniform on [lo, hi] or,
+   when log_scale, signs times 10^u for u uniform on [lo, hi]. */
+static void sleef_inputs(double *v, ptrdiff_t n, double lo, double hi, int log_scale, int sign) {
+  static const double specials[] = {0.0, -0.0, 1.0, -1.0, 0.5, -0.5, INFINITY, -INFINITY, NAN};
+  ptrdiff_t i;
+  for (i = 0; i < n; i++) {
+    double u = (double) (next_rand() >> 11) * 0x1.0p-53;
+    if (i < (ptrdiff_t) (sizeof specials / sizeof specials[0])) {
+      v[i] = specials[i];
+    } else if (log_scale) {
+      v[i] = pow(10.0, lo + u * (hi - lo));
+      if (sign && (next_rand() & 1)) v[i] = -v[i];
+    } else {
+      v[i] = lo + u * (hi - lo);
+    }
+  }
+}
+
+static rsimd_vf64 sleef_sincos_s(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincos(x, &s, &c);
+  return s;
+}
+static rsimd_vf64 sleef_sincos_c(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincos(x, &s, &c);
+  return c;
+}
+static rsimd_vf64 sleef_sincospi_s(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincospi(x, &s, &c);
+  return s;
+}
+static rsimd_vf64 sleef_sincospi_c(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincospi(x, &s, &c);
+  return c;
+}
+
+static long double ref_exp10(double x) { return powl(10.0L, (long double) x); }
+/* i686 glibc's acoshl(-0) is -Inf. */
+static long double ref_acosh(double x) {
+  return x < 1 ? (long double) NAN : acoshl((long double) x);
+}
+
+/* sin(pi x) and cos(pi x) from an exact reduction to pi t, |t| <= 1/4,
+   so that x87 long double is accurate enough near the zeros; exact at
+   multiples of 1/2 (sinpi keeps the sign of a zero argument, as C23 does). */
+/* sin(pi (r + shift / 2)) with q the nearest integer to 2 r. */
+static long double sinpi_quadrant(long double r, int q, int shift) {
+  const long double pi = 3.141592653589793238462643383279502884L;
+  long double t = r - 0.5L * (long double) q; /* exact, |t| <= 1/4 */
+  switch ((q + shift) & 3) {
+  case 0: return sinl(pi * t);
+  case 1: return cosl(pi * t);
+  case 2: return -sinl(pi * t);
+  default: return -cosl(pi * t);
+  }
+}
+static long double ref_sinpi(double x) {
+  long double r;
+  if (!isfinite(x)) return NAN;
+  r = fmodl((long double) x, 2.0L); /* exact */
+  if (r == 0 || fabsl(r) == 1) return copysignl(0.0L, (long double) x);
+  return sinpi_quadrant(r, (int) nearbyintl(2 * r), 0);
+}
+static long double ref_cospi(double x) {
+  long double r;
+  if (!isfinite(x)) return NAN;
+  r = fmodl(fabsl((long double) x), 2.0L);
+  if (r == 0.5L || r == 1.5L) return 0.0L;
+  return sinpi_quadrant(r, (int) nearbyintl(2 * r), 1);
+}
+
+#define SLEEF1(name, FN, REF, bound, lo, hi, log_scale, sign)                  \
+  do {                                                                         \
+    sleef_inputs(fa, n, lo, hi, log_scale, sign);                              \
+    reset_out();                                                               \
+    LOOP(RSIMD_LANES_64, p64, vf64, F64_LOADS, FN(x), fout);                   \
+    for (j = 0; j < n; j++) ldref[j] = REF(fa[j]);                             \
+    check_ulp(name, n, fout, bound);                                           \
+  } while (0)
+#define SLEEF2(name, FN, REF, bound, lo, hi, log_scale, sign)                  \
+  do {                                                                         \
+    sleef_inputs(fa, n, lo, hi, log_scale, sign);                              \
+    sleef_inputs(fb, n, lo, hi, log_scale, sign);                              \
+    reset_out();                                                               \
+    LOOP(RSIMD_LANES_64, p64, vf64, F64_LOADS, FN(x, y), fout);                \
+    for (j = 0; j < n; j++) ldref[j] = REF(fa[j], fb[j]);                      \
+    check_ulp(name, n, fout, bound);                                           \
+  } while (0)
+
+static void test_sleef(void) {
+  const ptrdiff_t n = N;
+  ptrdiff_t j;
+  int rep;
+  for (rep = 0; rep < 20; rep++) {
+    SLEEF1("sleef exp", rsimd_sleef_exp, expl, 1, -745, 709.7, 0, 0);
+    SLEEF1("sleef exp2", rsimd_sleef_exp2, exp2l, 1, -1075, 1023.9, 0, 0);
+    SLEEF1("sleef exp10", rsimd_sleef_exp10, ref_exp10, 1, -323, 308.2, 0, 0);
+    SLEEF1("sleef expm1", rsimd_sleef_expm1, expm1l, 1, -40, 709.7, 0, 0);
+    SLEEF1("sleef expm1 small", rsimd_sleef_expm1, expm1l, 1, -12, -1, 1, 1);
+    SLEEF1("sleef log", rsimd_sleef_log, logl, 1, -320, 308, 1, 0);
+    SLEEF1("sleef log negative", rsimd_sleef_log, logl, 1, -10, 10, 1, 1);
+    SLEEF1("sleef log2", rsimd_sleef_log2, log2l, 1, -320, 308, 1, 0);
+    SLEEF1("sleef log10", rsimd_sleef_log10, log10l, 1, -320, 308, 1, 0);
+    SLEEF1("sleef log1p", rsimd_sleef_log1p, log1pl, 1, -0.999, 1e3, 0, 0);
+    SLEEF1("sleef log1p small", rsimd_sleef_log1p, log1pl, 1, -300, -1, 1, 1);
+    SLEEF1("sleef cbrt", rsimd_sleef_cbrt, cbrtl, 1, -320, 308, 1, 1);
+    SLEEF1("sleef sin", rsimd_sleef_sin, sinl, 1, -1e4, 1e4, 0, 0);
+    SLEEF1("sleef sin wide", rsimd_sleef_sin, sinl, 1, -300, 300, 1, 1);
+    SLEEF1("sleef cos", rsimd_sleef_cos, cosl, 1, -1e4, 1e4, 0, 0);
+    SLEEF1("sleef cos wide", rsimd_sleef_cos, cosl, 1, -300, 300, 1, 1);
+    SLEEF1("sleef tan", rsimd_sleef_tan, tanl, 1, -1e4, 1e4, 0, 0);
+    SLEEF1("sleef tan wide", rsimd_sleef_tan, tanl, 1, -300, 300, 1, 1);
+    SLEEF1("sleef sincos sin", sleef_sincos_s, sinl, 1, -300, 300, 1, 1);
+    SLEEF1("sleef sincos cos", sleef_sincos_c, cosl, 1, -300, 300, 1, 1);
+    SLEEF1("sleef asin", rsimd_sleef_asin, asinl, 1, -1.01, 1.01, 0, 0);
+    SLEEF1("sleef acos", rsimd_sleef_acos, acosl, 1, -1.01, 1.01, 0, 0);
+    SLEEF1("sleef atan", rsimd_sleef_atan, atanl, 1, -300, 300, 1, 1);
+    SLEEF1("sleef sinh", rsimd_sleef_sinh, sinhl, 1, -709, 709, 0, 0);
+    SLEEF1("sleef cosh", rsimd_sleef_cosh, coshl, 1, -709, 709, 0, 0);
+    SLEEF1("sleef tanh", rsimd_sleef_tanh, tanhl, 1, -20, 20, 0, 0);
+    SLEEF1("sleef asinh", rsimd_sleef_asinh, asinhl, 1, -300, 154.12, 1, 1);
+    SLEEF1("sleef acosh", rsimd_sleef_acosh, ref_acosh, 1, 0, 154.12, 1, 0);
+    SLEEF1("sleef atanh", rsimd_sleef_atanh, atanhl, 1, -1.01, 1.01, 0, 0);
+    sleef_any_zero = 1;
+    SLEEF1("sleef sinpi", rsimd_sleef_sinpi, ref_sinpi, 0.5, -2.5e8, 2.5e8, 0, 0);
+    SLEEF1("sleef sinpi small", rsimd_sleef_sinpi, ref_sinpi, 0.5, -4, 4, 0, 0);
+    SLEEF1("sleef cospi", rsimd_sleef_cospi, ref_cospi, 0.5, -2.5e8, 2.5e8, 0, 0);
+    SLEEF1("sleef cospi small", rsimd_sleef_cospi, ref_cospi, 0.5, -4, 4, 0, 0);
+    SLEEF1("sleef sincospi sin", sleef_sincospi_s, ref_sinpi, 0.5, -100, 100, 0, 0);
+    SLEEF1("sleef sincospi cos", sleef_sincospi_c, ref_cospi, 0.5, -100, 100, 0, 0);
+    sleef_any_zero = 0;
+    SLEEF2("sleef pow", rsimd_sleef_pow, powl, 1, -3, 3, 1, 1);
+    SLEEF2("sleef atan2", rsimd_sleef_atan2, atan2l, 1, -300, 300, 1, 1);
+    SLEEF2("sleef hypot", rsimd_sleef_hypot, hypotl, 0.5, -300, 300, 1, 1);
+  }
+}
+#endif /* RSIMD_HAVE_SLEEF */
 
 static void test_int_horizontal(void) {
   ptrdiff_t L = RSIMD_LANES_32, i, j;
@@ -2012,7 +2210,15 @@ int main(void) {
   test_f64_horizontal();
 #endif
   test_int_horizontal();
-  printf("tier %s: lanes64=%ld lanes32=%ld, %ld checks, %ld failures\n", RSIMD_TIER_STRING,
+#ifdef RSIMD_HAVE_SLEEF
+  test_sleef();
+#endif
+  printf("tier %s: lanes64=%ld lanes32=%ld, %ld checks, %ld failures", RSIMD_TIER_STRING,
          (long) RSIMD_LANES_64, (long) RSIMD_LANES_32, n_checks, n_fail);
+#ifdef RSIMD_HAVE_SLEEF
+  printf("; SLEEF worst %.3f ULP (%s), %.3f ULP (%s)", sleef_worst[0], sleef_worst_name[0],
+         sleef_worst[1], sleef_worst_name[1]);
+#endif
+  printf("\n");
   return n_fail != 0;
 }

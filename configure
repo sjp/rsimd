@@ -20,6 +20,12 @@
 #   src/Makevars (src/Makevars.win on Windows) from the .in template, adding
 #     the tier objects and one explicit rule per tier object, and
 #   src/rsimd_config.h, defining RSIMD_HAVE_<TIER> for every built tier.
+# For a built tier that has a SLEEF inline header (the last field of
+# tools/tiers.txt), it also test-compiles a call into that header with the
+# tier's flags; on success the tier object is compiled with
+# -DRSIMD_HAVE_SLEEF_<TIER>=1 and gets SLEEF's vectorised elementary
+# functions, otherwise it is built without them and takes them from a lower
+# tier.
 # The none tier and the platform baseline (sse2 on x86-64, neon on arm64)
 # must compile: if they do not, configure fails.
 #
@@ -36,14 +42,15 @@
 #
 # Every tier object is also compiled with -ffp-contract=off (when the
 # compiler accepts it), so a * b + c is never fused behind the kernels' back
-# and the tiers round identically.
+# and the tiers round identically; SLEEF requires it too. With GCC the sve
+# and sve2 objects also get -fno-tree-vrp, as in SLEEF's own SVE build.
 #
 # Environment variables
 # ---------------------
 #   RSIMD_DISABLE_TIERS     comma-separated tiers not to build, for example
 #                           "avx512,sve2". none cannot be disabled.
 #   RSIMD_DISABLE_SLEEF=1   do not use SLEEF elementary functions in any
-#                           tier (math falls back to the none tier).
+#                           tier (they then come from the none tier's libm).
 #   RSIMD_CONFIGURE_VERBOSE=1  show the compiler output of failed probes.
 #   RSIMD_DEBUG=1           debug build: compile everything with
 #                           -DRSIMD_DEBUG (extra internal checks at load).
@@ -116,6 +123,7 @@ else
 fi
 tiers_file=tools/tiers.txt
 simde=src/vendor/simde
+sleef=src/vendor/sleef
 for f in "$tiers_file" "$makevars.in" "$simde/simde-common.h"; do
   if [ ! -f "$f" ]; then
     echo "configure: error: $f not found (run configure from the package root)" >&2
@@ -124,6 +132,14 @@ for f in "$tiers_file" "$makevars.in" "$simde/simde-common.h"; do
 done
 
 echo "rsimd: compiler $CC, target $arch-$os"
+
+use_sleef=yes
+if [ "${RSIMD_DISABLE_SLEEF:-0}" = 1 ]; then
+  use_sleef=no
+elif [ ! -f "$sleef/VERSION" ]; then
+  echo "configure: warning: $sleef not found: SLEEF elementary functions are not used" >&2
+  use_sleef=no
+fi
 
 verbose=${RSIMD_CONFIGURE_VERBOSE:-0}
 tmp=$(mktemp -d 2> /dev/null || mktemp -d -t rsimd)
@@ -260,8 +276,30 @@ write_probe() {
 # Compiles a probe: try_compile <source> <extra flags>.
 try_compile() {
   # shellcheck disable=SC2086 # flag variables are word lists
-  $CC $CPPFLAGS $CFLAGS $CPICFLAGS $2 -I"$simde" -c "$1" -o "$tmp/conftest.o" \
+  $CC $CPPFLAGS $CFLAGS $CPICFLAGS $2 -I"$simde" -I"$sleef" -c "$1" -o "$tmp/conftest.o" \
     > "$tmp/conftest.log" 2>&1
+}
+
+# Writes the SLEEF probe for an inline header: write_sleef_probe <header>
+# <file>. It calls the header's exp, which pulls in most of its helpers.
+write_sleef_probe() {
+  case "$1" in
+    sleefinline_sse2.h) intrin='<emmintrin.h>' vec=__m128d fn=Sleef_expd2_u10sse2 ;;
+    sleefinline_avx2.h) intrin='<immintrin.h>' vec=__m256d fn=Sleef_expd4_u10avx2 ;;
+    sleefinline_avx512f.h) intrin='<immintrin.h>' vec=__m512d fn=Sleef_expd8_u10avx512f ;;
+    sleefinline_advsimd.h) intrin='<arm_neon.h>' vec=float64x2_t fn=Sleef_expd2_u10advsimd ;;
+    sleefinline_sve.h) intrin='<arm_sve.h>' vec=svfloat64_t fn=Sleef_expdx_u10sve ;;
+    *) return 1 ;;
+  esac
+  cat > "$2" << EOF
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+#include $intrin
+#include "$1"
+$vec rsimd_probe($vec x);
+$vec rsimd_probe($vec x) { return $fn(x); }
+EOF
 }
 
 show_log() {
@@ -296,13 +334,22 @@ else
   show_log
 fi
 
+# GCC (not clang, which also defines __GNUC__) gets -fno-tree-vrp for the
+# SVE tiers.
+cc_is_gcc=no
+if printf '#if defined(__GNUC__) && !defined(__clang__)\nrsimd_gcc\n#endif\n' |
+  $CC -E - 2> /dev/null | grep -q '^rsimd_gcc$'; then
+  cc_is_gcc=yes
+fi
+
 enabled=" "
 reported=" "
+sleef_tiers=" "
 config_rules=
 objects=
 
-# Fields: tier | arch | os | flags | headers | enabled
-while IFS='|' read -r tier row_arch row_os flags headers row_enabled; do
+# Fields: tier | arch | os | flags | headers | enabled | sleef
+while IFS='|' read -r tier row_arch row_os flags headers row_enabled row_sleef; do
   tier=$(echo "$tier" | tr -d ' \t')
   case "$tier" in '' | '#'*) continue ;; esac
   row_arch=$(echo "$row_arch" | tr -d ' \t')
@@ -311,6 +358,8 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled; do
   flags=$(echo "$flags" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   [ "$flags" = - ] && flags=
   headers=$(echo "$headers" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  row_sleef=$(echo "$row_sleef" | tr -d ' \t')
+  [ "$row_sleef" = - ] && row_sleef=
 
   [ "$row_enabled" = yes ] || continue
   [ "$row_arch" = all ] || [ "$row_arch" = "$arch" ] || continue
@@ -338,7 +387,33 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled; do
     echo yes
     enabled="$enabled$tier "
     objects="$objects tier_$tier.o"
-    config_rules="$config_rules$tier|$flags
+    extra=
+    case "$tier" in sve | sve2)
+      if [ "$cc_is_gcc" = yes ]; then
+        printf "checking whether %s accepts -fno-tree-vrp... " "$CC"
+        if try_compile "$src" "$flags $fpflag -fno-tree-vrp"; then
+          extra=-fno-tree-vrp
+          echo yes
+        else
+          echo no
+          show_log
+        fi
+      fi
+      ;;
+    esac
+    if [ -n "$row_sleef" ] && [ "$use_sleef" = yes ]; then
+      printf "checking whether the %s tier can use SLEEF (%s)... " "$tier" "$row_sleef"
+      if write_sleef_probe "$row_sleef" "$tmp/conftest_sleef.c" &&
+        try_compile "$tmp/conftest_sleef.c" "$flags $fpflag $extra"; then
+        echo yes
+        sleef_tiers="$sleef_tiers$tier "
+        extra="$extra -DRSIMD_HAVE_SLEEF_$(echo "$tier" | tr 'a-z' 'A-Z')=1"
+      else
+        echo "no (built without SLEEF)"
+        show_log
+      fi
+    fi
+    config_rules="$config_rules$tier|$flags $extra
 "
     if [ "$tier" = none ] || [ "$tier" = "$baseline" ]; then
       printf "checking whether the %s tier compiles cleanly with -Wall -Wextra -pedantic... " "$tier"
@@ -388,6 +463,7 @@ if [ "${RSIMD_DISABLE_SLEEF:-0}" = 1 ]; then
 fi
 
 tier_list=$(echo $enabled | tr ' ' ',')
+sleef_list=$(echo $sleef_tiers | tr ' ' ',')
 
 # src/rsimd_config.h
 {
@@ -404,6 +480,7 @@ tier_list=$(echo $enabled | tr ' ' ',')
   echo "#define RSIMD_CONFIG_ARCH \"$arch\""
   echo "#define RSIMD_CONFIG_OS \"$os\""
   echo "#define RSIMD_CONFIG_TIERS \"$tier_list\""
+  echo "#define RSIMD_CONFIG_SLEEF \"$sleef_list\""
   echo "#define RSIMD_CONFIG_DISABLED \"$(echo $disabled | tr ' ' ',')\""
   echo "#define RSIMD_CONFIG_TEST_HOLE \"$test_hole\""
   if [ -n "$test_hole" ]; then
@@ -420,7 +497,7 @@ tier_list=$(echo $enabled | tr ' ' ',')
     [ -n "$t" ] || continue
     echo "tier_$t.o: tier_$t.c \$(RSIMD_TIER_DEPS)"
     printf '\t$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) %s -c tier_%s.c -o tier_%s.o\n' \
-      "$(echo "$f $fpflag" | sed 's/^ *//; s/ *$//')" "$t" "$t"
+      "$(echo "$f $fpflag" | sed 's/  */ /g; s/^ *//; s/ *$//')" "$t" "$t"
     echo
   done
 } > "$tmp/rules"
@@ -431,4 +508,5 @@ sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@|$pkg_cppflag
     { print }' > "$makevars"
 
 echo "rsimd: building tiers $tier_list"
+echo "rsimd: tiers with SLEEF elementary functions: ${sleef_list:-(no tier)}"
 exit 0

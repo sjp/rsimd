@@ -90,3 +90,9 @@
   `simd_as_logical()` and `simd_as_raw()`. The default `"checked"` mode
   matches `as.integer()` and `as.raw()` including their warnings;
   `"saturating"` clamps and `"truncating"` wraps around, without warnings.
+* Bundled inline headers generated from SLEEF 3.9.0 (double precision only) in
+  `src/vendor/sleef`, with a maintainer script that regenerates them
+  reproducibly. `configure` gives each SIMD tier SLEEF's vectorised elementary
+  functions when its header compiles (1.0-ULP variants, 0.5-ULP for `sinpi`,
+  `cospi` and `hypot`); `RSIMD_DISABLE_SLEEF=1` turns them off. Every tier is
+  compiled with `-ffp-contract=off`.

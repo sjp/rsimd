@@ -4,7 +4,9 @@
 # comparison, bitwise and conversion kernels (src/kernels/reduce.inc.c,
 # scan.inc.c, arith.inc.c, predicates.inc.c, compare.inc.c, bitwise.inc.c,
 # convert.inc.c) on every tier, against plain C references
-# (tools/vector_layer_test.c).
+# (tools/vector_layer_test.c), and the SLEEF elementary-function wrappers
+# on the tiers that have a SLEEF header (unless RSIMD_DISABLE_SLEEF=1),
+# against C99 libm.
 #
 # Each tier is compiled with its flags from tools/tiers.txt plus
 # -ffp-contract=off and -Wall -Wextra -pedantic -Werror (R's headers, which
@@ -109,8 +111,8 @@ fail=0
 skip=0
 done_list=" "
 
-# Fields: tier | arch | os | flags | headers | enabled
-while IFS='|' read -r tier arch os flags headers enabled; do
+# Fields: tier | arch | os | flags | headers | enabled | sleef
+while IFS='|' read -r tier arch os flags headers enabled sleef; do
   tier=$(echo "$tier" | tr -d ' \t')
   case "$tier" in '' | '#'*) continue ;; esac
   arch=$(echo "$arch" | tr -d ' \t')
@@ -118,6 +120,14 @@ while IFS='|' read -r tier arch os flags headers enabled; do
   flags=$(echo "$flags" | sed 's/^[ \t]*//; s/[ \t]*$//')
   [ "$flags" = "-" ] && flags=
   [ "$enabled" = yes ] || continue
+  # Tiers with a SLEEF header also test its wrappers. The header is a
+  # system include here because this build adds -Wextra.
+  sleef=$(echo "$sleef" | tr -d ' \t')
+  if [ "$sleef" != "-" ] && [ -n "$sleef" ] && [ "${RSIMD_DISABLE_SLEEF:-0}" != 1 ]; then
+    flags="$flags -DRSIMD_HAVE_SLEEF_$(echo "$tier" | tr 'a-z' 'A-Z')=1 -isystem $root/src/vendor/sleef"
+    # As configure does for GCC.
+    case "$tier/${CC:-gcc}" in sve/*clang* | sve2/*clang*) ;; sve/* | sve2/*) flags="$flags -fno-tree-vrp" ;; esac
+  fi
 
   # The none tier runs once per available architecture.
   if [ "$arch" = all ]; then

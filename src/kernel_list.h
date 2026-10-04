@@ -38,6 +38,10 @@ RSIMD_OP(selftest_arith_i32, int,
 RSIMD_OP(selftest_arith_f64, void,
          (int op, const double *x, const double *y, R_xlen_t n, int x_scalar, int y_scalar,
           double *out, const rsimd_opts *o))
+/* out[i] = exp(x[i]) through the tier's SLEEF exp, or libm's exp in the
+   none tier: a check that the SLEEF headers are wired into every tier
+   that has them. Tiers without SLEEF leave the slot empty. */
+RSIMD_OP(selftest_sleef_exp, void, (const double *x, R_xlen_t n, double *out))
 
 /* Reductions. Each call folds one chunk into the running result (see
    rsimd_reduce_result in kernel_types.h); the entry point merges chunks

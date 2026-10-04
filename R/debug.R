@@ -48,3 +48,8 @@
 .debug_arith <- function(op, x, y = x, na_check = TRUE) {
   .Call(C_simd_debug_arith, x, y, op, na_check)
 }
+
+# exp(x) through the SLEEF self-test slot: SLEEF's exp on a tier built
+# with SLEEF, else the kernel of the next lower tier that has one (libm's
+# exp in none).
+.debug_sleef_exp <- function(x) .Call(C_simd_debug_sleef_exp, x)

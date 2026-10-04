@@ -33,3 +33,60 @@ jobs:
         with:
           args: 'c("--no-manual", "--as-cran")'
           error-on: '"warning"'
+
+      - name: Check tier compile flags and exported symbols
+        run: sh tools/check_build.sh check/rsimd.Rcheck/00install.out check/rsimd.Rcheck/rsimd/libs/rsimd.so
+
+      - name: Report vendored code, tarball and library sizes
+        run: RSIMD_SO=check/rsimd.Rcheck/rsimd/libs/rsimd.so sh tools/check_size.sh
+
+  build-variants:
+    # Builds that must still work: without SLEEF, and with a compiler that
+    # cannot build the avx512 tier or SLEEF's AVX-512 header.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [no-sleef, no-avx512]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::testthat, any::callr, any::bit64
+          needs: check
+
+      - name: Configure the variant
+        run: |
+          if [ "${{ matrix.variant }}" = no-sleef ]; then
+            echo "RSIMD_DISABLE_SLEEF=1" >> "$GITHUB_ENV"
+          else
+            # A compiler wrapper that rejects AVX-512 flags.
+            mkdir -p "$HOME/.R"
+            printf '#!/bin/sh\nfor a in "$@"; do case "$a" in -mavx512*) echo "no AVX-512" >&2; exit 1 ;; esac; done\nexec gcc "$@"\n' > "$HOME/cc-no-avx512"
+            chmod +x "$HOME/cc-no-avx512"
+            echo "CC=$HOME/cc-no-avx512" > "$HOME/.R/Makevars"
+          fi
+
+      - name: Install
+        run: R CMD INSTALL . 2>&1 | tee install.log
+
+      - name: Check the build
+        run: |
+          sh tools/check_build.sh install.log
+          if [ "${{ matrix.variant }}" = no-avx512 ]; then
+            grep -q 'can build the avx512 tier.*no (dropped)' install.log
+          else
+            grep -q 'tiers with SLEEF elementary functions: (no tier)' install.log
+          fi
+
+      - name: Test
+        run: |
+          Rscript -e 'testthat::test_dir("tests/testthat", package = "rsimd", load_package = "installed", stop_on_failure = TRUE)'

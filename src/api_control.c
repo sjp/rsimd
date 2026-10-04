@@ -59,7 +59,8 @@ SEXP C_simd_cpu_tiers(void) {
    table names its tier through the tier_name slot when the CPU can run it
    (tier code is never entered otherwise; referencing the table still proves
    the object is linked). Attributes: "configured", configure's list,
-   "disabled", the tiers excluded by RSIMD_DISABLE_TIERS at build time, and
+   "sleef", the tiers built with SLEEF elementary functions, "disabled",
+   the tiers excluded by RSIMD_DISABLE_TIERS at build time, and
    "test_hole", the slot emptied by RSIMD_TEST_HOLE ("" if none). */
 SEXP C_simd_compiled_tiers(void) {
   SEXP out;
@@ -74,6 +75,7 @@ SEXP C_simd_compiled_tiers(void) {
                                          : rsimd_tier_names[i]));
   }
   Rf_setAttrib(out, Rf_install("configured"), Rf_mkString(RSIMD_CONFIG_TIERS));
+  Rf_setAttrib(out, Rf_install("sleef"), Rf_mkString(RSIMD_CONFIG_SLEEF));
   Rf_setAttrib(out, Rf_install("disabled"), Rf_mkString(RSIMD_CONFIG_DISABLED));
   Rf_setAttrib(out, Rf_install("test_hole"), Rf_mkString(RSIMD_CONFIG_TEST_HOLE));
   UNPROTECT(1);

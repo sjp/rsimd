@@ -4,14 +4,18 @@ Version: 0.0.0.9000
 Authors@R: c(
     person("Simon", "Potter", email = "simon@sjp.co.nz", role = c("aut", "cre")),
     person("Evan", "Nemerson", role = "cph", comment = "SIMDe"),
-    person("SIMDe authors", role = "cph", comment = "SIMDe, see inst/COPYRIGHTS")
+    person("SIMDe authors", role = "cph", comment = "SIMDe, see inst/COPYRIGHTS"),
+    person("Naoki", "Shibata", role = "cph", comment = "SLEEF"),
+    person("SLEEF authors", role = "cph", comment = "SLEEF, see inst/COPYRIGHTS"),
+    person("ARM Ltd.", role = "cph", comment = "SLEEF AdvSIMD and SVE code")
   )
 Description: Fast vectorised primitives for R atomic vectors, including
     reductions, elementwise arithmetic, predicates, bitwise operations,
     conversions and transcendental functions, implemented with single
     instruction, multiple data (SIMD) instructions on x86-64 and arm64.
     Kernels are written once using the portable 'SIMDe' intrinsics library
-    and use 'SLEEF' for vectorised elementary functions. CPU features are
+    (bundled), and vectorised elementary functions come from the bundled
+    'SLEEF' library (<https://sleef.org/>). CPU features are
     detected at run time and the best supported implementation is chosen
     automatically, while users can select a specific implementation, or a
     plain scalar one, by name.
