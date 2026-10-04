@@ -133,7 +133,10 @@ enum { RSIMD_EW_OVERFLOW = 1, RSIMD_EW_NAN_PRODUCED = 2, RSIMD_EW_LO_GT_HI = 4 }
 
 /* Elementary functions (kernels/math.inc.c). Unary op codes for
    math1_f64; LOGB is log(x) / p, the logarithm to a base whose natural
-   logarithm is p. Binary op codes for math2_f64: pow(x, y) with base R's
+   logarithm is p; SIGMOID is the logistic function 1 / (1 + exp(-x)),
+   computed as e = exp(-|x|), then 1 / (1 + e) for x >= 0 and e / (1 + e)
+   otherwise, which is accurate in both tails (subnormal results down to
+   x = -745). Binary op codes for math2_f64: pow(x, y) with base R's
    rules for x ^ y, atan2(y, x) and hypot(x, y). The kernels return
    RSIMD_EW_NAN_PRODUCED when a result is NaN where no operand was (pow
    never sets it, as base R's ^ never warns). */
@@ -162,9 +165,20 @@ enum {
   RSIMD_MATH_TANH,
   RSIMD_MATH_ASINH,
   RSIMD_MATH_ACOSH,
-  RSIMD_MATH_ATANH
+  RSIMD_MATH_ATANH,
+  RSIMD_MATH_SIGMOID
 };
 enum { RSIMD_MATH_POW = 0, RSIMD_MATH_ATAN2, RSIMD_MATH_HYPOT };
+
+/* The passes of softmax and log-softmax (kernels/ml.inc.c), op codes of
+   softmax_f64 over x, which may be the same buffer as out:
+     EXP_SUM  out[i] = exp(x[i] - m), and the sum of those added to r;
+     SUM      only adds the sum of exp(x[i] - m) to r (out unused);
+     DIV      out[i] = x[i] / c;
+     LOG      out[i] = (x[i] - m) - c.
+   The sums are in the precision mode, folding the exponentials in blocks
+   of RSIMD_PAIRWISE_LEAF as sum_f64 would fold them. */
+enum { RSIMD_SOFTMAX_EXP_SUM = 0, RSIMD_SOFTMAX_SUM, RSIMD_SOFTMAX_DIV, RSIMD_SOFTMAX_LOG };
 
 /* Predicates (kernels/predicates.inc.c): is.na (NA or NaN), is.nan (NaN
    but not NA), is.finite, is.infinite, negative (sign bit set and not

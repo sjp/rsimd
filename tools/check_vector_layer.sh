@@ -7,7 +7,8 @@
 # (tools/vector_layer_test.c), and, on the tiers that have a SLEEF header
 # (unless RSIMD_DISABLE_SLEEF=1), the SLEEF elementary-function wrappers
 # against long double libm and the elementary-function kernels
-# (src/kernels/math.inc.c) against the none tier's scalar forms.
+# (src/kernels/math.inc.c) against the none tier's scalar forms, and the
+# softmax passes (src/kernels/ml.inc.c) against libm and the scalar folds.
 #
 # Each tier is compiled with its flags from tools/tiers.txt plus
 # -ffp-contract=off and -Wall -Wextra -pedantic -Werror (R's headers, which

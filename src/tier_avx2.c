@@ -13,5 +13,6 @@
 #include "kernels/bitwise.inc.c"
 #include "kernels/convert.inc.c"
 #include "kernels/math.inc.c"
+#include "kernels/ml.inc.c"
 #include "kernels/selftest.inc.c"
 #include "kernels/table.inc.c"

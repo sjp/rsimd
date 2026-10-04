@@ -158,7 +158,7 @@ RSIMD_OP(ew3_i32, int,
           const rsimd_opts *o))
 
 /* Elementary functions, out[i] = f(x[i]) (math1_f64, op codes
-   RSIMD_MATH_EXP .. ATANH, p used by LOGB only), out[i] = f(x[i], y[i])
+   RSIMD_MATH_EXP .. SIGMOID, p used by LOGB only), out[i] = f(x[i], y[i])
    (math2_f64, RSIMD_MATH_POW .. HYPOT) and both sin(x[i]) and cos(x[i])
    (sincos_f64), with base R's missing-value rules. Operands are read as
    doubles or int32 elements with the flags of the elementwise kernels
@@ -169,6 +169,17 @@ RSIMD_OP(math1_f64, int, (int op, const void *x, R_xlen_t n, int flags, double p
 RSIMD_OP(math2_f64, int,
          (int op, const void *x, const void *y, R_xlen_t n, int flags, double *out))
 RSIMD_OP(sincos_f64, int, (const void *x, R_xlen_t n, int flags, double *s, double *c))
+
+/* The passes of softmax and log-softmax (op codes RSIMD_SOFTMAX_* in
+   kernel_types.h) over n elements of x, which may be out itself. x must
+   hold no NaN and m must be finite and at least every x[i]: exp(x[i] - m)
+   is then in [0, 1]. The sums are folded into r in o->precision (with no
+   missing-value checks); a chunk must start at a multiple of
+   RSIMD_PAIRWISE_LEAF. The SIMD tiers use SLEEF's exp and leave the slot
+   empty when built without it. */
+RSIMD_OP(softmax_f64, void,
+         (int op, const double *x, R_xlen_t n, double m, double c, double *out,
+          rsimd_reduce_result *r, const rsimd_opts *o))
 
 /* Predicates: for mode RSIMD_PRED_ELT, out[i] = 1 or 0 for each element
    (never NA) and the return value is 0; for ANY and ALL nothing is

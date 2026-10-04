@@ -162,6 +162,13 @@ static inline double rsimd_tanpi_f64(double x) {
   return r < 0 ? -t : t;
 }
 
+/* The logistic function, in the form that is accurate in both tails:
+   1 / (1 + e) for x >= 0, e / (1 + e) below, with e = exp(-|x|). */
+static inline double rsimd_sigmoid_f64(double x) {
+  double e = exp(-fabs(x));
+  return (x >= 0 ? 1.0 : e) / (1.0 + e);
+}
+
 /* f(x) for unary op code `op`; p is the divisor of LOGB. */
 static inline double rsimd_math1_f64(int op, double x, double p) {
   switch (op) {
@@ -190,6 +197,7 @@ static inline double rsimd_math1_f64(int op, double x, double p) {
   case RSIMD_MATH_ASINH: return asinh(x);
   case RSIMD_MATH_ACOSH: return acosh(x);
   case RSIMD_MATH_ATANH: return atanh(x);
+  case RSIMD_MATH_SIGMOID: return rsimd_sigmoid_f64(x);
   default: return NAN;
   }
 }
@@ -238,6 +246,7 @@ int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double
   case RSIMD_MATH_SIN: RSIMD_MATH1_NONE_LOOP(sin(a)) break;
   case RSIMD_MATH_COS: RSIMD_MATH1_NONE_LOOP(cos(a)) break;
   case RSIMD_MATH_TANH: RSIMD_MATH1_NONE_LOOP(tanh(a)) break;
+  case RSIMD_MATH_SIGMOID: RSIMD_MATH1_NONE_LOOP(rsimd_sigmoid_f64(a)) break;
   default: RSIMD_MATH1_NONE_LOOP(rsimd_math1_f64(op, a, p)) break;
   }
   return st;
@@ -398,6 +407,14 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_pow(rsimd_vf64 a, rsimd_vf64 b, int la
                           rsimd_mf64_or(rsimd_vf64_cmp_eq(a, one), rsimd_vf64_cmp_eq(b, zero)));
 }
 
+/* The vector form of rsimd_sigmoid_f64(). */
+static inline rsimd_vf64 rsimd_math_sigmoid(rsimd_vf64 a) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0);
+  rsimd_vf64 e = rsimd_sleef_exp(rsimd_vf64_neg(rsimd_vf64_abs(a)));
+  rsimd_vf64 num = rsimd_vf64_blend(e, one, rsimd_vf64_cmp_ge(a, rsimd_vf64_zero()));
+  return rsimd_vf64_div(num, rsimd_vf64_add(one, e));
+}
+
 /* Runs `expr`, which sets the rsimd_vf64 r from a (and b), over the
    chunk, with the loads of the elementwise kernels (arith.inc.c); `lanes`
    is the number of active lanes. */
@@ -497,6 +514,7 @@ int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double
     RSIMD_MATH_LOOP(1, RSIMD_MATH1_FIXED(rsimd_sleef_acosh(a), 1e154, acosh));
     break;
   case RSIMD_MATH_ATANH: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_atanh(a))); break;
+  case RSIMD_MATH_SIGMOID: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_sigmoid(a))); break;
   default: break;
   }
   return st;

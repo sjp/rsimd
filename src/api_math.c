@@ -78,7 +78,7 @@ SEXP C_simd_math1(SEXP x, SEXP op) {
   static const char *const names[] = {
     "exp",  "exp2", "exp10", "expm1", "log",   "log2",  "log10", "log1p", "",
     "cbrt", "sin",  "cos",   "tan",   "asin",  "acos",  "atan",  "sinpi", "cospi",
-    "tanpi", "sinh", "cosh", "tanh",  "asinh", "acosh", "atanh"};
+    "tanpi", "sinh", "cosh", "tanh",  "asinh", "acosh", "atanh", "sigmoid"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   if (code == RSIMD_MATH_LOGB) Rf_error("internal error: unknown op ''");
   return run_math1(x, code, 1.0, MATH1_WARN);

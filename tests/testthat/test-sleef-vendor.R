@@ -31,7 +31,7 @@ test_that("SLEEF is only reported for compiled tiers that have a header", {
 test_that("the math slots run the tier's own kernels or fill down", {
   res <- for_each_tier(function(tier) {
     list(
-      reported = simd_kernel_tiers()[c("math1_f64", "math2_f64", "sincos_f64")],
+      reported = simd_kernel_tiers()[c("math1_f64", "math2_f64", "sincos_f64", "softmax_f64")],
       expected = expected_owner(tier)
     )
   })
@@ -55,10 +55,13 @@ test_that("SLEEF exp is within 2 ULP of libm on every tier, at every length", {
 
 test_that("a build without SLEEF takes the math kernels from none on every tier", {
   skip_if(length(sleef_tiers()) > 0, "package built with SLEEF")
-  res <- for_each_tier(function(tier) simd_kernel_tiers()[["math1_f64"]])
+  res <- for_each_tier(function(tier) simd_kernel_tiers()[c("math1_f64", "softmax_f64")])
   expect_true(all(unlist(res) == "none"))
   x <- c(-1, 0, 1, 2.5)
   for (tier in names(res)) {
     expect_identical(simd_with_impl(tier, simd_exp(x)), exp(x), info = tier)
+    expect_identical(simd_with_impl(tier, simd_softmax(x)), simd_with_impl("none", simd_softmax(x)),
+      info = tier
+    )
   }
 })

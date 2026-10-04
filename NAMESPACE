@@ -149,3 +149,8 @@ export(simd_sinpi)
 export(simd_tan)
 export(simd_tanh)
 export(simd_tanpi)
+
+# ML helpers
+export(simd_log_softmax)
+export(simd_sigmoid)
+export(simd_softmax)

@@ -107,3 +107,10 @@
   its single "NaNs produced" warning; `simd_pow()` reproduces base R's `^`
   exactly at its special cases, and the pi functions are exact at integers and
   half-integers. Odd functions keep `-0` (base R 4.6 returns `0` for some).
+* Added `simd_sigmoid()`, the logistic function in a form that is accurate in
+  both tails (it keeps the subnormal results that `plogis()` rounds to 0), and
+  `simd_softmax()` and `simd_log_softmax()` over a whole vector, computed
+  stably from `exp(x - max(x))` with the denominator summed in the
+  `simd_precision()` mode and no memory beyond the result. Missing and
+  infinite values give what base R's formulas give, preferring `NA` over
+  `NaN`, without warnings.

@@ -18,7 +18,8 @@
  * those files define for the none tier. On tiers built with SLEEF the
  * elementary-function wrappers are compared with long double libm, and the
  * elementary-function kernels (src/kernels/math.inc.c) with the scalar
- * forms that file defines for the none tier. Prints a
+ * forms that file defines for the none tier, and the softmax passes
+ * (src/kernels/ml.inc.c) with libm and the scalar folds. Prints a
  * summary and exits non-zero on any mismatch.
  */
 
@@ -33,6 +34,7 @@
 #include "kernels/bitwise.inc.c"
 #include "kernels/convert.inc.c"
 #include "kernels/math.inc.c"
+#include "kernels/ml.inc.c"
 
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
 #define SENTINEL_F64 -12345.678
@@ -718,6 +720,7 @@ static void math_inputs(int op, double *v, int32_t *iv, ptrdiff_t n) {
   case RSIMD_MATH_SINPI: case RSIMD_MATH_COSPI: case RSIMD_MATH_TANPI:
     lo = -2; hi = 2; break;
   case RSIMD_MATH_SINH: case RSIMD_MATH_COSH: lo = -712; hi = 712; break;
+  case RSIMD_MATH_SIGMOID: lo = -800; hi = 800; break;
   default: break;
   }
   sleef_inputs(v, n, lo, hi, log_scale, 1);
@@ -735,6 +738,81 @@ static void math_inputs(int op, double *v, int32_t *iv, ptrdiff_t n) {
   }
   for (j = 0; j < n; j++) iv[j] = (int32_t) (next_rand() % 41) - 20;
   if (n > 3) iv[3] = RSIMD_NA_I32;
+}
+
+/* The softmax passes (src/kernels/ml.inc.c) against libm and the scalar
+   folds of na.h: exp(x - m) within 2 ULP and its sum within 1e-14
+   (relative; the sum is at least 1) in every precision mode, SUM giving
+   exactly the sum of EXP_SUM, DIV and LOG exactly (one or two IEEE
+   operations), and every op the same in place as into another buffer. */
+static double sx[N + 1], sref[N + 1], sout[N + 1];
+static void test_softmax(void) {
+  static const ptrdiff_t lens[] = {1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 33, 65, 127, 128, 129, N};
+  size_t li;
+  ptrdiff_t j, n;
+  int prec;
+  char what[96], buf[160];
+  for (li = 0; li < sizeof lens / sizeof lens[0]; li++) {
+    double m = -INFINITY;
+    n = lens[li];
+    for (j = 0; j < n; j++) sx[j] = (double) (next_rand() % 1000000) * -6e-5 + 3;
+    if (n > 3) sx[3] = -INFINITY;
+    if (n > 5) sx[5] = -800; /* exp(x - m) subnormal or 0 */
+    if (n > 6) sx[6] = -743;
+    for (j = 0; j < n; j++) m = sx[j] > m ? sx[j] : m;
+    for (j = 0; j < n; j++) sref[j] = exp(sx[j] - m);
+    for (prec = RSIMD_PREC_FAST; prec <= RSIMD_PREC_COMPENSATED; prec++) {
+      const rsimd_opts o = {0, 0, prec};
+      rsimd_reduce_result r, r2, rr;
+      double got, want;
+      memset(&r, 0, sizeof r);
+      memset(&r2, 0, sizeof r2);
+      memset(&rr, 0, sizeof rr);
+      snprintf(what, sizeof what, "softmax exp_sum precision %d", prec);
+      reset_out();
+      RSIMD_KERNEL(softmax_f64)(RSIMD_SOFTMAX_EXP_SUM, sx, n, m, 0.0, fout, &r, &o);
+      check_math(what, n, fout, sref, sx, NULL, 0, 2);
+      rsimd_fold_f64(sref, NULL, n, RSIMD_TERM_X, &rr, &o);
+      got = rsimd_reduce_value(&r, prec);
+      want = rsimd_reduce_value(&rr, prec);
+      n_checks++;
+      if (!(fabs(got - want) <= 1e-14 * want)) {
+        snprintf(buf, sizeof buf, "sum got %a want %a", got, want);
+        fail(what, n, 0, buf);
+      }
+      /* SUM writes nothing and gives the same sum. */
+      snprintf(what, sizeof what, "softmax sum precision %d", prec);
+      memcpy(sout, fout, sizeof sout);
+      RSIMD_KERNEL(softmax_f64)(RSIMD_SOFTMAX_SUM, sx, n, m, 0.0, NULL, &r2, &o);
+      check_int(what, n, 0, bits(rsimd_reduce_value(&r2, prec)) == bits(got), 1);
+      /* In place. */
+      snprintf(what, sizeof what, "softmax exp_sum in place precision %d", prec);
+      memcpy(fout, sx, sizeof(double) * (size_t) n);
+      memset(&r2, 0, sizeof r2);
+      RSIMD_KERNEL(softmax_f64)(RSIMD_SOFTMAX_EXP_SUM, fout, n, m, 0.0, fout, &r2, &o);
+      for (j = 0; j < n; j++) check_int(what, n, j, bits(fout[j]) == bits(sout[j]), 1);
+      check_int(what, n, 0, bits(rsimd_reduce_value(&r2, prec)) == bits(got), 1);
+    }
+    {
+      const rsimd_opts o = {0, 0, RSIMD_PREC_FAST};
+      const double c = 1.2345678901234567;
+      int op;
+      for (op = RSIMD_SOFTMAX_DIV; op <= RSIMD_SOFTMAX_LOG; op++) {
+        snprintf(what, sizeof what, "softmax op %d", op);
+        reset_out();
+        RSIMD_KERNEL(softmax_f64)(op, sx, n, m, c, fout, NULL, &o);
+        for (j = 0; j < n; j++) {
+          double w = op == RSIMD_SOFTMAX_DIV ? sx[j] / c : (sx[j] - m) - c;
+          check_int(what, n, j, bits(fout[j]) == bits(w), 1);
+        }
+        n_checks++;
+        if (bits(fout[n]) != bits(SENTINEL_F64)) fail(what, n, n, "wrote past the end");
+        memcpy(sout, sx, sizeof(double) * (size_t) n);
+        RSIMD_KERNEL(softmax_f64)(op, sout, n, m, c, sout, NULL, &o);
+        for (j = 0; j < n; j++) check_int(what, n, j, bits(sout[j]) == bits(fout[j]), 1);
+      }
+    }
+  }
 }
 
 /* log2 and exp2 of the powers of 2 and integers, log10 and exp10 of
@@ -773,7 +851,7 @@ static void test_math(void) {
   char what[96];
   for (li = 0; li < sizeof lens / sizeof lens[0]; li++) {
     n = lens[li];
-    for (op = RSIMD_MATH_EXP; op <= RSIMD_MATH_ATANH; op++) {
+    for (op = RSIMD_MATH_EXP; op <= RSIMD_MATH_SIGMOID; op++) {
       const double p = op == RSIMD_MATH_LOGB ? log(3.0) : 1.0;
       math_inputs(op, ma, mia, n);
       for (f = 0; f < 2; f++) {
@@ -2458,6 +2536,7 @@ int main(void) {
   test_pi_oracle();
   test_math();
   test_math_exact();
+  test_softmax();
 #endif
   printf("tier %s: lanes64=%ld lanes32=%ld, %ld checks, %ld failures", RSIMD_TIER_STRING,
          (long) RSIMD_LANES_64, (long) RSIMD_LANES_32, n_checks, n_fail);
