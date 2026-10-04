@@ -42,6 +42,26 @@ To check that the C code compiles without warnings, add the following to
 CFLAGS = -g -O2 -Wall -Wextra -pedantic
 ```
 
+## C language server
+
+The C code is set up for [clangd](https://clangd.llvm.org/), which Claude Code's
+LSP tool and the VS Code clangd extension use. `sh tools/compile_commands.sh`
+writes `compile_commands.json` (not committed) without building anything; it runs
+`./configure` first if `src/rsimd_config.h` is missing, for example after `cleanup`.
+Every tier file is listed with its own flags and target, so on an arm64 machine the
+x86 tiers are still indexed on their native SIMDe and SLEEF paths (and the other way
+round); that needs the other architecture's cross compiler for its libc headers
+(`gcc-x86-64-linux-gnu` or `gcc-aarch64-linux-gnu`). The kernel sources and headers
+only compile inside a tier file, so the script gives each one a tier file's command
+and a generated prelude (under `.cache/rsimd-lsp/`) holding what that tier file
+defines and includes before it. The kernel sources are seen as the host's baseline
+tier; set `RSIMD_LSP_TIER=avx2` (or another tier) to see them as that one. Re-run
+the script after changing `tools/tiers.txt` or an `#include` line. `.clangd`
+silences diagnostics in the vendored headers.
+
+The devcontainer installs clangd and the cross compiler, runs the script, and
+installs the `clangd-lsp` Claude Code plugin.
+
 ## Instruction-set tiers and the build
 
 Kernels are compiled once per instruction-set tier. `src/tier_<tier>.c` is a

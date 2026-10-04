@@ -10,3 +10,6 @@
 ^LICENSE\.md$
 ^README\.Rmd$
 ^cran-comments\.md$
+^\.clangd$
+^compile_commands\.json$
+^\.cache$

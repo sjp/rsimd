@@ -12,7 +12,8 @@
 		"vscode": {
 			"extensions": [
 				"REditorSupport.r-syntax",
-				"RDebugger.r-debugger"
+				"RDebugger.r-debugger",
+				"llvm-vs-code-extensions.vscode-clangd"
 			]
 		}
 	},

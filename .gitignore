@@ -9,3 +9,5 @@ src/Makevars
 src/Makevars.win
 src/rsimd_config.h
 config.log
+compile_commands.json
+.cache/

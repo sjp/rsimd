@@ -48,6 +48,17 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 Rscript -e 'if (!requireNamespace("languageserver", quietly = TRUE))
     install.packages("languageserver", Ncpus = parallel::detectCores())'
 
+# clangd for the C code, with the other architecture's cross compiler so it
+# can index the tiers the host cannot build (the x86 ones on arm64 and the
+# other way round). tools/compile_commands.sh writes its compile_commands.json.
+case "$(uname -m)" in
+    aarch64 | arm64) cross_gcc=gcc-x86-64-linux-gnu ;;
+    *) cross_gcc=gcc-aarch64-linux-gnu ;;
+esac
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    clangd "$cross_gcc"
+sh tools/compile_commands.sh
+
 # Claude Code only takes LSP servers from plugins, so register the one-plugin
 # marketplace in .devcontainer/claude-plugins and install the plugin from it.
 # Both commands are no-ops once they have run.
@@ -66,3 +77,11 @@ claude plugin marketplace list --json |
     done
 claude plugin marketplace add "$marketplace_dir"
 claude plugin install "r-lsp@$marketplace_name"
+
+# clangd comes from the official marketplace, which may not be registered
+# yet on a fresh claude-code-config volume.
+if ! claude plugin marketplace list --json |
+    jq -e '.[] | select(.name == "claude-plugins-official")' > /dev/null; then
+    claude plugin marketplace add anthropics/claude-plugins-official
+fi
+claude plugin install clangd-lsp@claude-plugins-official

@@ -1,0 +1,8 @@
+# clangd settings. The compile commands come from compile_commands.json,
+# which tools/compile_commands.sh writes (the devcontainer runs it).
+
+# The vendored SIMDe and SLEEF headers are not ours to fix.
+If:
+  PathMatch: src/vendor/.*
+Diagnostics:
+  Suppress: "*"
