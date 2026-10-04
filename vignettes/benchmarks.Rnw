@@ -1,0 +1,362 @@
+%\VignetteIndexEntry{Benchmarks}
+%\VignetteEngine{utils::Sweave}
+%\VignetteEncoding{UTF-8}
+%
+% Maintainer note: refreshing the snapshots
+%
+% This vignette runs no benchmarks. It renders the snapshots committed in
+% vignettes/benchmark-results/, one <os>-<arch>.csv per machine with the
+% <os>-<arch>.md written by the same run (the md supplies the machine
+% description). To refresh or add a machine:
+%   1. Install the package and run the full suite on that machine:
+%        R CMD INSTALL . && Rscript bench/run.R
+%      or download the artifact of the "benchmarks" GitHub Actions workflow.
+%   2. Copy bench/results/latest.md and the run's csv to
+%      vignettes/benchmark-results/<os>-<arch>.md and .csv (the names in the
+%      "machine" column of the csv).
+%   3. Rebuild the vignette and read the tables: a new machine appears as its
+%      own section without any change to this file.
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\pkg}[1]{\textbf{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\setlength{\emergencystretch}{3em}
+
+\title{Benchmarks of \pkg{rsimd}}
+\author{Simon Potter}
+
+\begin{document}
+\SweaveOpts{concordance=FALSE}
+\maketitle
+
+<<setup, echo=FALSE>>=
+options(width = 72, prompt = "R> ", continue = "+  ")
+@
+
+<<helpers, echo=FALSE>>=
+results_dir <- "benchmark-results"
+csv_files <- sort(Sys.glob(file.path(results_dir, "*.csv")))
+snapshots <- lapply(csv_files, read.csv, stringsAsFactors = FALSE)
+
+tier_order <- c("avx512", "avx2", "sse2", "sve2", "sve", "neon", "none")
+op_order <- c("sum", "mean", "dot", "add", "fma", "pmax", "exp", "any_na",
+  "is_na", "as_integer")
+mode_order <- c("fast", "pairwise", "compensated")
+
+tex_escape <- function(s) {
+  s <- gsub("\\", "\\textbackslash{}", s, fixed = TRUE)
+  s <- gsub("([#$%&_{}])", "\\\\\\1", s)
+  s <- gsub("~", "\\textasciitilde{}", s, fixed = TRUE)
+  gsub("^", "\\textasciicircum{}", s, fixed = TRUE)
+}
+
+fmt_time <- function(us) {
+  out <- ifelse(us >= 1e6, sprintf("%.3g s", us / 1e6),
+    ifelse(us >= 1e3, sprintf("%.3g ms", us / 1e3),
+      sprintf("%.3g $\\mu$s", us)))
+  ifelse(is.na(us), "", out)
+}
+
+fmt_ratio <- function(r) {
+  out <- ifelse(r >= 10, sprintf("%.0f", r),
+    ifelse(r >= 1, sprintf("%.1f", r),
+      ifelse(r >= 0.1, sprintf("%.2f", r),
+        ifelse(r >= 0.01, sprintf("%.2g", r), "<0.01"))))
+  ifelse(is.na(r), "", out)
+}
+
+fmt_n <- function(n) sprintf("$10^{%d}$", as.integer(round(log10(n))))
+
+# Machine description from the "| key | value |" rows at the top of the md
+# written by the same run.
+read_meta <- function(machine) {
+  md <- file.path(results_dir, paste0(machine, ".md"))
+  if (!file.exists(md)) return(character())
+  lines <- readLines(md, encoding = "UTF-8")
+  lines <- lines[seq_len(match(TRUE, startsWith(lines, "## "), nomatch = 1L))]
+  rows <- regmatches(lines, regexec("^\\| ([^|]+) \\| (.+) \\|$", lines))
+  rows <- Filter(function(r) length(r) == 3L && nzchar(trimws(r[2])), rows)
+  vals <- vapply(rows, function(r) gsub("`", "", trimws(r[3])), "")
+  names(vals) <- vapply(rows, function(r) trimws(r[2]), "")
+  vals
+}
+
+impls_of <- function(d) {
+  impl <- unique(d$impl)
+  c(intersect(tier_order, impl), intersect(c("base", "blas"), impl))
+}
+
+row_label <- function(d) {
+  paste(sprintf("\\code{%s}", tex_escape(d$op)), d$type, sep = " & ")
+}
+
+# Writes a tabular with one row per combination of the key columns (in the
+# order of the csv's operations, then by the remaining keys) and one column
+# per implementation, each cell made by cell(row of d). group_head, if
+# given, is an extra header row above the implementation names.
+write_table <- function(d, keys, key_tex, head_tex, impls, cell,
+                        group_head = NULL) {
+  d <- d[d$impl %in% impls, ]
+  ids <- unique(d[keys])
+  ord <- lapply(keys, function(k) {
+    if (k == "op") match(ids$op, op_order) else
+      if (k == "mode") match(ids$mode, mode_order) else ids[[k]]
+  })
+  ids <- ids[do.call(order, ord), , drop = FALSE]
+  cat("\\begin{center}\\footnotesize\n")
+  cat(sprintf("\\begin{tabular}{%s%s}\n\\hline\n",
+    strrep("l", length(head_tex)), strrep("r", length(impls))))
+  if (!is.null(group_head)) cat(group_head, "\\\\\n")
+  cat(paste(c(head_tex, sprintf("\\code{%s}", sub("/.*", "", impls))),
+    collapse = " & "), "\\\\\n\\hline\n")
+  for (i in seq_len(nrow(ids))) {
+    if (i > 1L && (ids$op[i] != ids$op[i - 1L] ||
+      ids$type[i] != ids$type[i - 1L])) {
+      cat("\\noalign{\\smallskip}\n")
+    }
+    sel <- Reduce(`&`, lapply(keys, function(k) d[[k]] == ids[[k]][i]))
+    rows <- d[sel, ]
+    cells <- vapply(impls, function(im) {
+      r <- rows[rows$impl == im, ]
+      if (nrow(r) == 0L) "" else cell(r[1L, ])
+    }, "")
+    cat(paste(c(key_tex(ids[i, , drop = FALSE]), cells), collapse = " & "),
+      "\\\\\n")
+  }
+  cat("\\hline\n\\end{tabular}\n\\end{center}\n")
+}
+
+main_keys <- function(r) c(row_label(r), fmt_n(r$n))
+@
+
+\section{About these numbers}
+
+This vignette shows benchmark results measured on real machines and
+committed with the package. Nothing is timed while the vignette is built:
+timings would depend on the machine that builds it, and CRAN's machines
+have neither the time nor a quiet CPU for it. The tables are therefore
+snapshots, and your own machine will give different numbers. They are
+meant to show the shape of the gains: which operations benefit, from what
+size, and by how much on each tier.
+
+\subsection*{Method}
+
+The suite in the package's source repository (\code{bench/run.R}) times ten
+operations, each against its base R equivalent:
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+Operation & \pkg{rsimd} call & Base R call \\
+\hline
+\code{sum} & \code{simd\_sum(x)} & \code{sum(x)} \\
+\code{mean} & \code{simd\_mean(x)} & \code{mean(x)} \\
+\code{dot} & \code{simd\_dot(x, y)} & \code{sum(x * y)} \\
+\code{add} & \code{simd\_add(x, y)} & \code{x + y} \\
+\code{fma} & \code{simd\_fma(x, y, z)} & \code{x * y + z} \\
+\code{pmax} & \code{simd\_pmax(x, y)} & \code{pmax(x, y)} \\
+\code{exp} & \code{simd\_exp(x)} & \code{exp(x)} \\
+\code{any\_na} & \code{simd\_any\_na(x)} & \code{anyNA(x)} \\
+\code{is\_na} & \code{simd\_is\_na(x)} & \code{is.na(x)} \\
+\code{as\_integer} & \code{simd\_as\_integer(x, mode = "truncating")} & \code{as.integer(x)} \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent Each runs on vectors of $10^3$, $10^5$ and $10^7$ elements
+(fitting in the first-level cache, in the larger caches, and only in main
+memory), on doubles and for some on integers, once on every implementation
+in \code{simd\_available()} through \code{simd\_with\_impl()}, and once in
+base R; \code{dot} is also timed with the BLAS, as
+\code{crossprod(x, y)[1]}. Inputs are random with a fixed seed: doubles uniform on
+$[-100, 100]$ (on $[-50, 50]$ for \code{exp}, $[-10^6, 10^6]$ for
+\code{as\_integer}) and integers uniform on $\pm 10^6$. Each timing is the
+median of 20 to 200 calls made by \code{bench::mark()} with garbage
+collections filtered out. The precision mode is \code{"fast"} unless a
+table says otherwise.
+
+There are three tables per machine: the main table, without missing
+values; a table for inputs with 1\% missing values, which exercises the
+code that handles them; and the cost of the precision modes for
+\code{sum} and \code{dot} at $10^7$ elements.
+
+\subsection*{Reading the tables}
+
+Times are medians per call. A speed-up is the base R time (or the
+\code{none} time) divided by the implementation's, so above 1 means
+faster. A SIMD tier that is not clearly faster than \code{none} on a long
+vector of a compute-bound operation would suggest that it is running scalar
+code.
+
+\begin{itemize}
+\item \emph{Small vectors.} At $10^3$ elements the fixed cost of calling
+  into C, checking arguments and selecting a kernel, a few microseconds,
+  is most of the time, and base R's built-in operators, which have less to
+  do per call, are often faster. Compare the $10^3$ rows across operations:
+  they take about the same time whatever the operation.
+\item \emph{Memory-bound operations.} \code{add}, \code{fma} and
+  \code{is\_na} read and write whole vectors. At $10^7$ elements they are
+  limited by memory bandwidth, for base R as much as for \pkg{rsimd}, so the
+  gain over base R is small even when the gain over \code{none} is large.
+\item \emph{Compute-bound operations.} Reductions, \code{pmax} and the
+  conversion gain most at $10^5$ elements and above.
+\item \emph{Elementary functions.} \code{exp} gains over base R only as far
+  as the platform's C math library is slower than SLEEF's vector code; on
+  some platforms the C library is already fast.
+\item \emph{Base R's \code{long double}.} On arm64 Linux, base R's
+  \code{sum()}, \code{mean()} and \code{sum(x * y)} accumulate in 128-bit
+  \code{long double}, which the CPU does not have and which is computed in
+  software. Speed-ups over base R for those operations are much larger
+  there than on other platforms; they measure the precision base R pays
+  for, not SIMD alone. The \code{none} column is the fairer baseline.
+\item \emph{Missing values.} \code{anyNA()} stops at the first missing
+  value, and so does \code{simd\_any\_na()}, so with 1\% missing values
+  both take a tiny, size-independent time, which is call overhead. Base
+  R's integer \code{sum()} stops there too, returning \code{NA}, while
+  \code{simd\_sum()} of integers reads the whole vector.
+\end{itemize}
+
+<<results, echo=FALSE, results=tex>>=
+if (length(snapshots) == 0L) {
+  cat("\\section{Results}\n\nNo benchmark snapshots are included in",
+    "this build of the package.\n")
+}
+for (d in snapshots) {
+  machine <- d$machine[1L]
+  meta <- read_meta(machine)
+  impls <- impls_of(d)
+  tiers <- setdiff(impls, c("base", "blas"))
+  simd <- setdiff(tiers, "none")
+  cat(sprintf("\\clearpage\n\\section{Results: \\code{%s}}\n\n",
+    tex_escape(machine)))
+
+  keep <- c("Timestamp (UTC)", "rsimd", "R", "Compiler", "OS", "CPU",
+    "CPU features", "Tiers", "bench")
+  meta <- meta[intersect(keep, names(meta))]
+  if (length(meta) == 0L) {
+    meta <- c("rsimd" = d$rsimd_version[1L],
+      "Timestamp (UTC)" = d$timestamp[1L])
+  }
+  cat("\\begin{center}\\small\n\\begin{tabular}{lp{0.7\\textwidth}}\n",
+    "\\hline\n")
+  cat(sprintf("%s & %s \\\\\n", tex_escape(names(meta)),
+    tex_escape(meta)), sep = "")
+  cat("\\hline\n\\end{tabular}\n\\end{center}\n\n")
+
+  main <- d[d$table == "main", ]
+  cat("\\noindent\\begin{minipage}{\\textwidth}\n")
+  cat("\\subsection*{Main table: median time per call}\n")
+  write_table(main, c("op", "type", "n"), main_keys,
+    c("Operation", "Type", "$n$"), impls,
+    function(r) fmt_time(r$median_us))
+
+  cat("\\end{minipage}\n\n\\noindent\\begin{minipage}{\\textwidth}\n")
+  cat("\\subsection*{Main table: speed-ups}\n")
+  cat("Base R's time, or the \\code{none} tier's, divided by the",
+    "implementation's: above 1 is faster.\n")
+  sp <- main[main$impl %in% tiers, ]
+  sp_none <- sp[sp$impl %in% simd, ]
+  if (nrow(sp_none) > 0L) sp_none$impl <- paste0(sp_none$impl, "/none")
+  sp_all <- rbind(sp, sp_none)
+  write_table(sp_all, c("op", "type", "n"), main_keys,
+    c("Operation", "Type", "$n$"), c(tiers, paste0(simd, "/none")),
+    function(r) {
+      fmt_ratio(if (endsWith(r$impl, "/none")) r$speedup_none
+        else r$speedup_base)
+    },
+    group_head = if (length(simd)) sprintf(
+      "& & & \\multicolumn{%d}{c}{over base R} & \\multicolumn{%d}{c}{over \\code{none}}",
+      length(tiers), length(simd)))
+
+  cat("\\end{minipage}\n\n")
+  na <- d[d$table == "na", ]
+  if (nrow(na) > 0L) {
+    cat("\\noindent\\begin{minipage}{\\textwidth}\n")
+    cat("\\subsection*{Inputs with 1\\% missing values}\n")
+    cat("Median time per call, with the speed-up over base R in",
+      "parentheses.\n")
+    write_table(na, c("op", "type", "n"), main_keys,
+      c("Operation", "Type", "$n$"), intersect(impls, na$impl),
+      function(r) sprintf("%s (%s)", fmt_time(r$median_us),
+        fmt_ratio(r$speedup_base)))
+    cat("\\end{minipage}\n\n")
+  }
+
+  pr <- d[d$table == "precision", ]
+  if (nrow(pr) > 0L) {
+    fast <- pr[pr$mode == "fast", c("op", "type", "impl", "median_us")]
+    names(fast)[4L] <- "fast_us"
+    pr <- merge(pr, fast, sort = FALSE)
+    cat("\\noindent\\begin{minipage}{\\textwidth}\n")
+    cat(sprintf(paste("\\subsection*{Precision modes at $n = 10^{%d}$}\n",
+      "Median time per call, with the time relative to \\code{\"fast\"}",
+      "on the same implementation in parentheses (base R and BLAS have no",
+      "modes, so their rows differ only by noise).\n"),
+      as.integer(round(log10(pr$n[1L])))))
+    write_table(pr, c("op", "type", "mode"),
+      function(r) c(row_label(r), sprintf("\\code{%s}", r$mode)),
+      c("Operation", "Type", "Mode"), intersect(impls, pr$impl),
+      function(r) sprintf("%s (%s)", fmt_time(r$median_us),
+        fmt_ratio(r$median_us / r$fast_us)))
+    cat("\\end{minipage}\n\n")
+  }
+}
+@
+
+\clearpage
+\section{Running the benchmarks yourself}
+
+The suite is in the \code{bench/} directory of the source repository, not
+in the installed package. It needs the \pkg{bench} package. From a clone of
+the repository:
+
+\begin{verbatim}
+R CMD INSTALL .
+Rscript bench/run.R --quick      # sizes 1e3 and 1e5, a minute or two
+Rscript bench/run.R              # sizes 1e3, 1e5 and 1e7
+Rscript bench/compare.R old.rds new.rds
+\end{verbatim}
+
+\noindent \code{run.R} writes \code{bench/results/latest.md} (the tables in
+Markdown), a csv with one row per timing and an rds with the full results
+and a description of the machine. \code{compare.R} compares two runs on the
+same machine and marks changes larger than 15\%. \code{bench/README.md} in
+the repository lists every option.
+
+To time a single operation in your own session, \code{bench::mark()} works
+well; compare implementations with \code{simd\_with\_impl()}:
+
+<<own, eval=FALSE>>=
+library(rsimd)
+x <- runif(1e6)
+bench::mark(
+  base = sum(x),
+  none = simd_with_impl("none", simd_sum(x)),
+  auto = simd_sum(x),
+  check = FALSE
+)
+@
+
+\section{Caveats}
+
+\begin{itemize}
+\item Timings vary from run to run by several percent, more on shared
+  machines. Hosted continuous-integration runners share their hardware with
+  other jobs, so their numbers are noisier than a quiet workstation's.
+\item CPUs change their clock speed with load and temperature (turbo
+  boost), and some lower it while running AVX-512 instructions, which can
+  make \code{avx512} slower than \code{avx2} for short bursts.
+\item The machines are what they say and no more: other CPUs of the same
+  architecture can rank the tiers differently, and other compilers or
+  compiler versions give other numbers.
+\item \code{check = FALSE} is used because results can differ in the last
+  bits between implementations and precision modes; correctness is the job
+  of the package's tests, not of the benchmarks.
+\end{itemize}
+
+\end{document}

@@ -1,7 +1,8 @@
 # R CMD check and the full test suite once per tier on R-devel built
 # without long double (R-hub's nold container, as CRAN's noLD check). Base
 # R's sum() and friends then accumulate in double, which exercises the
-# tolerances of the comparisons with base R.
+# tolerances of the comparisons with base R. The vignettes' code is run too
+# (woven by Sweave; the container has no LaTeX to make the PDFs).
 on:
   schedule:
     - cron: "11 5 * * 0"
@@ -43,6 +44,14 @@ jobs:
         run: |
           R CMD INSTALL rsimd_*.tar.gz
           sh tools/ci/test_tiers.sh --out tiers.txt --logs logs
+
+      - name: Run the vignettes' code
+        if: always()
+        working-directory: vignettes
+        run: |
+          for f in *.Rnw; do
+            Rscript -e "utils::Sweave('$f')"
+          done
 
       - uses: actions/upload-artifact@v7
         if: always()

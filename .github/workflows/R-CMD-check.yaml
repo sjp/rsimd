@@ -47,16 +47,16 @@ jobs:
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
-      # The Sweave vignette is built into a PDF with pdflatex.
+      # The Sweave vignettes are built into PDFs with pdflatex.
       - uses: r-lib/actions/setup-tinytex@v2
 
-      - name: Install the LaTeX packages the vignette uses
+      - name: Install the LaTeX packages the vignettes use
         run: |
           # On Windows tlmgr is a batch file, which bash cannot run itself.
           if [ "$RUNNER_OS" = Windows ]; then
-            cmd //c "tlmgr install lm geometry hyperref"
+            cmd //c "tlmgr install lm geometry hyperref tools"
           else
-            tlmgr install lm geometry hyperref
+            tlmgr install lm geometry hyperref tools
           fi
 
       - name: Install qpdf and Ghostscript for compacting the vignette PDF

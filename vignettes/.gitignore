@@ -1,0 +1,8 @@
+*.pdf
+*.tex
+*.R
+*.aux
+*.log
+*.out
+*.toc
+Rplots*

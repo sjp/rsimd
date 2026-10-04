@@ -1,0 +1,279 @@
+%\VignetteIndexEntry{Choosing an implementation}
+%\VignetteEngine{utils::Sweave}
+%\VignetteEncoding{UTF-8}
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\pkg}[1]{\textbf{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\setlength{\emergencystretch}{3em}
+
+\title{Choosing an implementation in \pkg{rsimd}}
+\author{Simon Potter}
+
+\begin{document}
+\SweaveOpts{concordance=FALSE}
+\maketitle
+
+<<setup, echo=FALSE>>=
+options(width = 72, prompt = "R> ", continue = "+  ")
+@
+
+\section{The implementations}
+
+Every \pkg{rsimd} function has several implementations, one for each
+family of SIMD instructions (an instruction set, or \emph{tier}) and one in
+plain C. Each is named by a short id:
+
+\begin{center}
+\begin{tabular}{lllrr}
+\hline
+Id & Requires & Platforms & Bits & Doubles \\
+\hline
+\code{none} & nothing (plain C) & all & & 1 \\
+\code{sse2} & SSE2 & x86-64 (also 32-bit x86) & 128 & 2 \\
+\code{avx2} & AVX2 and FMA & x86-64 & 256 & 4 \\
+\code{avx512} & AVX-512 F, BW, DQ and VL & x86-64 & 512 & 8 \\
+\code{neon} & Advanced SIMD & arm64 (also 32-bit ARM) & 128 & 2 \\
+\code{sve} & SVE & arm64 Linux & 128--2048 & 2--32 \\
+\code{sve2} & SVE2 & arm64 Linux & 128--2048 & 2--32 \\
+\code{rvv}, \code{wasm128} & reserved & none yet & & \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent ``Bits'' is the width of a vector register and ``Doubles'' the
+number of doubles it holds. \code{simd\_tiers()} lists every id, including the reserved ones,
+which no build provides yet. The \code{avx2} and \code{avx512} tiers need
+all the extensions listed: a CPU with AVX2 but not FMA cannot use
+\code{avx2}.
+
+<<tiers>>=
+library(rsimd)
+simd_tiers()
+@
+
+\section{How the default is chosen}
+
+A tier is \emph{available} when the package was built with it and the CPU
+and operating system both support it. \code{simd\_available()} lists the
+available tiers, best first; \code{"none"} is always last. The default,
+\code{"auto"}, uses the first of them. The order is
+
+\begin{itemize}
+\item x86-64: \code{avx512}, \code{avx2}, \code{sse2}, \code{none};
+\item arm64: \code{sve2}, \code{sve}, \code{neon}, \code{none}.
+\end{itemize}
+
+\noindent\code{simd\_current()} names the tier in use, with the request it
+came from as the attribute \code{"requested"}:
+
+<<available>>=
+simd_available()
+simd_current()
+@
+
+\code{"none"} is plain C code with no SIMD instructions. It exists on every
+machine, gives the reference results the other tiers are tested against,
+and is the first thing to try when you suspect that a result is wrong:
+if \code{"none"} gives the same answer, the SIMD code is not the cause.
+
+Not every tier has its own code for every operation. When the selected tier
+lacks one, the next lower available tier's code runs, ending with
+\code{"none"}; for example, a tier built without the SLEEF library takes its
+elementary functions (\code{simd\_exp()} and so on) from the tier below.
+\code{simd\_current()} reports the tier selected, not the one each operation
+ends up using.
+
+\section{Choosing an implementation}
+
+There are four ways to choose. All of them set one global selection, which
+every \pkg{rsimd} function uses, except on \code{simd\_vec} objects pinned to
+a tier (see \code{?simd\_vec}), which always run on their pin.
+
+\begin{enumerate}
+\item The environment variable \code{RSIMD\_IMPL}, read once when the
+  package is loaded, gives the initial selection. It is useful for running
+  a whole script or test suite on one tier without changing its code:
+\begin{verbatim}
+RSIMD_IMPL=none Rscript analysis.R
+\end{verbatim}
+\item The option \code{rsimd.impl} holds the current selection. Set before
+  the package is loaded, it takes precedence over \code{RSIMD\_IMPL};
+  set afterwards, it takes effect the next time an \pkg{rsimd} function is
+  called. An unknown or unavailable value at load time gives a warning and
+  \code{"auto"}, so loading never fails because of it.
+\item \code{simd\_use()} changes the selection, checking the value first,
+  and returns the previous request invisibly so that it can be restored.
+\item \code{simd\_with\_impl()} evaluates an expression with a tier selected
+  and then restores the previous selection, even after an error. It is
+  meant for tests and benchmarks.
+\end{enumerate}
+
+\noindent The last of these to run wins. The examples use only tiers that
+\code{simd\_available()} reports, so they work on any machine:
+
+<<use>>=
+old <- simd_use("none")
+simd_current()
+simd_use(old)
+simd_current()
+options(rsimd.impl = "none")
+simd_current()
+options(rsimd.impl = "auto")
+x <- c(0.1, 0.2, 0.3, 0.4, 0.5)
+simd_with_impl("none", simd_sum(x))
+@
+
+A common use of \code{simd\_with\_impl()} is to run the same computation on
+every available tier and compare the results:
+
+<<compare>>=
+set.seed(42)
+y <- rnorm(1e4)
+sums <- sapply(simd_available(), function(impl) {
+  simd_with_impl(impl, simd_sum(y))
+})
+sums - sums[["none"]]
+@
+
+\noindent In the default precision mode, sums on different tiers can differ
+in the last bits, because each tier splits the sum across a different number
+of lanes. The vignette \emph{Numerical semantics and precision} explains the
+modes that make results more reproducible.
+
+\section{Asking for something that is not there}
+
+\code{simd\_use()} and \code{simd\_with\_impl()} signal an error, and leave
+the selection unchanged, when the id is unknown or the tier is not
+available here. The message lists what is:
+
+<<errors>>=
+msg <- tryCatch(simd_use("avx3"), error = conditionMessage)
+writeLines(strwrap(msg, 70))
+msg <- tryCatch(simd_use("rvv"), error = conditionMessage)
+writeLines(strwrap(msg, 70))
+@
+
+\noindent An unavailable tier is never replaced by another one silently: a
+request for \code{"avx512"} on a CPU without AVX-512 fails rather than
+running \code{"avx2"}. Use \code{"auto"} when any tier will do.
+
+\section{Which tiers are compiled}
+
+Whether a tier can be available at all is settled when the package is
+installed. The \code{configure} script compiles a small test program for
+each tier the platform could have, with the compiler flags that tier
+needs (for example \code{-mavx2 -mfma} for \code{avx2}), and builds the tiers
+whose test compiles. The installation log shows the result. On x86-64
+Linux with GCC it is
+
+\begin{verbatim}
+rsimd: compiler x86_64-linux-gnu-gcc, target x86_64-linux
+checking whether x86_64-linux-gnu-gcc can build the none tier... yes
+checking whether x86_64-linux-gnu-gcc can build the sse2 tier... yes
+checking whether the sse2 tier can use SLEEF (sleefinline_sse2.h)... yes
+checking whether x86_64-linux-gnu-gcc can build the avx2 tier with
+  -mavx2 -mfma... yes
+checking whether the avx2 tier can use SLEEF (sleefinline_avx2.h)... yes
+checking whether x86_64-linux-gnu-gcc can build the avx512 tier with
+  -mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma... yes
+checking whether the avx512 tier can use SLEEF (sleefinline_avx512f.h)... yes
+rsimd: building tiers none,sse2,avx2,avx512
+rsimd: tiers with SLEEF elementary functions: sse2,avx2,avx512
+\end{verbatim}
+
+\noindent (some lines left out). Only the tier files get these flags; the
+rest of the package is compiled for the baseline CPU, so the installed
+package still loads on older machines and uses only the tiers they support.
+
+Environment variables set when installing change what is built:
+
+\begin{center}
+\begin{tabular}{lp{0.6\textwidth}}
+\hline
+Variable & Effect \\
+\hline
+\code{RSIMD\_DISABLE\_TIERS} & A comma-separated list of tiers not to build,
+  such as \code{avx512,sve2}. \code{none} cannot be disabled. \\
+\code{RSIMD\_DISABLE\_SLEEF=1} & Build no tier with the SLEEF elementary
+  functions; they then come from the C library through \code{none}. \\
+\code{RSIMD\_CONFIGURE\_VERBOSE=1} & Show the compiler output of failed
+  tests, to see why a tier was not built. \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent For example, from a shell or from R:
+
+\begin{verbatim}
+RSIMD_DISABLE_TIERS=avx512 R CMD INSTALL rsimd_0.1.0.tar.gz
+\end{verbatim}
+
+<<install-env, eval=FALSE>>=
+Sys.setenv(RSIMD_DISABLE_TIERS = "avx512")
+install.packages("rsimd", type = "source")
+@
+
+\noindent The log then reads
+
+\begin{verbatim}
+checking whether x86_64-linux-gnu-gcc can build the avx512 tier...
+  no (disabled by RSIMD_DISABLE_TIERS)
+rsimd: building tiers none,sse2,avx2
+\end{verbatim}
+
+\noindent There is no way to force a tier on: one whose test fails to
+compile is never built.
+
+\section{Troubleshooting}
+
+\begin{center}
+\begin{tabular}{p{0.3\textwidth}p{0.62\textwidth}}
+\hline
+Symptom & Cause and remedy \\
+\hline
+A tier was built but is not in \code{simd\_available()} &
+  The CPU or the operating system does not support it. Some x86-64 CPUs
+  lack AVX-512, and some operating systems or virtual machines turn it
+  off. No Apple CPU has SVE, and SVE is built only on Linux and FreeBSD.
+  \code{simd\_cpu\_features()} shows what was detected. \\
+A tier is missing from the installation log's ``building tiers'' line &
+  The compiler failed the tier's test: it is too old to know the
+  instructions, or does not accept the flags. Reinstall with
+  \code{RSIMD\_CONFIGURE\_VERBOSE=1} to see the compiler's message, or use a
+  newer compiler. Also check that \code{RSIMD\_DISABLE\_TIERS} is not set. \\
+Results differ between tiers in the last bits &
+  Expected for floating-point sums in the default \code{"fast"} precision
+  mode, and for elementary functions; see the vignette \emph{Numerical
+  semantics and precision}. Larger differences are a bug: please report
+  them with the output of \code{simd\_cpu\_features()}. \\
+\pkg{rsimd} is slower than base R &
+  Usually short vectors, where the cost of a call dominates, or a
+  memory-bound operation on long vectors; see the vignette
+  \emph{Benchmarks}. Check \code{simd\_current()} too: \code{"none"} is
+  plain C and does not use SIMD. \\
+A pinned \code{simd\_vec} fails with ``not available'' &
+  It was pinned on another machine. Unpin it with
+  \code{simd\_impl(x) <- NULL}. \\
+\hline
+\end{tabular}
+\end{center}
+
+\section{32-bit and other platforms}
+
+\pkg{rsimd} is built and tested on 64-bit Linux, macOS and Windows on x86-64
+and arm64. On other platforms it is supported on a best-effort basis: the
+\code{none} implementation always works, and SIMD tiers are built when the
+compiler can build them. On 32-bit x86, \code{sse2} is built with SSE2
+arithmetic enabled. On 32-bit ARM, \code{neon} is used for integer and
+logical operations only, since that instruction set has no double-precision
+SIMD arithmetic; double operations run the \code{none} code. On any other
+architecture only \code{none} is built, and \code{simd\_available()} is
+just \code{"none"}.
+
+\end{document}

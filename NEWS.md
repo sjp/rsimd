@@ -123,8 +123,11 @@
   Missing values propagate part by part, as in base R. Other functions reject
   complex input. `simd_any_na()`, `simd_count_na()` and `simd_which_na()` now
   use SIMD kernels for complex vectors too.
-* A getting-started vignette, so far covering complex numbers. Vignettes are
-  built with R's own Sweave engine and need no extra packages.
+* Four vignettes, built with R's own Sweave engine and needing no extra
+  packages: "Getting started with rsimd", "Choosing an implementation",
+  "Numerical semantics and precision" (including a table of every difference
+  from base R) and "Benchmarks", which shows committed benchmark results
+  without timing anything during the build.
 * 64-bit integers: `bit64::integer64` vectors are accepted by the sums,
   extremes, scans, missing-value functions, arithmetic (checked and `_wrap`),
   `pmin()`/`pmax()`/`clamp()`, predicates, comparisons, bit operations and

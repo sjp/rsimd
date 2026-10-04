@@ -10,6 +10,7 @@
 
 \newcommand{\pkg}[1]{\textbf{#1}}
 \newcommand{\code}[1]{\texttt{#1}}
+\setlength{\emergencystretch}{3em}
 
 \title{Getting started with \pkg{rsimd}}
 \author{Simon Potter}
@@ -22,7 +23,7 @@
 options(width = 72, prompt = "R> ", continue = "+  ")
 @
 
-\section{Introduction}
+\section{What rsimd does}
 
 \pkg{rsimd} computes common operations on R's atomic vectors, such as sums,
 elementwise arithmetic, predicates and elementary functions, with the single
@@ -31,17 +32,239 @@ Each function is a drop-in counterpart of a base R function, named
 \code{simd\_} followed by what it computes, and follows base R's rules for
 result types, missing values and warnings, with any differences documented
 on its help page. The package detects the CPU's instruction sets when it is
-loaded and uses the best implementation it supports; \code{simd\_current()}
-names it and \code{simd\_available()} lists the alternatives, ending with the
-plain C implementation \code{"none"}.
+loaded and uses the best implementation it supports, while letting you
+choose another one, including plain C, by name.
 
-<<intro>>=
-library(rsimd)
-simd_current()
-x <- c(1.5, 2.5, NA, 4)
-simd_sum(x, na.rm = TRUE)
-simd_add(x, 10)
+A SIMD instruction works on a vector register that holds several numbers,
+called \emph{lanes}, and applies the same operation to every lane at once:
+one instruction adds two doubles in each of the lanes of two registers, where
+plain C code adds one pair at a time. How many lanes a register has depends
+on the instruction set:
+
+\begin{center}
+\begin{tabular}{llrrr}
+\hline
+Implementation & Instruction set & Register bits & Doubles & Integers \\
+\hline
+\code{sse2} & x86-64 SSE2 & 128 & 2 & 4 \\
+\code{avx2} & x86-64 AVX2 with FMA & 256 & 4 & 8 \\
+\code{avx512} & x86-64 AVX-512 (F, BW, DQ, VL) & 512 & 8 & 16 \\
+\code{neon} & arm64 Advanced SIMD & 128 & 2 & 4 \\
+\code{sve}, \code{sve2} & arm64 Scalable Vector Extension & 128--2048 & 2--32 & 4--64 \\
+\code{none} & plain C, no SIMD & & 1 & 1 \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent The SVE register size is chosen by the CPU, not the program, and
+the same \pkg{rsimd} code runs at whatever size it finds.
+
+\section{Installation}
+
+Install the released version from CRAN, or the development version from a
+copy of its git repository:
+
+<<install, eval=FALSE>>=
+install.packages("rsimd")
 @
+
+\begin{verbatim}
+git clone https://github.com/sjp/rsimd.git
+R CMD INSTALL rsimd
+\end{verbatim}
+
+\noindent The package has to be compiled, so building it from source needs a
+C compiler (on Windows, Rtools). Its \code{configure} script tries each
+implementation the platform could have and builds those the compiler
+supports; the installation log lists them. On an arm64 Linux machine with
+GCC it prints
+
+\begin{verbatim}
+rsimd: compiler aarch64-linux-gnu-gcc, target aarch64-linux
+checking whether aarch64-linux-gnu-gcc can build the none tier... yes
+checking whether aarch64-linux-gnu-gcc can build the neon tier... yes
+checking whether the neon tier can use SLEEF (sleefinline_advsimd.h)... yes
+checking whether aarch64-linux-gnu-gcc can build the sve tier with
+  -march=armv8-a+sve... yes
+checking whether aarch64-linux-gnu-gcc can build the sve2 tier with
+  -march=armv9-a+sve2... yes
+rsimd: building tiers none,neon,sve,sve2
+rsimd: tiers with SLEEF elementary functions: neon,sve,sve2
+\end{verbatim}
+
+\noindent (some lines left out). On x86-64 the same lines name
+\code{sse2}, \code{avx2} and \code{avx512}. Building an implementation does
+not mean it will be used: that also needs a CPU that supports it, which is
+checked every time the package is loaded. The vignette \emph{Choosing an
+implementation} explains both steps.
+
+\section{Your machine}
+
+\code{simd\_cpu\_features()} reports what the package found out about the
+CPU; its \code{features} element is a logical vector with one entry for
+each instruction set extension \pkg{rsimd} knows about.
+\code{simd\_available()} lists the implementations this machine can use,
+best first and always ending with \code{"none"}, and \code{simd\_current()}
+the one in use. The output below is from the machine that built this
+document; yours may differ.
+
+<<machine>>=
+library(rsimd)
+cpu <- simd_cpu_features()
+cpu$arch
+names(which(cpu$features))
+simd_available()
+simd_current()
+@
+
+\section{Basic operations}
+
+Every function takes and returns plain R vectors. Results agree with base R
+to within rounding, and often exactly:
+
+<<basic>>=
+set.seed(1)
+x <- runif(1e5)
+y <- runif(1e5)
+all.equal(simd_sum(x), sum(x))
+all.equal(simd_mean(x), mean(x))
+all.equal(simd_add(x, y), x + y)
+all.equal(simd_fma(x, y, 1), x * y + 1)
+all.equal(simd_exp(x), exp(x))
+@
+
+Missing values follow base R. \code{simd\_is\_na()} is \code{is.na()},
+\code{na.rm} works as in \code{sum()}, and a length-one operand is used for
+every element:
+
+<<basic-na>>=
+v <- c(1.5, NA, 4, NaN)
+simd_is_na(v)
+simd_sum(v)
+simd_sum(v, na.rm = TRUE)
+simd_add(v, 10)
+simd_mul(1:4, 2L)
+@
+
+Integer and logical vectors give integer results where base R's operators
+do, and the functions work on raw, complex (a subset) and \pkg{bit64}
+\code{integer64} vectors where that makes sense; each help page lists the
+types it takes. A broader set of examples by family:
+
+\begin{center}
+\begin{tabular}{lp{0.68\textwidth}}
+\hline
+Family & Functions (help page) \\
+\hline
+Reductions & \code{simd\_sum}, \code{simd\_mean}, \code{simd\_min},
+  \code{simd\_max}, \code{simd\_which\_max}, \code{simd\_any\_na},
+  \code{simd\_count\_na} (\code{?simd\_sum}, \code{?simd\_min},
+  \code{?simd\_any\_na}) \\
+Statistics & \code{simd\_dot}, \code{simd\_norm}, \code{simd\_dist},
+  \code{simd\_var}, \code{simd\_sd}, \code{simd\_cumsum}
+  (\code{?simd\_dot}, \code{?simd\_var}, \code{?simd\_cumsum}) \\
+Arithmetic & \code{simd\_add}, \code{simd\_mul}, \code{simd\_idiv},
+  \code{simd\_fma}, \code{simd\_pmin}, \code{simd\_round}, the
+  \code{\_wrap} forms (\code{?simd\_add}, \code{?simd\_fma},
+  \code{?simd\_pmin}, \code{?simd\_round}) \\
+Predicates, logic & \code{simd\_is\_na}, \code{simd\_is\_finite},
+  \code{simd\_eq}, \code{simd\_lt}, \code{simd\_and}, \code{simd\_any}
+  (\code{?simd\_is\_na}, \code{?simd\_eq}, \code{?simd\_and}) \\
+Bits & \code{simd\_bit\_and}, \code{simd\_shl}, \code{simd\_popcount}
+  (\code{?simd\_bit\_and}, \code{?simd\_popcount}) \\
+Conversions & \code{simd\_as\_double}, \code{simd\_as\_integer},
+  \code{simd\_as\_integer64} (\code{?simd\_as\_integer}) \\
+Elementary functions & \code{simd\_exp}, \code{simd\_log}, \code{simd\_sin},
+  \code{simd\_sinpi}, \code{simd\_tanh}, \code{simd\_pow}
+  (\code{?simd\_exp}, \code{?simd\_sin}, \code{?simd\_sinh},
+  \code{?simd\_sinpi}, \code{?simd\_pow}) \\
+Machine learning & \code{simd\_sigmoid}, \code{simd\_softmax},
+  \code{simd\_log\_softmax} (\code{?simd\_softmax}) \\
+Control & \code{simd\_use}, \code{simd\_with\_impl},
+  \code{simd\_precision} (\code{?simd\_use}, \code{?simd\_precision},
+  \code{?rsimd\_options}) \\
+\hline
+\end{tabular}
+\end{center}
+
+\section{The simd\_vec wrapper}
+
+Calling \code{simd\_add(x, y)} everywhere is verbose. A \code{simd\_vec} is
+an ordinary vector with a class whose operators, \code{Math} and
+\code{Summary} methods and \code{mean()} call the \pkg{rsimd} functions:
+
+<<vec>>=
+a <- simd_vec(c(1, 4, 9, 16))
+a
+b <- sqrt(a) + 1
+b
+sum(b)
+mean(a)
+a > 5
+@
+
+Values are wrapped again, while reductions, comparisons and predicates
+return plain values. \code{as.vector()} or \code{as.double()} unwraps.
+
+A \code{simd\_vec} can be \emph{pinned} to one implementation. It then runs
+there whatever the global selection is, and results keep the pin; this is
+handy for comparing implementations or keeping one part of a program on
+plain C. Operands pinned to different implementations are an error:
+
+<<vec-pin>>=
+p <- simd_vec(c(1, 2, 3), impl = "none")
+simd_impl(p)
+simd_impl(p * 2)
+q <- simd_vec(c(1, 2, 3), impl = simd_available()[1])
+msg <- tryCatch(p + q, error = conditionMessage)
+writeLines(strwrap(msg, 70))
+simd_impl(q) <- NULL
+p + q
+@
+
+A \code{simd\_vec} also remembers whether it is known to contain no missing
+values. \code{check\_na = TRUE} looks once; afterwards the functions skip
+their missing-value checks on it, and results that cannot have gained a
+missing value keep the flag:
+
+<<vec-na>>=
+f <- simd_vec(runif(10), check_na = TRUE)
+simd_na_free(f)
+simd_na_free(abs(f))
+simd_na_free(f / 0)
+anyNA(f)
+as.vector(f[1:3])
+@
+
+\code{?simd\_vec} has the complete rules.
+
+\section{When to expect a speed-up}
+
+SIMD helps when a loop over the data does enough work per element and the
+vectors are long enough. Three effects decide what you see; the vignette
+\emph{Benchmarks} has measured numbers.
+
+\begin{itemize}
+\item \emph{Call overhead.} Each call goes from R into C, checks its
+  arguments and selects a kernel, which costs a few microseconds. For
+  vectors of a thousand elements this is most of the time, and base R's
+  built-in operators, which have less to do per call, are often faster.
+\item \emph{Memory-bound operations.} Elementwise arithmetic such as
+  \code{simd\_add()} reads two vectors and writes one. Once the vectors are
+  larger than the CPU caches, memory bandwidth limits both base R and
+  \pkg{rsimd}, and the gain over base R is small. A SIMD implementation is
+  still clearly faster than \code{"none"}.
+\item \emph{Compute-bound operations.} Sums, dot products, comparisons,
+  conversions and predicates over long vectors do little memory traffic per
+  operation and gain most: several times faster than base R is common.
+  Elementary functions such as \code{simd\_exp()} are compute-bound too,
+  but their gain depends on how fast the platform's C math library already
+  is.
+\end{itemize}
+
+\noindent Results never depend on speed: every implementation is tested
+against \code{"none"}, which is plain C, and the help pages state where
+results may differ in the last bits.
 
 \section{Complex numbers}
 
@@ -94,5 +317,22 @@ and are planned for a later version.
 <<complex-unsupported>>=
 tryCatch(simd_mul(z, z), error = conditionMessage)
 @
+
+\section{Where to go next}
+
+\begin{itemize}
+\item \emph{Choosing an implementation}
+  (\code{vignette("implementation-selection", package = "rsimd")}): the
+  implementations, how one is chosen and how to choose one yourself, and
+  troubleshooting.
+\item \emph{Numerical semantics and precision}
+  (\code{vignette("numerical-semantics", package = "rsimd")}): missing
+  values, the precision modes for sums, integer overflow, and every
+  difference from base R.
+\item \emph{Benchmarks} (\code{vignette("benchmarks", package = "rsimd")}):
+  measured times on real machines and how to run the benchmarks yourself.
+\item \code{help(package = "rsimd")} lists every help page;
+  \code{?rsimd\_options} lists the options and environment variables.
+\end{itemize}
 
 \end{document}

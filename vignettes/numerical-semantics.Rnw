@@ -1,0 +1,405 @@
+%\VignetteIndexEntry{Numerical semantics and precision}
+%\VignetteEngine{utils::Sweave}
+%\VignetteEncoding{UTF-8}
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\pkg}[1]{\textbf{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\setlength{\emergencystretch}{3em}
+
+\title{Numerical semantics and precision in \pkg{rsimd}}
+\author{Simon Potter}
+
+\begin{document}
+\SweaveOpts{concordance=FALSE}
+\maketitle
+
+<<setup, echo=FALSE>>=
+options(width = 72, prompt = "R> ", continue = "+  ")
+@
+
+\pkg{rsimd} aims to give the results base R gives. This vignette describes
+how it treats missing values, rounding, integer overflow, lengths and
+attributes, and lists every place where it deliberately differs from base
+R. The help pages have the details for each function.
+
+<<load>>=
+library(rsimd)
+@
+
+\section{NA and NaN}
+
+R has two kinds of ``not a number'' double: \code{NaN}, the IEEE 754 result
+of operations such as \code{0 / 0}, and \code{NA}, R's missing value, which
+is a \code{NaN} with the special payload 1954 in its low bits. \code{is.na()}
+is \code{TRUE} for both and \code{is.nan()} only for \code{NaN};
+\code{simd\_is\_na()} and \code{simd\_is\_nan()} do the same:
+
+<<na-nan>>=
+v <- c(1, NA, NaN)
+simd_is_na(v)
+simd_is_nan(v)
+@
+
+Elementwise operations keep the payload: wherever an operand is \code{NA}
+the result is \code{NA}, and \code{NaN} appears only where IEEE arithmetic
+makes one. Base R usually does the same, but for \code{NaN + NA} its result
+depends on the CPU.
+
+Reductions differ from base R in one way. With \code{na.rm = FALSE},
+\pkg{rsimd} returns \code{NA} if the input contains an \code{NA}, otherwise
+\code{NaN} if it contains a \code{NaN}, whatever the order of the elements.
+Base R's answer can depend on which comes first. A SIMD sum adds elements in
+an order of its own, so ``whichever comes first'' has no meaning for it,
+and \pkg{rsimd} uses a rule that does not need an order:
+
+<<na-order>>=
+c(sum(c(NA, NaN)), sum(c(NaN, NA)))
+c(simd_sum(c(NA, NaN)), simd_sum(c(NaN, NA)))
+@
+
+\noindent (The base R results printed above are those of the machine that
+built this document.)
+
+\section{Removing and skipping missing values}
+
+\code{na.rm = TRUE} removes both \code{NA} and \code{NaN}, as in base R.
+\code{simd\_any\_na()}, \code{simd\_count\_na()} and \code{simd\_which\_na()}
+find missing values without making a logical vector first:
+
+<<na-rm>>=
+x <- c(2.5, NA, 1, NaN, 4)
+simd_sum(x, na.rm = TRUE)
+simd_any_na(x)
+simd_count_na(x)
+simd_which_na(x)
+@
+
+Looking for missing values costs time, especially for integers, where
+\code{NA} is an ordinary bit pattern that arithmetic would otherwise treat
+as the number $-2^{31}$. If you know that a vector has no missing values,
+pass \code{na\_check = FALSE}, or set \code{options(rsimd.na\_check =
+FALSE)} for every call, and the functions skip the checks:
+
+<<na-check>>=
+clean <- c(1L, 5L, 9L)
+simd_sum(clean, na_check = FALSE)
+@
+
+\begin{center}
+\fbox{\parbox{0.9\textwidth}{\textbf{Warning.} \code{na\_check = FALSE} is a
+promise. If the input does contain missing values the result is unspecified:
+an integer \code{NA} may be counted as $-2147483648$ and a double \code{NA}
+may come back as \code{NaN}. It never crashes R, but the answer is wrong.
+\code{na.rm = TRUE} always looks for missing values, whatever
+\code{na\_check} says. A \code{simd\_vec} made with \code{check\_na = TRUE}
+gives the same speed safely, by checking once.}}
+\end{center}
+
+\section{Precision of floating-point sums}
+
+Floating-point addition is not associative: the result of a sum depends on
+the order of the additions. A SIMD sum keeps one partial sum per lane and
+adds them at the end, which is faster than one running total but rounds
+differently, and differently on tiers with different numbers of lanes. Base
+R's \code{sum()} instead keeps one running total in \code{long double} where
+the platform has one wider than double: 80 bits on x86-64 and 128 bits on
+arm64 Linux, while on arm64 macOS \code{long double} is just a double.
+
+\pkg{rsimd} offers three precision modes, set with \code{simd\_precision()}
+or the option \code{rsimd.precision}:
+
+\begin{description}
+\item[\code{"fast"}] (the default) partial sums in the lanes, added at the
+  end. The result depends on the tier.
+\item[\code{"pairwise"}] blocks of 128 elements summed as in \code{"fast"},
+  then the block sums combined pairwise, so rounding errors grow with
+  $\log n$ rather than $n$.
+\item[\code{"compensated"}] Neumaier's compensated summation, which carries
+  the rounding error of every addition along. Its result is within about
+  one rounding of the exact sum unless the sum cancels heavily, it agrees
+  across tiers, and it needs no \code{long double}.
+\end{description}
+
+\noindent The modes affect \code{simd\_sum}, \code{simd\_mean},
+\code{simd\_sum\_sq}, \code{simd\_sum\_abs}, \code{simd\_dot},
+\code{simd\_norm}, \code{simd\_dist}, \code{simd\_cosine}, \code{simd\_var},
+\code{simd\_sd}, \code{simd\_cumsum} and the denominators of
+\code{simd\_softmax} and \code{simd\_log\_softmax}. Nothing else changes.
+
+The classic example is \code{c(1e16, 1, -1e16)}, whose exact sum is 1.
+Adding in order in double precision loses the 1, because $10^{16} + 1$ is
+not representable and rounds to $10^{16}$. The chunk below runs on the
+\code{"none"} implementation, which adds in order on every machine, so its
+output is the same everywhere:
+
+<<precision-none>>=
+x <- c(1e16, 1, -1e16)
+with_precision <- function(mode, expr) {
+  old <- simd_precision(mode)
+  on.exit(simd_precision(old))
+  expr
+}
+modes <- c("fast", "pairwise", "compensated")
+simd_with_impl("none",
+  sapply(modes, function(m) with_precision(m, simd_sum(x))))
+@
+
+On a SIMD tier the result of \code{"fast"} and \code{"pairwise"} depends on
+how the three elements fall into lanes: with two lanes, $10^{16}$ and
+$-10^{16}$ share a lane and cancel exactly, and the 1 survives in the other.
+With this tiny input the answer can be right by luck; with real data the
+lanes' rounding errors are just as real, only harder to see. Here are the
+three modes on the implementation in use, and base R:
+
+<<precision-current>>=
+simd_current()
+sapply(modes, function(m) with_precision(m, simd_sum(x)))
+sum(x)
+@
+
+\noindent Base R's result is 1 where \code{long double} is wider than
+double, and 0 where it is not (arm64 macOS, or R built without
+\code{long double}). Only \code{"compensated"} gives 1 everywhere.
+
+\code{"pairwise"} costs little over \code{"fast"} and makes results
+independent of how the input is split internally, though tiers can still
+differ in about the last bit. \code{"compensated"} costs more; the
+vignette \emph{Benchmarks} has a table of the cost. A reasonable choice is
+\code{"fast"} for exploratory work and \code{"compensated"} when results
+must be reproducible across machines.
+
+\section{Integer overflow}
+
+R's integers are 32-bit, and \code{NA\_integer\_} is the bit pattern of
+$-2^{31}$, so valid values range over $\pm(2^{31} - 1)$. As in base R, a
+result outside that range is \code{NA}, with one warning per call:
+
+<<overflow>>=
+big <- c(2L, 50000L)
+withCallingHandlers(
+  simd_mul(big, 50000L),
+  warning = function(w) {
+    message("warning: ", conditionMessage(w))
+    invokeRestart("muffleWarning")
+  }
+)
+@
+
+\noindent (The warning is printed to the console, not into this
+document.) The \code{\_wrap} variants (\code{simd\_add\_wrap()},
+\code{simd\_sub\_wrap()}, \code{simd\_mul\_wrap()}, \code{simd\_neg\_wrap()},
+\code{simd\_abs\_wrap()}) wrap around in two's complement instead, as C
+unsigned arithmetic does, and never warn. A result that wraps to $-2^{31}$
+reads as \code{NA}:
+
+<<wrap>>=
+simd_mul_wrap(big, 50000L)
+simd_add_wrap(.Machine$integer.max, 1L)
+@
+
+Integer sums are exact. As in base R, \code{simd\_sum()} of an integer
+vector returns an integer when the total fits and a double when it does not:
+
+<<int-sum>>=
+simd_sum(c(.Machine$integer.max, 1L))
+class(simd_sum(1:10))
+@
+
+\section{Lengths, empty inputs and attributes}
+
+Unary functions keep the length of their input. Binary and ternary
+functions need operands of the same length, or of length one: a length-one
+operand is used for every element. Base R also recycles other lengths
+(with a warning when they do not divide); \pkg{rsimd} reports an error,
+since unequal lengths are almost always a mistake:
+
+<<lengths>>=
+simd_add(1:4, 10L)
+msg <- tryCatch(simd_add(1:4, 1:2), error = conditionMessage)
+writeLines(strwrap(msg, 70))
+@
+
+\noindent \code{simd\_dot()}, \code{simd\_dist()} and \code{simd\_cosine()}
+need equal lengths and do not broadcast a length-one operand.
+
+Empty inputs give base R's results:
+
+\begin{center}
+\begin{tabular}{ll}
+\hline
+Call on \code{numeric(0)} & Result \\
+\hline
+\code{simd\_sum}, \code{simd\_sum\_sq}, \code{simd\_dot} & \code{0} (\code{0L} for integers) \\
+\code{simd\_prod} & \code{1} \\
+\code{simd\_mean} & \code{NaN} \\
+\code{simd\_var}, \code{simd\_sd} & \code{NA} \\
+\code{simd\_min}, \code{simd\_max} & \code{Inf}, \code{-Inf}, with base R's warning \\
+\code{simd\_any}, \code{simd\_all} & \code{FALSE}, \code{TRUE} \\
+elementwise and cumulative functions & a zero-length vector \\
+\hline
+\end{tabular}
+\end{center}
+
+Results are bare vectors: names, dimensions and other attributes are
+dropped, where base R's operators keep them. The exceptions are the
+\code{integer64} class, which is kept, and \code{simd\_vec} operands, whose
+results are \code{simd\_vec} objects again. Put attributes back yourself
+when you need them:
+
+<<attributes>>=
+m <- matrix(1:4, 2)
+r <- simd_add(m, 1L)
+r
+dim(r) <- dim(m)
+r
+@
+
+\section{Differences from base R}
+
+Every deliberate difference, with its reason and what to do about it:
+
+{\small
+\begin{longtable}{p{0.2\textwidth}p{0.35\textwidth}p{0.37\textwidth}}
+\hline
+Topic & Difference & Reason and workaround \\
+\hline
+\endhead
+\hline
+\endfoot
+\code{NA} and \code{NaN} in reductions &
+  \code{NA} whenever an \code{NA} is present, whatever the order; base R's
+  answer can depend on the order. &
+  A SIMD reduction has no order. Use \code{simd\_count\_na()} or
+  \code{is.nan()} to tell them apart. \\
+\code{NA} and \code{NaN} in elementwise operations &
+  \code{NA} wherever an operand is \code{NA}; base R may give \code{NaN}
+  for \code{NaN + NA}, depending on the CPU. &
+  \pkg{rsimd} keeps missing values missing on every CPU. \\
+Double sums &
+  Accumulated in double, in the mode of \code{simd\_precision()}; base R
+  uses \code{long double} where available. &
+  Speed. Use \code{"compensated"} for accurate, reproducible sums. \\
+\code{simd\_prod} &
+  Multiplies in double; an intermediate product can overflow where base
+  R's \code{long double} would not. &
+  Speed. Use \code{prod()} when partial products may leave the double
+  range. \\
+\code{simd\_cumsum} &
+  In \code{"fast"} and \code{"pairwise"} modes, can differ from base R in
+  the last bits. &
+  Lanes are added in a tree. \code{"compensated"} is sequential and
+  identical on every tier. \\
+Recycling &
+  Only length-one operands are reused; other unequal lengths are an
+  error. &
+  Avoids silent mistakes. Use \code{rep\_len()} if recycling is
+  intended. \\
+Attributes &
+  Names, dimensions and other attributes are dropped. &
+  Keeps results simple and fast. Copy them back, as in the example
+  above. \\
+\code{simd\_pmin}, \code{simd\_pmax} &
+  Exactly two operands. &
+  Nest calls for more operands. \\
+\code{simd\_round(x, digits)}, \code{simd\_log(x, base)} &
+  \code{digits} and \code{base} must be single numbers. &
+  Kernels take one constant. Use \code{round()} or \code{log()} for
+  vectors of them. \\
+Elementary functions &
+  May differ from base R in the last bit. &
+  The SIMD tiers use SLEEF, within 1 ULP of the exact result (see
+  below); the \code{"none"} tier uses the C library as base R does. \\
+Odd functions of \code{-0} &
+  \code{simd\_sin(-0)} and similar return \code{-0}; base R since 4.6.0
+  returns \code{0}. &
+  The IEEE 754 and C rule. Add \code{0} to turn \code{-0} into \code{0}. \\
+\code{simd\_idiv}, \code{simd\_mod} on doubles &
+  Always exact; base R computes in \code{long double} and can differ in
+  the last bits, or warn about loss of accuracy, for large quotients. &
+  Exactness. No workaround needed. \\
+Complex numbers &
+  Only addition, subtraction, negation, sums, \code{Re}, \code{Im},
+  \code{Conj} and the predicates; other functions are an error. &
+  The other operations mix the parts. Use base R for them. \\
+\code{integer64} with a double &
+  The result is double, with the warning ``integer64 coerced to double'';
+  \pkg{bit64} converts the double to \code{integer64}. &
+  Keeps the double's fraction. Convert with
+  \code{simd\_as\_integer64()} first for integer arithmetic. \\
+\code{integer64} sums &
+  \code{NA} only if the exact total is out of range; \pkg{bit64} checks
+  every running total. &
+  Order-independent, like every \pkg{rsimd} sum. \\
+\code{na\_check = FALSE} &
+  No base R equivalent; results are unspecified if there are missing
+  values. &
+  Only for data known to be complete. \\
+\end{longtable}
+}
+
+\section{64-bit integers}
+
+\pkg{rsimd} works on the \code{integer64} vectors of the \pkg{bit64}
+package: doubles whose bits hold signed 64-bit integers, with class
+\code{"integer64"}. It computes on them without \pkg{bit64}, which is only
+needed to create and print them; \code{simd\_as\_integer64()} creates them
+too. Arithmetic is exact, and overflow gives \code{NA} with \pkg{bit64}'s
+warning. The chunk runs only when \pkg{bit64} is installed:
+
+<<integer64>>=
+if (requireNamespace("bit64", quietly = TRUE)) {
+  max64 <- bit64::as.integer64("9223372036854775807")
+  big <- c(max64, bit64::as.integer64(c(1, -1)))
+  print(simd_sum(big))
+  print(suppressWarnings(sum(big)))
+  y <- simd_as_integer64(c(1, 2, 3))
+  print(simd_mul(y, 4L))
+  print(suppressWarnings(simd_add(y, 0.5)))
+} else {
+  cat("bit64 is not installed\n")
+}
+@
+
+\noindent The first sum shows the difference in the table above:
+$2^{63} - 1 + 1 - 1$ is in range, so \code{simd\_sum()} returns it, while
+\pkg{bit64}'s running total overflows at the second element. The last line
+gave a double, with a warning. \code{?"rsimd-integer64"} lists the functions
+that take \code{integer64} and their rules.
+
+\section{Accuracy of elementary functions}
+
+On the SIMD tiers the elementary functions (\code{simd\_exp()},
+\code{simd\_sin()}, \code{simd\_pow()} and the rest) come from the bundled
+SLEEF library. \pkg{rsimd} uses SLEEF's 1-ULP variants, and its 0.5-ULP
+variants for \code{simd\_sinpi()}, \code{simd\_cospi()} and
+\code{simd\_hypot()}: results are within one unit in the last place (ULP) of
+the exact value, or correctly rounded for the 0.5-ULP ones. The C library
+that base R uses is usually also within 1 ULP, but not always the same
+ULP, so results can differ from base R and between tiers in the last bit.
+The \code{"none"} tier calls the C library, as base R does.
+
+The tests compare every tier with \code{"none"} and allow 2 ULP, plus exact
+checks at special values (zeros, infinities, \code{NA}, \code{NaN}, overflow
+and underflow thresholds). You can measure the difference on your own
+machine:
+
+<<ulp>>=
+ulp_diff <- function(a, b) {
+  abs(a - b) / 2^(floor(log2(pmax(abs(a), abs(b)))) - 52)
+}
+x <- seq(-10, 10, length.out = 1e4)
+table(ulp_diff(simd_sin(x), sin(x)))
+@
+
+\noindent The table counts the elements by how many ULP apart the two
+results are. Run on the \code{"none"} tier, it would show only zeros
+where the C library is the same one base R uses.
+
+\end{document}
