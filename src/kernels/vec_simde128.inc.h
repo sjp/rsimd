@@ -275,6 +275,36 @@ RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) {
   w = simde_mm_cvtsi128_si32(b);
   memcpy(p, &w, sizeof w);
 }
+/* 64-bit lanes: shifts by a run-time count k in [0, 63]; all ones in the
+   negative lanes (the high words' sign copied over each lane); products
+   of the low 32 bits of each lane, unsigned (mulu32) and signed (mul32),
+   exact in 64 bits. SSE2 has only the unsigned product: the signed one
+   subtracts 2^32 * b_lo where a_lo is negative and 2^32 * a_lo where b_lo
+   is (mod 2^64). */
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sll(rsimd_vi64 a, int k) {
+  return simde_mm_sll_epi64(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_srl(rsimd_vi64 a, int k) {
+  return simde_mm_srl_epi64(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sign(rsimd_vi64 a) {
+  return simde_mm_shuffle_epi32(simde_mm_srai_epi32(a, 31), SIMDE_MM_SHUFFLE(3, 3, 1, 1));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mulu32(rsimd_vi64 a, rsimd_vi64 b) {
+  return simde_mm_mul_epu32(a, b);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul32(rsimd_vi64 a, rsimd_vi64 b) {
+#if defined(SIMDE_ARM_NEON_A32V7_NATIVE)
+  return simde_mm_mul_epi32(a, b);
+#else
+  const simde__m128i lo = simde_mm_set1_epi64x(0xFFFFFFFF);
+  simde__m128i sa = simde_mm_shuffle_epi32(simde_mm_srai_epi32(a, 31), SIMDE_MM_SHUFFLE(2, 2, 0, 0));
+  simde__m128i sb = simde_mm_shuffle_epi32(simde_mm_srai_epi32(b, 31), SIMDE_MM_SHUFFLE(2, 2, 0, 0));
+  simde__m128i c = simde_mm_add_epi64(simde_mm_and_si128(sa, simde_mm_and_si128(b, lo)),
+                                      simde_mm_and_si128(sb, simde_mm_and_si128(a, lo)));
+  return simde_mm_sub_epi64(simde_mm_mul_epu32(a, b), simde_mm_slli_epi64(c, 32));
+#endif
+}
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
   simde__m128i v = simde_mm_loadl_epi64((const simde__m128i *) (const void *) p);
   return simde_mm_unpacklo_epi32(v, simde_mm_srai_epi32(v, 31));
@@ -348,6 +378,13 @@ RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
   simde_mm_storel_epi64((simde__m128i *) (void *) p, simde_mm_cvttpd_epi32(v));
 #endif
 }
+#if defined(__aarch64__) || defined(_M_ARM64)
+/* int64 lanes to double, rounded to nearest (NEON's own conversion). */
+RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) {
+  return simde__m128d_from_neon_f64(vcvtq_f64_s64(simde__m128i_to_neon_i64(a)));
+}
+#define RSIMD_HAVE_VI64_TO_VF64 1
+#endif
 #endif
 
 #include "vec_fixed.inc.h"

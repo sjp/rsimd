@@ -25,9 +25,11 @@ static int lookup_op(SEXP op, const char *const *names, int count) {
 
 /* Errors for an operand type the elementwise ops do not take, with base
    R's message for raw (`raw_msg`); complex operands are allowed when
-   `cplx` is set. Returns 1 if an operand is complex. The R side rejects
-   complex for the other ops and integer64, naming the function. */
-static int check_numeric(const rsimd_ew *e, const char *raw_msg, int cplx) {
+   `cplx` is set, integer64 ones when `i64` is. Returns 1 if an operand is
+   complex. The R side rejects complex and integer64 for the other ops,
+   naming the function, and has converted integer64 operands mixed with
+   doubles to double. */
+static int check_numeric(const rsimd_ew *e, const char *raw_msg, int cplx, int i64) {
   int i, any_c128 = 0;
   for (i = 0; i < e->k; i++) {
     if (e->in[i].type == RSIMD_U8) Rf_error("%s", raw_msg);
@@ -35,11 +37,23 @@ static int check_numeric(const rsimd_ew *e, const char *raw_msg, int cplx) {
   for (i = 0; i < e->k; i++) {
     rsimd_etype t = e->in[i].type;
     if (t == RSIMD_C128 && cplx) any_c128 = 1;
-    else if (t != RSIMD_F64 && !is_int_like(t)) {
+    else if (t != RSIMD_F64 && !is_int_like(t) && !(t == RSIMD_I64 && i64)) {
       Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
     }
   }
   return any_c128;
+}
+
+/* 1 if an operand is integer64 (the others are then integer64, integer or
+   logical: the R side converts integer64 mixed with double). */
+static int any_i64(const rsimd_ew *e) {
+  int i, i64 = 0, f64 = 0;
+  for (i = 0; i < e->k; i++) {
+    if (e->in[i].type == RSIMD_I64) i64 = 1;
+    if (e->in[i].type == RSIMD_F64) f64 = 1;
+  }
+  if (i64 && f64) Rf_error("internal error: integer64 operand mixed with double");
+  return i64;
 }
 
 /* RSIMD_EW_I32(k) for each int32 operand of a double kernel. */
@@ -64,6 +78,12 @@ static void warn_status(int st) {
   if (st & RSIMD_EW_NAN_PRODUCED) Rf_warning("NaNs produced");
 }
 
+/* bit64's warnings for integer64 arithmetic. */
+static void warn_status_i64(int st) {
+  if (st & RSIMD_EW_OVERFLOW) rsimd_warn_i64_overflow();
+  if (st & RSIMD_EW_DIV_ZERO) Rf_warning("NAs produced due to division by zero");
+}
+
 static const char *const binop_msg = "non-numeric argument to binary operator";
 
 /* Binary ops by name (kernel_types.h): x + y, x - y, x * y, x / y,
@@ -71,7 +91,11 @@ static const char *const binop_msg = "non-numeric argument to binary operator";
    wrapping integer ops. Integer and logical operands give an integer
    result, except for / and copysign; the R side ensures that the _wrap ops
    only see integer and logical operands. + and - also take complex
-   operands, which the R side has made both complex. */
+   operands, which the R side has made both complex. With an integer64
+   operand (the other integer64, integer or logical) the result is
+   integer64, overflow giving NA with bit64's warning, as does a zero
+   divisor of %/% and %%; the R side has converted integer64 operands of
+   / and those mixed with doubles to double. */
 SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   static const char *const names[] = {"add",      "sub",      "mul",      "div",     "idiv",
                                       "mod",      "pmin",     "pmax",     "pmin_num", "pmax_num",
@@ -85,11 +109,25 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   sargs[0] = x;
   sargs[1] = y;
   rsimd_ew_init(&e, 2, sargs, args);
-  if (check_numeric(&e, binop_msg, code == RSIMD_EW_ADD || code == RSIMD_EW_SUB)) {
+  if (check_numeric(&e, binop_msg, code == RSIMD_EW_ADD || code == RSIMD_EW_SUB,
+                    code != RSIMD_EW_DIV && code != RSIMD_EW_COPYSIGN)) {
     rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, 0);
     return rsimd_c128_add(code, x, y, &o);
   }
   rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
+  if (any_i64(&e)) {
+    double *po;
+    int flags = e.flags | i32_flags(&e);
+    out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));
+    po = (double *) rsimd_out_ptr(out);
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      st |= rsimd_active->ew2_i64(code, p[0], p[1], len, flags, (int64_t *) (po + off), &o);
+    });
+    rsimd_set_i64_class(out);
+    warn_status_i64(st);
+    UNPROTECT(1);
+    return out;
+  }
   if (all_int_like(&e) && code != RSIMD_EW_DIV && code != RSIMD_EW_COPYSIGN) {
     int *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
@@ -115,8 +153,9 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
 
 /* Ternary ops by name: fma(x, y, z), mul_add, add_mul, lerp(x, y, t) and
    clamp(x, lo, hi). mul_add, add_mul and clamp of integer and logical
-   operands give an integer result; everything else is double. clamp
-   errors when lo > hi anywhere. */
+   operands give an integer result, and with an integer64 operand an
+   integer64 one; everything else is double. clamp errors when lo > hi
+   anywhere. */
 SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   static const char *const names[] = {"fma", "mul_add", "add_mul", "lerp", "clamp"};
   static const char *const xyz[] = {"x", "y", "z"}, *const xyt[] = {"x", "y", "t"},
@@ -131,8 +170,22 @@ SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   sargs[2] = z;
   rsimd_ew_init(&e, 3, sargs,
                 code == RSIMD_EW_CLAMP ? xlohi : code == RSIMD_EW_LERP ? xyt : xyz);
-  check_numeric(&e, binop_msg, 0);
+  check_numeric(&e, binop_msg, 0, code != RSIMD_EW_FMA && code != RSIMD_EW_LERP);
   rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
+  if (any_i64(&e)) {
+    double *po;
+    int flags = e.flags | i32_flags(&e);
+    out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));
+    po = (double *) rsimd_out_ptr(out);
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      st |= rsimd_active->ew3_i64(code, p[0], p[1], p[2], len, flags, (int64_t *) (po + off), &o);
+    });
+    if (st & RSIMD_EW_LO_GT_HI) Rf_error("'lo' must not be greater than 'hi'");
+    rsimd_set_i64_class(out);
+    warn_status_i64(st);
+    UNPROTECT(1);
+    return out;
+  }
   if (all_int_like(&e) && code != RSIMD_EW_FMA && code != RSIMD_EW_LERP) {
     int *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
@@ -160,7 +213,8 @@ SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
    (they wrap, so NA stays NA); sign, recip, sqrt, floor, ceiling, trunc
    and round (half to even) are double for every input, as in base R.
    sqrt warns "NaNs produced" for a negative number. neg also takes
-   complex input. */
+   complex input; neg, abs and sign take integer64 input and give integer64
+   (NA stays NA). */
 SEXP C_simd_ew1(SEXP x, SEXP op) {
   static const char *const names[] = {"neg",   "abs",     "sign",  "recip", "sqrt",
                                       "floor", "ceiling", "trunc", "round"};
@@ -173,10 +227,21 @@ SEXP C_simd_ew1(SEXP x, SEXP op) {
   if (check_numeric(&e,
                     code == RSIMD_EW_NEG ? "invalid argument to unary operator"
                                          : "non-numeric argument to mathematical function",
-                    code == RSIMD_EW_NEG)) {
+                    code == RSIMD_EW_NEG, code <= RSIMD_EW_SIGN)) {
     return rsimd_c128_neg(&e.in[0]);
   }
   rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, e.no_na_hint);
+  if (e.in[0].type == RSIMD_I64) {
+    double *po;
+    out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));
+    po = (double *) rsimd_out_ptr(out);
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      rsimd_active->ew1_i64(code, (const int64_t *) p[0], len, (int64_t *) (po + off), &o);
+    });
+    rsimd_set_i64_class(out);
+    UNPROTECT(1);
+    return out;
+  }
   if (is_int_like(e.in[0].type) && (code == RSIMD_EW_NEG || code == RSIMD_EW_ABS)) {
     int *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
@@ -209,7 +274,7 @@ SEXP C_simd_round_digits(SEXP x, SEXP digits) {
   rsimd_ew e;
 
   rsimd_ew_init(&e, 1, &x, (const char *const[]){"x"});
-  check_numeric(&e, "non-numeric argument to mathematical function", 0);
+  check_numeric(&e, "non-numeric argument to mathematical function", 0, 0);
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, e.n));
   po = (double *) rsimd_out_ptr(out);
   RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {

@@ -243,6 +243,22 @@ RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) {
                                         simde_mm256_extracti128_si256(m, 1));
   simde_mm_storel_epi64((simde__m128i *) (void *) p, simde_mm_packus_epi16(b, b));
 }
+/* 64-bit lanes: see the 128-bit layer. */
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sll(rsimd_vi64 a, int k) {
+  return simde_mm256_sll_epi64(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_srl(rsimd_vi64 a, int k) {
+  return simde_mm256_srl_epi64(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sign(rsimd_vi64 a) {
+  return simde_mm256_shuffle_epi32(simde_mm256_srai_epi32(a, 31), SIMDE_MM_SHUFFLE(3, 3, 1, 1));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mulu32(rsimd_vi64 a, rsimd_vi64 b) {
+  return simde_mm256_mul_epu32(a, b);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul32(rsimd_vi64 a, rsimd_vi64 b) {
+  return simde_mm256_mul_epi32(a, b);
+}
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
   return simde_mm256_cvtepi32_epi64(simde_mm_loadu_si128((const simde__m128i *) (const void *) p));
 }

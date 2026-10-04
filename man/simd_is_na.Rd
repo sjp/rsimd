@@ -44,8 +44,9 @@ simd_is_zero_any(x)
 simd_is_zero_all(x)
 }
 \arguments{
-\item{x}{A double, integer, logical, raw or complex vector (neither raw nor
-complex for \code{simd_is_negative} and \code{simd_is_zero}).}
+\item{x}{A double, integer, logical, raw, complex or \pkg{bit64}
+\code{integer64} vector (neither raw nor complex for
+\code{simd_is_negative} and \code{simd_is_zero}).}
 }
 \description{
 \code{is.na(x)}, \code{is.nan(x)}, \code{is.finite(x)} and
@@ -88,8 +89,9 @@ reading at the first element that decides the answer.
 
 All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double and complex tests use the scalar \code{"none"}
-code. \pkg{bit64} \code{integer64} input is not supported yet for
-\code{simd_is_na}; the other tests do not take it.
+code. \pkg{bit64} \code{integer64} input is tested like integers: it is
+\code{NA} when it is \eqn{-2^{63}}, never \code{NaN} or infinite (see
+\link{rsimd-integer64}).
 }
 \value{
 A logical vector of the length of \code{x}, without \code{NA}, or a single
@@ -97,7 +99,7 @@ A logical vector of the length of \code{x}, without \code{NA}, or a single
 }
 \seealso{
 \code{\link{is.na}}, \code{\link{is.finite}}, \code{\link{simd_any_na}},
-\code{\link{simd_eq}}.
+\code{\link{simd_eq}}, \link{rsimd-integer64}.
 }
 \examples{
 x <- c(1, NA, NaN, -0, Inf, -2)

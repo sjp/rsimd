@@ -18,7 +18,8 @@
  *               infinities give 00.
  * To logical: non-zero is TRUE, 0 FALSE, a missing value NA.
  * To double: exact; NA_integer_ becomes NA_real_.
- * Status bits are only set in CHECKED mode.
+ * Status bits are only set in CHECKED mode. The integer64 conversions are
+ * in int64.inc.c (included before this file), which the slot calls.
  */
 
 #include "logical.inc.h"
@@ -122,6 +123,7 @@ int RSIMD_KERNEL(convert)(int op, int mode, const void *x, R_xlen_t n, void *out
 int RSIMD_KERNEL(convert)(int op, int mode, const void *x, R_xlen_t n, void *out) {
   int st = 0;
   R_xlen_t i;
+  if (op >= RSIMD_CVT_I64_F64) return RSIMD_KERNEL(convert_i64_)(op, mode, x, n, out);
   for (i = 0; i < n; i++) st |= rsimd_cvt_1(op, mode, x, i, out);
   return st;
 }
@@ -344,6 +346,7 @@ int RSIMD_KERNEL(convert)(int op, int mode, const void *x, R_xlen_t n, void *out
 int RSIMD_KERNEL(convert)(int op, int mode, const void *x, R_xlen_t n, void *out) {
   const rsimd_mi32 none = rsimd_mi32_none();
   (void) none;
+  if (op >= RSIMD_CVT_I64_F64) return RSIMD_KERNEL(convert_i64_)(op, mode, x, n, out);
   switch (op) {
   case RSIMD_CVT_F64_I32:
     switch (mode) {

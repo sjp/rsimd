@@ -214,7 +214,7 @@ test_that("chunk boundaries and ALTREP inputs give the oracle's result", {
   expect_identical(simd_sqrt(seq_len(5000)), sqrt(seq_len(5000)))
 })
 
-test_that("complex and integer64 operands are rejected", {
+test_that("complex and integer64 operands are rejected where not taken", {
   expect_error(simd_div(1i, 1), "simd_div() does not support 'x' of type complex",
     fixed = TRUE
   )
@@ -226,11 +226,10 @@ test_that("complex and integer64 operands are rejected", {
     fixed = TRUE
   )
   x64 <- structure(0, class = "integer64")
-  expect_error(simd_add(x64, 1), "'x' of type integer64 yet", fixed = TRUE)
-  expect_error(simd_div(x64, 1), "simd_div() does not support 'x' of type integer64",
+  expect_error(simd_fma(x64, 1, 1), "simd_fma() does not support 'x' of type integer64",
     fixed = TRUE
   )
-  expect_error(simd_div(x64, 1), "integer64$")
+  expect_error(simd_sqrt(x64), "integer64$")
   expect_error(simd_add("a", 1), "'x' must be an atomic vector")
 })
 

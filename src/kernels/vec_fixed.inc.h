@@ -96,15 +96,37 @@ RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 x) {
   return (int64_t) r;
 }
 
-/* Lane-wise 64-bit multiply for tiers without one (low 64 bits, wrapping). */
+/* 64-bit multiply (low 64 bits, wrapping) from 32-bit partial products,
+   as no tier using this file has one: a_lo * b_lo + ((a_lo * b_hi +
+   a_hi * b_lo) << 32). */
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul(rsimd_vi64 a, rsimd_vi64 b) {
-  int64_t x[RSIMD_WIDTH_I64], y[RSIMD_WIDTH_I64];
-  int j;
-  rsimd_vi64_storeu(x, a);
-  rsimd_vi64_storeu(y, b);
-  for (j = 0; j < RSIMD_WIDTH_I64; j++) x[j] = (int64_t) ((uint64_t) x[j] * (uint64_t) y[j]);
-  return rsimd_vi64_loadu(x);
+  rsimd_vi64 cross = rsimd_vi64_add(rsimd_vi64_mulu32(a, rsimd_vi64_srl(b, 32)),
+                                    rsimd_vi64_mulu32(rsimd_vi64_srl(a, 32), b));
+  return rsimd_vi64_add(rsimd_vi64_mulu32(a, b), rsimd_vi64_sll(cross, 32));
 }
+
+/* Arithmetic shift right by k in [0, 63]: the logical shift of the
+   complement of a negative lane, complemented back. */
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sra(rsimd_vi64 a, int k) {
+  rsimd_vi64 s = rsimd_vi64_sign(a);
+  return rsimd_vi64_xor(rsimd_vi64_srl(rsimd_vi64_xor(a, s), k), s);
+}
+
+#if !defined(RSIMD_NO_F64_SIMD) && !defined(RSIMD_HAVE_VI64_TO_VF64)
+/* int64 lanes to double, rounded to nearest (even), with exact magic
+   numbers: the high word h, biased to h + 2^31 and placed in the mantissa
+   of 2^84, is 2^84 + (h + 2^31) * 2^32; the low word l in the mantissa of
+   2^52 is 2^52 + l. Subtracting 2^84 + 2^63 + 2^52 from the first is exact
+   (h * 2^32 - 2^52), and adding the second then rounds once. */
+RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) {
+  const rsimd_vi64 hi_bits = rsimd_vi64_set1(INT64_C(0x4530000080000000));
+  const rsimd_vi64 lo_bits = rsimd_vi64_set1(INT64_C(0x4330000000000000));
+  const rsimd_vi64 lo_mask = rsimd_vi64_set1(INT64_C(0xFFFFFFFF));
+  rsimd_vf64 hi = rsimd_vi64_as_vf64(rsimd_vi64_xor(rsimd_vi64_srl(a, 32), hi_bits));
+  rsimd_vf64 lo = rsimd_vi64_as_vf64(rsimd_vi64_or(rsimd_vi64_and(a, lo_mask), lo_bits));
+  return rsimd_vf64_add(rsimd_vf64_sub(hi, rsimd_vf64_set1(0x1.00000801p84)), lo);
+}
+#endif
 
 /* Predicated forms of the int32 <-> 64-bit-lane conversions, through a
    buffer of int32 elements. */

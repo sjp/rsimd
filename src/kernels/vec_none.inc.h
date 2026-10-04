@@ -220,6 +220,24 @@ RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) { *p = (uint8_t
 RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v) {
   if (pg) *p = (uint8_t) v;
 }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sll(rsimd_vi64 a, int k) {
+  return (int64_t) ((uint64_t) a << k);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_srl(rsimd_vi64 a, int k) {
+  return (int64_t) ((uint64_t) a >> k);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sra(rsimd_vi64 a, int k) {
+  return a < 0 ? (int64_t) ~(~(uint64_t) a >> k) : (int64_t) ((uint64_t) a >> k);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sign(rsimd_vi64 a) { return a < 0 ? -1 : 0; }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mulu32(rsimd_vi64 a, rsimd_vi64 b) {
+  return (int64_t) (((uint64_t) a & 0xFFFFFFFFu) * ((uint64_t) b & 0xFFFFFFFFu));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul32(rsimd_vi64 a, rsimd_vi64 b) {
+  return (int64_t) (int32_t) (uint32_t) ((uint64_t) a & 0xFFFFFFFFu) *
+         (int64_t) (int32_t) (uint32_t) ((uint64_t) b & 0xFFFFFFFFu);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) { return (double) a; }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) { return *p; }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
   return pg ? *p : fill;

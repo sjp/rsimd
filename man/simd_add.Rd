@@ -29,9 +29,9 @@ simd_sub_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
 simd_mul_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
-\item{x, y}{Double, integer or logical vectors; integer or logical only for
-the \code{_wrap} functions. \code{simd_add()} and \code{simd_sub()} also
-take complex vectors.}
+\item{x, y}{Double, integer, logical or \pkg{bit64} \code{integer64}
+vectors; not double for the \code{_wrap} functions. \code{simd_add()} and
+\code{simd_sub()} also take complex vectors.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
 \code{x} and \code{y} have no missing values, so they are not looked for; see
 Details.}
@@ -54,6 +54,12 @@ with \code{as.complex()}, so an integer or logical \code{NA} becomes
 added or subtracted separately, each following the rules for doubles
 below, so a missing part makes only that part of the result missing.
 Complex operands do not combine with \code{integer64} ones.
+
+\pkg{bit64} \code{integer64} operands (with integer64, integer or logical
+operands) give integer64 results computed exactly in 64 bits, with
+\pkg{bit64}'s overflow warning; \code{simd_div()} converts them to double,
+and a double operand makes them convert to double with a warning. See
+\link{rsimd-integer64}.
 
 \code{simd_div()} always returns a double, like \code{/}. On integers,
 \code{simd_idiv()} and \code{simd_mod()} return \code{NA} (without a
@@ -91,7 +97,7 @@ complex, integer when both operands are integer or logical (except for
 }
 \seealso{
 \link{Arithmetic}, \code{\link{simd_fma}}, \code{\link{simd_neg}},
-\link{rsimd_options}.
+\link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_add(1:5, 10L)

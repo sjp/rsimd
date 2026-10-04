@@ -225,6 +225,28 @@ RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) {
 RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v) {
   svst1b_u32(pg, p, svreinterpret_u32_s32(v));
 }
+/* 64-bit lanes: shifts by a run-time count k in [0, 63], the sign mask,
+   the exact products of the low 32 bits (unsigned, signed) and the
+   conversion to double (rounded to nearest). */
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sll(rsimd_vi64 a, int k) {
+  return svlsl_n_s64_x(RSIMD_PT64, a, (uint64_t) k);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_srl(rsimd_vi64 a, int k) {
+  return svreinterpret_s64_u64(svlsr_n_u64_x(RSIMD_PT64, svreinterpret_u64_s64(a), (uint64_t) k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sra(rsimd_vi64 a, int k) {
+  return svasr_n_s64_x(RSIMD_PT64, a, (uint64_t) k);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sign(rsimd_vi64 a) { return svasr_n_s64_x(RSIMD_PT64, a, 63); }
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mulu32(rsimd_vi64 a, rsimd_vi64 b) {
+  svuint64_t ua = svextw_u64_x(RSIMD_PT64, svreinterpret_u64_s64(a));
+  svuint64_t ub = svextw_u64_x(RSIMD_PT64, svreinterpret_u64_s64(b));
+  return svreinterpret_s64_u64(svmul_u64_x(RSIMD_PT64, ua, ub));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul32(rsimd_vi64 a, rsimd_vi64 b) {
+  return svmul_s64_x(RSIMD_PT64, svextw_s64_x(RSIMD_PT64, a), svextw_s64_x(RSIMD_PT64, b));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) { return svcvt_f64_s64_x(RSIMD_PT64, a); }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) { return svld1sw_s64(RSIMD_PT64, p); }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
   return svsel_s64(pg, svld1sw_s64(pg, p), svdup_n_s64(fill));

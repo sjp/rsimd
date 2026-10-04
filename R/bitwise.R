@@ -15,12 +15,12 @@ simd_or <- function(x, y) .logic(x, y, "or", "simd_or")
 simd_xor <- function(x, y) .logic(x, y, "xor", "simd_xor")
 simd_not <- function(x) .logic(x, NULL, "not", "simd_not")
 
-# The bit ops take integer, logical and raw vectors; integer64 is planned.
+# The bit ops take integer, logical, integer64 and raw vectors.
 .bit <- function(x, y, op, fun, na_check, k = NULL, raw = TRUE) {
   .sync_impl()
-  unsupported <- c("integer64", "complex", "double", if (!raw) "raw")
-  .check_supported(x, fun, unsupported, "integer64")
-  if (!is.null(y)) .check_supported(y, fun, unsupported, "integer64", "y")
+  unsupported <- c("complex", "double", if (!raw) "raw")
+  .check_supported(x, fun, unsupported, character(0))
+  if (!is.null(y)) .check_supported(y, fun, unsupported, character(0), "y")
   .Call(C_simd_bit, x, y, op, k, na_check)
 }
 
@@ -33,7 +33,8 @@ simd_not <- function(x) .logic(x, NULL, "not", "simd_not")
 }
 
 # The count of a shift of x: for integers NA_integer_ (every element NA, as
-# in bitwShiftL()) unless it is in 0..31; for raw it must be in 0..8.
+# in bitwShiftL()) unless it is in 0..31 (0..63 for integer64); for raw it
+# must be in 0..8.
 .shift_count <- function(n, x) {
   n <- .count_arg(n)
   if (is.raw(x)) {
@@ -42,15 +43,16 @@ simd_not <- function(x) .logic(x, NULL, "not", "simd_not")
     }
     return(as.integer(n))
   }
-  if (is.na(n) || n < 0 || n > 31) NA_integer_ else as.integer(n)
+  w <- if (inherits(x, "integer64")) 63 else 31
+  if (is.na(n) || n < 0 || n > w) NA_integer_ else as.integer(n)
 }
 
-# The count of a rotate of x, modulo the width (32, or 8 for raw); a
-# negative count rotates the other way.
+# The count of a rotate of x, modulo the width (32, 64 for integer64 or 8
+# for raw); a negative count rotates the other way.
 .rotate_count <- function(n, x) {
   n <- .count_arg(n)
   if (!is.finite(n)) stop("'n' must be a finite number", call. = FALSE)
-  w <- if (is.raw(x)) 8 else 32
+  w <- if (is.raw(x)) 8 else if (inherits(x, "integer64")) 64 else 32
   as.integer(n - w * floor(n / w))
 }
 
@@ -104,6 +106,6 @@ simd_tzcnt <- function(x, na_check = getOption("rsimd.na_check", TRUE)) {
 
 simd_popcount_total <- function(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE)) {
   .sync_impl()
-  .check_supported(x, "simd_popcount_total", c("integer64", "complex", "double"), character(0))
+  .check_supported(x, "simd_popcount_total", c("complex", "double"), character(0))
   .Call(C_simd_popcount_total, x, na.rm, na_check)
 }

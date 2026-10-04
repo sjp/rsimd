@@ -14,7 +14,7 @@ simd_lzcnt(x, na_check = getOption("rsimd.na_check", TRUE))
 simd_tzcnt(x, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
-\item{x}{An integer, logical or raw vector.}
+\item{x}{An integer, logical, raw or \pkg{bit64} \code{integer64} vector.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: should \code{NA} elements be
 skipped?}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
@@ -45,15 +45,15 @@ contains an \code{NA}, unless \code{na.rm = TRUE}.
 All implementations have their own kernels for these functions; on x86 the
 counts use shift-and-add sequences, as the \code{"avx512"} tier does not
 include the AVX-512 extensions with lane-wise bit counts. Double input is
-rejected; \pkg{bit64} \code{integer64} input is not supported yet for
-\code{simd_popcount}, \code{simd_lzcnt} and \code{simd_tzcnt}.
+rejected. \pkg{bit64} \code{integer64} input counts the bits of the 64-bit
+patterns (0 to 64; see \link{rsimd-integer64}).
 }
 \value{
 An integer vector of the length of \code{x}, or for
 \code{simd_popcount_total()} a single double.
 }
 \seealso{
-\code{\link{simd_bit_and}}, \code{\link{bitwAnd}}.
+\code{\link{simd_bit_and}}, \code{\link{bitwAnd}}, \link{rsimd-integer64}.
 }
 \examples{
 simd_popcount(c(0L, 7L, -1L, NA))

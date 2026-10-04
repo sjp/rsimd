@@ -11,7 +11,7 @@ simd_max(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
 simd_range(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
-\item{x}{A double, integer or logical vector.}
+\item{x}{A double, integer, logical or \pkg{bit64} \code{integer64} vector.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
@@ -39,7 +39,9 @@ returns it twice. When nothing is left after removing missing values (or
 The precision mode does not apply. All implementations have their own
 kernels for these functions, except that on 32-bit ARM the double versions
 use the scalar \code{"none"} code. Raw and complex vectors are rejected, as
-by base R.
+by base R. Integer64 vectors give integer64 results; for no values these
+are the largest and smallest integer64 values, with \pkg{bit64}'s warnings
+(see \link{rsimd-integer64}).
 }
 \value{
 \code{simd_min()} and \code{simd_max()}: a double for double \code{x}, an
@@ -49,7 +51,7 @@ integer for integer and logical \code{x} (but see above for empty input).
 }
 \seealso{
 \code{\link{min}}, \code{\link{range}}, \code{\link{simd_which_min}},
-\link{rsimd_options}.
+\link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_min(c(3, 1, 2))

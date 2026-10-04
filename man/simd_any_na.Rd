@@ -11,7 +11,8 @@ simd_count_na(x)
 simd_which_na(x)
 }
 \arguments{
-\item{x}{A double, integer, logical, complex or raw vector.}
+\item{x}{A double, integer, logical, complex, raw or \pkg{bit64}
+\code{integer64} vector.}
 }
 \description{
 Whether a vector has missing values, how many, and where, like
@@ -22,7 +23,8 @@ computed with SIMD instructions and without creating the logical vector
 \details{
 As for \code{\link{is.na}()}, \code{NaN} counts as missing, and a complex
 value is missing when either its real or its imaginary part is. Raw vectors
-have no missing values. \code{simd_any_na()} stops at the first missing
+have no missing values, and an integer64 value is missing when it is
+\eqn{-2^{63}} (see \link{rsimd-integer64}). \code{simd_any_na()} stops at the first missing
 value, and none of the functions reads a vector that R already knows to have
 no missing values, such as \code{1:n}.
 
@@ -41,7 +43,7 @@ order: an integer vector, or a double vector when an index exceeds
 \code{.Machine$integer.max}.
 }
 \seealso{
-\code{\link{anyNA}}, \code{\link{is.na}}.
+\code{\link{anyNA}}, \code{\link{is.na}}, \link{rsimd-integer64}.
 }
 \examples{
 x <- c(1, NA, 3, NaN)

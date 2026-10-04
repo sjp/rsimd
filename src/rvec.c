@@ -218,12 +218,20 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op) {
   }
 }
 
-static SEXP scalar_i64(int64_t v) {
+void rsimd_set_i64_class(SEXP out) {
+  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("integer64"));
+}
+
+SEXP rsimd_scalar_i64(int64_t v) {
   SEXP out = PROTECT(Rf_allocVector(REALSXP, 1));
   memcpy(REAL(out), &v, sizeof v);
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("integer64"));
+  rsimd_set_i64_class(out);
   UNPROTECT(1);
   return out;
+}
+
+void rsimd_warn_i64_overflow(void) {
+  Rf_warning("NAs produced by integer64 overflow");
 }
 
 /* An index or count: integer, or double for a long input. */
@@ -236,7 +244,7 @@ static SEXP na_result(int op, rsimd_etype type) {
   int is_int = type == RSIMD_I32 || type == RSIMD_LGL;
   if (op == RSIMD_RED_SUM || op == RSIMD_RED_MIN || op == RSIMD_RED_MAX) {
     if (is_int) return Rf_ScalarInteger(NA_INTEGER);
-    if (type == RSIMD_I64) return scalar_i64(RSIMD_NA_I64);
+    if (type == RSIMD_I64) return rsimd_scalar_i64(RSIMD_NA_I64);
   }
   return Rf_ScalarReal(NA_REAL);
 }
@@ -302,7 +310,13 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
       if (r->i64 > INT_MAX || r->i64 < -INT_MAX) return Rf_ScalarReal((double) r->i64);
       return Rf_ScalarInteger((int) r->i64);
     }
-    if (type == RSIMD_I64) return scalar_i64(r->i64);
+    if (type == RSIMD_I64) {
+      if (r->carry != 0 || r->i64 == RSIMD_NA_I64) {
+        rsimd_warn_i64_overflow();
+        return rsimd_scalar_i64(RSIMD_NA_I64);
+      }
+      return rsimd_scalar_i64(r->i64);
+    }
     break;
   case RSIMD_RED_MEAN:
     if (is_real) return Rf_ScalarReal(r->count == 0 ? R_NaN : value);
@@ -328,9 +342,15 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
                  is_min ? "Inf" : "-Inf");
       return Rf_ScalarReal(is_min ? R_PosInf : R_NegInf);
     }
+    if (type == RSIMD_I64 && r->count == 0) {
+      int is_min = op == RSIMD_RED_MIN;
+      Rf_warning("no non-NA value, returning the %s possible integer64 value %s9223372036854775807",
+                 is_min ? "highest" : "lowest", is_min ? "+" : "-");
+      return rsimd_scalar_i64(is_min ? INT64_MAX : -INT64_MAX);
+    }
     if (type == RSIMD_F64) return Rf_ScalarReal(value);
     if (is_int) return Rf_ScalarInteger((int) r->i64);
-    if (type == RSIMD_I64) return scalar_i64(r->i64);
+    if (type == RSIMD_I64) return rsimd_scalar_i64(r->i64);
     break;
   case RSIMD_RED_WHICH_MIN:
   case RSIMD_RED_WHICH_MAX:

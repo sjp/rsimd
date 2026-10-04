@@ -14,7 +14,9 @@ simd_add_mul(x, y, z, na_check = getOption("rsimd.na_check", TRUE))
 simd_lerp(x, y, t, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
-\item{x, y, z}{Double, integer or logical vectors.}
+\item{x, y, z}{Double, integer or logical vectors, or for
+\code{simd_mul_add()} and \code{simd_add_mul()} \pkg{bit64}
+\code{integer64} vectors.}
 \item{t}{A double, integer or logical vector of interpolation weights.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that the
 operands have no missing values, so they are not looked for; see Details.}
@@ -56,6 +58,10 @@ operands return integers and follow base R's \code{x * y + z} and
 
 All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double operations use the scalar \code{"none"} code.
+\code{simd_mul_add()} and \code{simd_add_mul()} of integer64 operands (with
+integer64, integer or logical ones) follow the integer rules in 64 bits and
+return integer64 (see \link{rsimd-integer64}); \code{simd_fma()} and \code{simd_lerp()}
+do not take integer64.
 }
 \value{
 A vector of the length of the longest operand: integer for
@@ -63,7 +69,8 @@ A vector of the length of the longest operand: integer for
 integer or logical, otherwise double.
 }
 \seealso{
-\code{\link{simd_add}}, \code{\link{simd_mul}}, \link{rsimd_options}.
+\code{\link{simd_add}}, \code{\link{simd_mul}}, \link{rsimd_options},
+\link{rsimd-integer64}.
 }
 \examples{
 simd_fma(0.1, 10, -1)

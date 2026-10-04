@@ -28,7 +28,8 @@ simd_sqrt(x)
 \arguments{
 \item{x}{A double, integer or logical vector; integer or logical only for
 the \code{_wrap} functions. \code{simd_neg()} also takes a complex
-vector.}
+vector, and \code{simd_neg()}, \code{simd_abs()}, \code{simd_sign()} and the
+\code{_wrap} functions a \pkg{bit64} \code{integer64} vector.}
 \item{sign}{A double, integer or logical vector whose signs are copied to
 \code{x}.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
@@ -72,6 +73,8 @@ either operand gives \code{NA}. Its operands follow the broadcast rule:
 
 All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double operations use the scalar \code{"none"} code.
+Integer64 input gives integer64 results (\code{NA} stays \code{NA}; see
+\link{rsimd-integer64}).
 }
 \value{
 A vector of the length of \code{x} (for \code{simd_copysign()}, of the
@@ -81,7 +84,7 @@ otherwise double.
 }
 \seealso{
 \code{\link{abs}}, \code{\link{sign}}, \code{\link{sqrt}},
-\code{\link{simd_add}}, \link{rsimd_options}.
+\code{\link{simd_add}}, \link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_neg(c(1L, -2L, NA))

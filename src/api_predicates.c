@@ -39,8 +39,8 @@ static SEXP constant_false(R_xlen_t n, int mode) {
    or infinite; raw bytes are never NA, NaN, finite or infinite (as base
    R's is.finite says), and "negative" and "zero" do not take them.
    Complex elements take the first four, with base R's either-part rules
-   (finite: both parts). Empty input gives FALSE for any and TRUE for
-   all. */
+   (finite: both parts). integer64 elements are like integers (NA is
+   INT64_MIN). Empty input gives FALSE for any and TRUE for all. */
 SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
   static const char *const names[] = {"na", "nan", "finite", "infinite", "negative", "zero"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
@@ -55,6 +55,7 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
   case RSIMD_F64: break;
   case RSIMD_I32:
   case RSIMD_LGL:
+  case RSIMD_I64:
     if (code == RSIMD_PRED_NAN || code == RSIMD_PRED_INFINITE) return constant_false(in.n, m);
     break;
   case RSIMD_U8:
@@ -77,6 +78,15 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
      FALSE; the kernels also stop inside the chunk. */
   if (in.type == RSIMD_C128) {
     res = rsimd_c128_pred(&in, code, m, po);
+  } else if (in.type == RSIMD_I64) {
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      int r = rsimd_active->pred_i64(code, (const int64_t *) px, len, m,
+                                     m == RSIMD_PRED_ELT ? po + off : NULL);
+      if (m != RSIMD_PRED_ELT && r != res) {
+        res = r;
+        break;
+      }
+    });
   } else if (in.type == RSIMD_F64) {
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
       int r = rsimd_active->pred_f64(code, px, len, m, m == RSIMD_PRED_ELT ? po + off : NULL);
@@ -103,8 +113,10 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
    operands under the length-1 broadcast rule, as base R's ==, != ...:
    integer and logical operands compare as integers, anything with a
    double as doubles (integers converted exactly), raw with raw as unsigned
-   bytes. A missing operand gives NA. The R side converts a raw operand
-   compared with a non-raw one to integer first. */
+   bytes, integer64 with integer64, integer or logical as 64-bit integers.
+   A missing operand gives NA. The R side converts a raw operand compared
+   with a non-raw one to integer first, and an integer64 operand compared
+   with a double to double. */
 SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"eq", "ne", "lt", "le", "gt", "ge"};
   static const char *const args[] = {"x", "y"};
@@ -125,6 +137,13 @@ SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->cmp_u8(code, (const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags,
                            po + off);
+    });
+  } else if ((tx == RSIMD_I64 || ty == RSIMD_I64) && (tx == RSIMD_I64 || is_int_like(tx)) &&
+             (ty == RSIMD_I64 || is_int_like(ty))) {
+    int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      rsimd_active->cmp_i64(code, p[0], p[1], len, flags, po + off);
     });
   } else if (is_int_like(tx) && is_int_like(ty)) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {

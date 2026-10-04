@@ -26,12 +26,13 @@ static const char *const raw_mix_msg =
 
 /* 1 if every operand is raw, 0 if none is; errors with base R's message
    for a mix, and for types other than `allowed` operands. */
-static int all_raw(const rsimd_ew *e, int allow_double) {
+static int all_raw(const rsimd_ew *e, int allow_double, int allow_i64) {
   int i, raw = 0;
   for (i = 0; i < e->k; i++) {
     rsimd_etype t = e->in[i].type;
     if (t == RSIMD_U8) raw++;
-    else if (!is_int_like(t) && !(allow_double && t == RSIMD_F64)) {
+    else if (!is_int_like(t) && !(allow_double && t == RSIMD_F64) &&
+             !(allow_i64 && t == RSIMD_I64)) {
       Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
     }
   }
@@ -60,7 +61,7 @@ SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
     Rf_error("internal error: operands of '%s'", names[code]);
   }
   init_operands(&e, x, y);
-  if (all_raw(&e, 1)) {
+  if (all_raw(&e, 1, 0)) {
     /* The logic and bit op codes of and, or, xor and not agree. */
     Rbyte *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_U8, e.n));
@@ -95,9 +96,11 @@ SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
 /* Bitwise op by name: "and", "or", "xor" (x and y), "not", "shl", "shr",
    "sar", "rotl", "rotr" (x and the count k), "popcount", "lzcnt", "tzcnt"
    (x). Integer and logical operands give integer results; raw operands
-   give raw, or integer counts. The R side has checked k: an integer shift
-   by NA_integer_ (a count outside 0..31) gives NA everywhere; raw counts
-   are in range, and rotate counts are reduced modulo the width. */
+   give raw, or integer counts; an integer64 operand (the other integer64,
+   integer or logical) gives integer64, or integer counts. The R side has
+   checked k: a shift by NA_integer_ (a count outside 0..31, or 0..63 for
+   integer64) gives NA everywhere; raw counts are in range, and rotate
+   counts are reduced modulo the width. */
 SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   static const char *const names[] = {"and", "or",   "xor",      "not",   "shl",  "shr",
                                       "sar", "rotl", "rotr", "popcount", "lzcnt", "tzcnt"};
@@ -115,7 +118,37 @@ SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   }
   init_operands(&e, x, y);
   rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
-  if (all_raw(&e, 0)) {
+  if (e.in[0].type == RSIMD_I64 || (e.k == 2 && e.in[1].type == RSIMD_I64)) {
+    int i, flags = e.flags;
+    all_raw(&e, 0, 1);
+    for (i = 0; i < e.k; i++) {
+      if (is_int_like(e.in[i].type)) flags |= RSIMD_EW_I32(i);
+    }
+    if (counts) {
+      int *po;
+      out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
+      po = (int *) rsimd_out_ptr(out);
+      RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+        rsimd_active->bit_i64(code, p[0], p[1], len, flags, 0, po + off, &o);
+      });
+    } else {
+      int64_t *po;
+      out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));
+      po = (int64_t *) rsimd_out_ptr(out);
+      if (count == NA_INTEGER) {
+        R_xlen_t j;
+        for (j = 0; j < e.n; j++) po[j] = RSIMD_NA_I64;
+      } else {
+        RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+          rsimd_active->bit_i64(code, p[0], p[1], len, flags, count, po + off, &o);
+        });
+      }
+      rsimd_set_i64_class(out);
+    }
+    UNPROTECT(1);
+    return out;
+  }
+  if (all_raw(&e, 0, 0)) {
     void *po;
     if (code == RSIMD_BIT_SAR) Rf_error("invalid 'type' (raw) of argument");
     out = PROTECT(rsimd_alloc_like(counts ? RSIMD_I32 : RSIMD_U8, e.n));
@@ -143,8 +176,9 @@ SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   return out;
 }
 
-/* The total number of set bits of an integer, logical or raw vector, as a
-   double: NA if an element is NA (unless na.rm = TRUE, which skips it). */
+/* The total number of set bits of an integer, logical, integer64 or raw
+   vector, as a double: NA if an element is NA (unless na.rm = TRUE, which
+   skips it). */
 SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check) {
   rsimd_reduce_result r;
   rsimd_opts o;
@@ -158,6 +192,11 @@ SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check) {
   } else if (is_int_like(in.type)) {
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
       rsimd_active->popcnt_sum_i32(px, len, &r, &o);
+      if (r.saw_na && !o.na_rm) break;
+    });
+  } else if (in.type == RSIMD_I64) {
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      rsimd_active->popcnt_sum_i64((const int64_t *) px, len, &r, &o);
       if (r.saw_na && !o.na_rm) break;
     });
   } else {

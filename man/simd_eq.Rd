@@ -20,7 +20,8 @@ simd_gt(x, y)
 simd_ge(x, y)
 }
 \arguments{
-\item{x, y}{Double, integer, logical or raw vectors.}
+\item{x, y}{Double, integer, logical, raw or \pkg{bit64} \code{integer64}
+vectors.}
 }
 \description{
 \code{x == y}, \code{x != y}, \code{x < y}, \code{x <= y}, \code{x > y} and
@@ -44,13 +45,17 @@ to integer.
 
 All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double comparisons use the scalar \code{"none"} code.
-Complex and \pkg{bit64} \code{integer64} operands are not supported.
+\pkg{bit64} \code{integer64} operands compare as 64-bit integers with
+integer64, integer and logical operands; compared with a double they are
+converted to double, with a warning (see \link{rsimd-integer64}). Complex
+operands are not supported.
 }
 \value{
 A logical vector of the length of the longer operand.
 }
 \seealso{
-\code{\link{Comparison}}, \code{\link{simd_is_na}}, \code{\link{simd_and}}.
+\code{\link{Comparison}}, \code{\link{simd_is_na}}, \code{\link{simd_and}},
+\link{rsimd-integer64}.
 }
 \examples{
 simd_eq(c(1, NA, NaN, -0), c(1, 1, 1, 0))

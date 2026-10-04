@@ -34,6 +34,13 @@ The `helper-*.R` files are loaded before the tests:
   `edge_lgl()`, `altrep_inputs(n)`, `rand_vec(type, n, ..., seed)` and
   `with_seed(seed, code)`.
 - `helper-extended.R`: `skip_unless_extended()`.
+- `helper-int64.R`: builds `integer64` vectors from their bit patterns
+  without bit64 (`i64()`, `i64_dec()` from decimal strings, `i64_halves()`,
+  `i64_from_bits()`), reads them back (`i64_str()`, `i64_parts()`,
+  `i64_bits()`, `i64_value()`), and `rand_i64()`, `expect_i64()` (bit for
+  bit) and `expect_tiers_i64()` (value and warnings on every tier). The
+  integer64 tests that compare with bit64 itself are in
+  `test-integer64-bit64.R` and are skipped when bit64 is not installed.
 
 ## Environment variables
 

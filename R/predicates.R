@@ -1,18 +1,13 @@
 # Predicates (elementwise, any, all) and elementwise comparisons. Each
 # function checks the types the C side cannot name the function for
-# (complex, integer64, and raw where it is not taken) and calls the entry
-# point with the op's name.
-
-# Predicates that will take integer64 input: their messages say "yet".
-.pred_later_i64 <- "na"
+# (complex, and raw where it is not taken) and calls the entry point with
+# the op's name.
 
 # mode: 0 elementwise, 1 any, 2 all. negative and zero take neither raw
 # nor complex input.
 .pred <- function(x, op, mode, fun) {
   .sync_impl()
-  later <- if (op %in% .pred_later_i64) "integer64"
-  unsupported <- c("integer64", if (op %in% c("negative", "zero")) c("complex", "raw"))
-  .check_supported(x, fun, unsupported, later)
+  if (op %in% c("negative", "zero")) .check_supported(x, fun, c("complex", "raw"), character())
   .Call(C_simd_pred, x, op, mode)
 }
 
@@ -42,16 +37,18 @@ simd_is_zero_all <- function(x) .pred(x, "zero", 2L, "simd_is_zero_all")
 
 # A raw operand compared with a non-raw one is converted as base R does: to
 # logical when the other is logical, else to integer. Raw with raw compares
-# bytes.
+# bytes. An integer64 operand compared with a double is converted to double,
+# with a warning.
 .cmp <- function(x, y, op, fun) {
   .sync_impl()
-  .check_supported(x, fun, c("integer64", "complex"), character(0))
-  .check_supported(y, fun, c("integer64", "complex"), character(0), "y")
+  .check_supported(x, fun, "complex", character(0))
+  .check_supported(y, fun, "complex", character(0), "y")
   if (is.raw(x) != is.raw(y)) {
     to <- if (is.logical(x) || is.logical(y)) as.logical else as.integer
     if (is.raw(x)) x <- to(x) else y <- to(y)
   }
-  .Call(C_simd_cmp, x, y, op)
+  p <- .i64_to_double(list(x, y), sys.call(-1L))
+  .Call(C_simd_cmp, p[[1L]], p[[2L]], op)
 }
 
 simd_eq <- function(x, y) .cmp(x, y, "eq", "simd_eq")

@@ -300,7 +300,7 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
    base R's result types:
      sum        I32/LGL -> integer, or double when the 64-bit accumulator
                 exceeds INT_MAX in magnitude (or overflowed into f64);
-                F64 -> double; I64 -> integer64
+                F64 -> double; I64 -> integer64 (exact, or NA)
      prod, mean, var, sd, sum_sq, sum_abs, dot, norm, dist, cosine
                 -> double
      min, max   I32/LGL -> integer; F64 -> double; I64 -> integer64
@@ -320,9 +320,13 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
      - any/all use three-valued logic from any_true, any_false, saw_na;
      - count is the number of surviving elements: mean of none is NaN,
        var and sd of fewer than two are NA, min and max of none are Inf and
-       -Inf (double, whatever the type) with base R's warning "no
-       non-missing arguments to min; returning Inf". integer64 min and max
-       are not covered by the empty rule yet. */
+       -Inf (double) with base R's warning "no non-missing arguments to
+       min; returning Inf", except for integer64, where they are +INT64_MAX
+       and -INT64_MAX with bit64's warning "no non-NA value, returning the
+       highest possible integer64 value +9223372036854775807" (lowest ...
+       -9223372036854775807);
+     - an integer64 sum whose exact total (i64 + carry * 2^64) is outside
+       int64 or is INT64_MIN gives NA with bit64's overflow warning. */
 SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduce_result *r,
                          const rsimd_opts *o);
 
@@ -342,6 +346,13 @@ void rsimd_warn_int_overflow(void);
 SEXP rsimd_alloc_like(rsimd_etype t, R_xlen_t n);
 /* Writable data of a result allocated by rsimd_alloc_like(). */
 void *rsimd_out_ptr(SEXP out);
+/* Sets class "integer64" on out (a double vector holding int64_t bits). */
+void rsimd_set_i64_class(SEXP out);
+/* A length-1 integer64 vector holding v. */
+SEXP rsimd_scalar_i64(int64_t v);
+/* bit64's warning for integer64 overflow, "NAs produced by integer64
+   overflow". */
+void rsimd_warn_i64_overflow(void);
 /* The attribute policy: results are bare, except that a class attribute of
    exactly "integer64" (copied only to a double result) or "simd_vec" is
    copied from x to out. For "simd_vec" the "rsimd_impl" attribute is copied

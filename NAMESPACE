@@ -118,6 +118,7 @@ export(simd_xor)
 export(simd_as_double)
 export(simd_as_integer)
 export(simd_as_logical)
+export(simd_as_integer64)
 export(simd_as_raw)
 
 # elementary functions

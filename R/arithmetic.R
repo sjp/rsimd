@@ -1,28 +1,29 @@
 # Elementwise arithmetic. Each function checks the types the C side cannot
 # name the function for (complex, integer64, double for the _wrap ops) and
 # calls one of four entry points with the op's name; the C side applies the
-# broadcast rule, picks the kernel and warns.
+# broadcast rule, picks the kernel and warns. integer64 operands mixed with
+# doubles are converted to double here, with a warning.
 
 # Functions that take complex operands. A double, integer or logical
 # operand of a binary one is converted to complex when the other operand
 # is complex, as in base R.
 .ew_complex <- c("simd_add", "simd_sub", "simd_neg")
 
-# Functions that will take integer64 operands: their messages say "yet".
-.ew_later_i64 <- c(
-  "simd_add", "simd_sub", "simd_mul", "simd_add_wrap", "simd_sub_wrap", "simd_mul_wrap",
-  "simd_neg", "simd_abs", "simd_neg_wrap", "simd_abs_wrap", "simd_idiv", "simd_mod",
-  "simd_pmin", "simd_pmax", "simd_pmin_num", "simd_pmax_num", "simd_clamp", "simd_sign"
+# Functions that take integer64 operands.
+.ew_i64 <- c(
+  "simd_add", "simd_sub", "simd_mul", "simd_div", "simd_add_wrap", "simd_sub_wrap",
+  "simd_mul_wrap", "simd_neg", "simd_abs", "simd_neg_wrap", "simd_abs_wrap", "simd_idiv",
+  "simd_mod", "simd_pmin", "simd_pmax", "simd_pmin_num", "simd_pmax_num", "simd_clamp",
+  "simd_sign", "simd_mul_add", "simd_add_mul"
 )
 
 # Checks every operand in `args` (a named list) for function `fun`; the
 # _wrap ops (`wrap = TRUE`) also reject doubles.
 .ew_check <- function(fun, args, wrap = FALSE) {
   cplx <- fun %in% .ew_complex
-  unsupported <- c("integer64", if (!cplx) "complex", if (wrap) "double")
-  later <- if (fun %in% .ew_later_i64) "integer64"
+  unsupported <- c(if (!(fun %in% .ew_i64)) "integer64", if (!cplx) "complex", if (wrap) "double")
   if (cplx && length(args) == 2L) .check_complex_i64(fun, args[[1L]], args[[2L]])
-  for (arg in names(args)) .check_supported(args[[arg]], fun, unsupported, later, arg)
+  for (arg in names(args)) .check_supported(args[[arg]], fun, unsupported, character(), arg)
   invisible()
 }
 
@@ -48,9 +49,13 @@
   .ew_check(fun, args, wrap)
   # A raw operand is left for the C side, which gives base R's message.
   if ((is.complex(x) || is.complex(y)) && !is.raw(x) && !is.raw(y)) {
-    p <- .promote_pair(x, y)
+    p <- .promote_pair(x, y, sys.call(-1L))
     x <- p$x
     y <- p$y
+  } else {
+    p <- .i64_to_double(list(x, y), sys.call(-1L), always = op == "div")
+    x <- p[[1L]]
+    y <- p[[2L]]
   }
   .Call(C_simd_ew2, x, y, op, na_check)
 }
@@ -60,7 +65,8 @@
   args <- list(x, y, z)
   names(args) <- names
   .ew_check(fun, args)
-  .Call(C_simd_ew3, x, y, z, op, na_check)
+  p <- .i64_to_double(list(x, y, z), sys.call(-1L))
+  .Call(C_simd_ew3, p[[1L]], p[[2L]], p[[3L]], op, na_check)
 }
 
 # na.rm of pmin/pmax: TRUE or FALSE.

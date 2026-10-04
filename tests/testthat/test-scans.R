@@ -270,6 +270,5 @@ test_that("argument errors and attributes", {
   }
   expect_null(attributes(simd_cumsum(matrix(1:4, 2))))
   skip_if_not_installed("bit64")
-  expect_error(simd_cumsum(bit64::as.integer64(1:2)), "type integer64 yet")
-  expect_error(simd_cummax(bit64::as.integer64(1:2)), "type integer64$")
+  expect_error(simd_cumprod(bit64::as.integer64(1:2)), "type integer64$")
 })

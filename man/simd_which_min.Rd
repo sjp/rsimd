@@ -8,7 +8,8 @@ simd_which_min(x)
 simd_which_max(x)
 }
 \arguments{
-\item{x}{A double, integer, logical or raw vector.}
+\item{x}{A double, integer, logical, raw or \pkg{bit64} \code{integer64}
+vector.}
 }
 \description{
 The index of the first minimum or maximum of a vector, like
@@ -25,6 +26,8 @@ The minimum or maximum is found first and then the first element equal to
 it, so the data are read up to twice. The precision mode does not apply.
 All implementations have their own kernels, except for raw vectors, and on
 32-bit ARM for double vectors, which use the scalar \code{"none"} code.
+Integer64 vectors compare as 64-bit integers (\pkg{bit64} has no
+\code{which.min} method; see \link{rsimd-integer64}).
 }
 \value{
 An integer of length 1, or \code{integer(0)} if \code{x} is empty or has
@@ -32,7 +35,7 @@ only missing values. For vectors longer than \code{.Machine$integer.max}
 the index is a double.
 }
 \seealso{
-\code{\link{which.min}}, \code{\link{simd_min}}.
+\code{\link{which.min}}, \code{\link{simd_min}}, \link{rsimd-integer64}.
 }
 \examples{
 simd_which_max(c(1, 3, 3))

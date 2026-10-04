@@ -478,10 +478,7 @@ test_that("arguments and types are validated", {
   expect_error(simd_mean(1, na_check = 1:2), "'na_check' must be TRUE or FALSE", fixed = TRUE)
   skip_if_not_installed("bit64")
   x <- bit64::as.integer64(1:3)
-  for (f in c(
-    "simd_prod", "simd_mean", "simd_min", "simd_max", "simd_range", "simd_which_min",
-    "simd_which_max", "simd_any", "simd_all", "simd_any_na", "simd_count_na", "simd_which_na"
-  )) {
+  for (f in c("simd_prod", "simd_mean")) {
     expect_error(get(f)(x), paste0(f, "() does not support 'x' of type integer64 yet"),
       fixed = TRUE
     )

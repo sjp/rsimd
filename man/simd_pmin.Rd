@@ -17,9 +17,11 @@ simd_pmax_num(x, y)
 simd_clamp(x, lo, hi)
 }
 \arguments{
-\item{x, y}{Double, integer or logical vectors.}
+\item{x, y}{Double, integer, logical or \pkg{bit64} \code{integer64}
+vectors.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: ignore a missing operand?}
-\item{lo, hi}{Double, integer or logical vectors of lower and upper bounds.}
+\item{lo, hi}{Double, integer, logical or integer64 vectors of lower and
+upper bounds.}
 }
 \description{
 \code{simd_pmin(x, y)} and \code{simd_pmax(x, y)} are base R's
@@ -55,6 +57,9 @@ are not compared). A missing bound gives a missing result, following
 
 All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double operations use the scalar \code{"none"} code.
+Integer64 operands (with integer64, integer or logical ones) give integer64
+results; with a double operand they are converted to double, with a warning
+(see \link{rsimd-integer64}).
 }
 \value{
 A vector of the length of the longest operand: integer when every operand is
@@ -62,7 +67,7 @@ integer or logical, otherwise double.
 }
 \seealso{
 \code{\link{pmin}}, \code{\link{simd_min}} (reductions),
-\link{rsimd_options}.
+\link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_pmax(c(1, 5, NA), 3)

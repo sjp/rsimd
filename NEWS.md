@@ -125,3 +125,14 @@
   use SIMD kernels for complex vectors too.
 * A getting-started vignette, so far covering complex numbers. Vignettes are
   built with R's own Sweave engine and need no extra packages.
+* 64-bit integers: `bit64::integer64` vectors are accepted by the sums,
+  extremes, scans, missing-value functions, arithmetic (checked and `_wrap`),
+  `pmin()`/`pmax()`/`clamp()`, predicates, comparisons, bit operations and
+  conversions, recognised by their class, so bit64 is needed only to create
+  and print them. Results are exact 64-bit integers with bit64's warnings for
+  overflow and division by zero; `simd_sum()` is `NA` only when the exact
+  total does not fit, whatever the order of the elements. Integer and logical
+  operands combine with integer64 exactly; a double operand converts the
+  integer64 operands to double with a warning. New `simd_as_integer64()`
+  converts doubles (with the `"checked"`, `"saturating"` and `"truncating"`
+  modes), integers, logicals and raw vectors. See `?rsimd-integer64`.

@@ -12,7 +12,7 @@ simd_mean(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
 \item{x}{A double, integer or logical vector, or for \code{simd_sum()} a
-complex vector.}
+complex or \pkg{bit64} \code{integer64} vector.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
@@ -54,6 +54,10 @@ sum divided once, in \code{long double} where available, as in base R.
 
 All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double versions use the scalar \code{"none"} code.
+
+\code{simd_sum()} of an integer64 vector is an exact integer64, \code{NA}
+with a warning when the total does not fit (see \link{rsimd-integer64}); \code{simd_prod()}
+and \code{simd_mean()} do not take integer64 yet.
 }
 \value{
 \code{simd_sum()}: a double for double \code{x}. For integer and logical
@@ -66,7 +70,7 @@ empty vector is 1 and its mean \code{NaN}.
 }
 \seealso{
 \code{\link{sum}}, \code{\link{prod}}, \code{\link{mean}},
-\code{\link{simd_precision}}, \link{rsimd_options}.
+\code{\link{simd_precision}}, \link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_sum(c(1.5, 2.5, NA), na.rm = TRUE)

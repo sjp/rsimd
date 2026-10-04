@@ -3,11 +3,11 @@
 # differs from the common type is converted, so same-type operands are
 # passed through without a copy; two logicals stay logical (their storage
 # is integer). Converting integer64 to double warns, naming the caller.
-.promote_pair <- function(x, y) {
+.promote_pair <- function(x, y, call = sys.call(-1L)) {
   types <- .Call(C_simd_promote, x, y)
   to <- types[[1L]]
   if (to == "double" && "integer64" %in% types[2:3]) {
-    warning(simpleWarning("integer64 coerced to double", sys.call(-1L)))
+    warning(simpleWarning("integer64 coerced to double", call))
   }
   list(
     x = if (types[[2L]] == to) x else .as_etype(x, to),
@@ -16,30 +16,37 @@
 }
 
 # x converted to the element type named by `to` (a type name from
-# C_simd_promote).
+# C_simd_promote). integer64 is converted natively (bit64 is not needed),
+# without the precision warning: the caller warns about the coercion.
 .as_etype <- function(x, to) {
   switch(to,
     double = {
-      if (inherits(x, "integer64")) .need_bit64()
-      as.double(x)
+      if (inherits(x, "integer64")) .Call(C_simd_convert, x, "double", 0L, TRUE) else as.double(x)
     },
     integer = as.integer(x),
     complex = as.complex(x),
-    integer64 = {
-      .need_bit64()
-      bit64::as.integer64(x)
-    },
+    integer64 = .Call(C_simd_convert, x, "integer64", 0L, FALSE),
     stop("internal error: cannot convert to ", to, call. = FALSE)
   )
 }
 
-# Loads bit64, whose methods convert integer64 values; integer64 inputs
-# exist only when it is installed.
-.need_bit64 <- function() {
-  if (!requireNamespace("bit64", quietly = TRUE)) {
-    stop("package 'bit64' is needed to convert integer64 values", call. = FALSE)
+# The operands in `args` (a list) with every integer64 one converted to
+# double when another operand is a double, warning "integer64 coerced to
+# double" with `call`; with `always` (simd_div, whose result is double)
+# integer64 operands are converted in any case, the warning still being
+# given only when a double is present.
+.i64_to_double <- function(args, call, always = FALSE) {
+  i64 <- vapply(args, inherits, NA, what = "integer64")
+  if (!any(i64)) {
+    return(args)
   }
-  invisible()
+  dbl <- vapply(args, function(a) is.double(a) && !inherits(a, "integer64"), NA)
+  if (!any(dbl) && !always) {
+    return(args)
+  }
+  if (any(dbl)) warning(simpleWarning("integer64 coerced to double", call))
+  args[i64] <- lapply(args[i64], .as_etype, to = "double")
+  args
 }
 
 # Errors if x is of one of the element types in `unsupported` ("integer64",

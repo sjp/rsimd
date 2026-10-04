@@ -238,10 +238,6 @@ test_that("na_check = FALSE gives the same result on NA-free input", {
 })
 
 test_that("simd_sum validates its arguments", {
-  expect_error(simd_sum(structure(0, class = "integer64")),
-    "simd_sum() does not support 'x' of type integer64 yet",
-    fixed = TRUE
-  )
   expect_error(simd_sum(as.raw(1)), "invalid 'type' (raw) of argument", fixed = TRUE)
   expect_error(simd_sum("a"), "'x' must be an atomic vector", fixed = TRUE)
   expect_error(simd_sum(factor("a")), "not factor", fixed = TRUE)
@@ -249,11 +245,6 @@ test_that("simd_sum validates its arguments", {
   expect_error(simd_sum(1, na.rm = NA), "'na.rm' must be TRUE or FALSE", fixed = TRUE)
   expect_error(simd_sum(1, na.rm = "yes"), "'na.rm' must be TRUE or FALSE", fixed = TRUE)
   expect_error(simd_sum(1, na_check = 1:2), "'na_check' must be TRUE or FALSE", fixed = TRUE)
-  skip_if_not_installed("bit64")
-  expect_error(simd_sum(bit64::as.integer64(1:3)),
-    "simd_sum() does not support 'x' of type integer64 yet",
-    fixed = TRUE
-  )
 })
 
 test_that("attributes of x do not matter", {

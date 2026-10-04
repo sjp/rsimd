@@ -29,8 +29,9 @@ simd_rotl(x, n, na_check = getOption("rsimd.na_check", TRUE))
 simd_rotr(x, n, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
-\item{x, y}{Integer or logical vectors, or raw vectors (not for
-\code{simd_sar}). \code{x} and \code{y} must both be raw or both not.}
+\item{x, y}{Integer, logical or \pkg{bit64} \code{integer64} vectors, or
+raw vectors (not for \code{simd_sar}). \code{x} and \code{y} must both be
+raw or both not.}
 \item{n}{The number of bit positions, a single number (truncated toward
 zero); see Details for its range.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that the
@@ -82,8 +83,10 @@ width (32, or 8 for raw), so a negative \code{n} rotates the other way;
 
 All implementations have their own kernels for these functions. Double
 operands are rejected (convert them with \code{\link{simd_as_integer}()}
-first); \pkg{bit64} \code{integer64} operands are not supported yet, and
-complex operands are not supported.
+first), and complex operands are not supported. \pkg{bit64}
+\code{integer64} operands (with integer64, integer or logical operands)
+give integer64 results; shift counts are then 0 to 63 and rotate counts are
+taken modulo 64 (see \link{rsimd-integer64}).
 }
 \value{
 An integer vector, or a raw vector for raw operands, of the length of the
@@ -91,7 +94,7 @@ longer operand (of \code{x} for the functions of one vector).
 }
 \seealso{
 \code{\link{bitwAnd}}, \code{\link{rawShift}}, \code{\link{simd_popcount}},
-\code{\link{simd_and}}.
+\code{\link{simd_and}}, \link{rsimd-integer64}.
 }
 \examples{
 simd_bit_and(5L, 3L)

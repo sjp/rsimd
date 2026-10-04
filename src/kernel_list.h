@@ -246,6 +246,52 @@ RSIMD_OP(sum_c128, void,
 RSIMD_OP(pred_c128, int, (int op, const Rcomplex *x, R_xlen_t n, int mode, int *out))
 
 /* Type conversion `op` (RSIMD_CVT_*) of n elements of x into out, in
-   `mode` for conversions to integer and raw; returns the status bits
-   (RSIMD_CVT_WARN_*). */
+   `mode` for conversions to integer, integer64 and raw; returns the status
+   bits (RSIMD_CVT_WARN_*). The integer64 conversions are in int64.inc.c. */
 RSIMD_OP(convert, int, (int op, int mode, const void *x, R_xlen_t n, void *out))
+
+/* bit64::integer64 elements: int64_t, NA being INT64_MIN (kernels in
+   kernels/int64.inc.c). They follow the int32 kernels of the same family,
+   with these differences:
+   - sum_i64 adds with wrapping and counts the wraps in r->carry, so the
+     exact total is r->i64 + r->carry * 2^64 whatever the order of the
+     additions (the entry point gives NA for a total outside int64);
+   - minmax_i64 puts the extrema in i64 and i64_hi, find_i64 looks up v;
+   - scan_i64 is cumsum (op 0, NA from the first overflow, which sets
+     s->overflow), cummin (2) or cummax (3), continuing from s->i64, and
+     returns the index of the first element it did not write (an NA or the
+     overflow) or -1;
+   - the elementwise, comparison and bit kernels also take int32 operands
+     (flag RSIMD_EW_I32(k), integer or logical, sign-extended, NA_integer_
+     becoming NA): ew1_i64 takes NEG, ABS (both NA-preserving, as -INT64_MIN
+     cannot occur) and SIGN; ew2_i64 the int32 binary ops, with %/% and %%
+     returning RSIMD_EW_DIV_ZERO for a zero divisor; ew3_i64 MUL_ADD,
+     ADD_MUL and CLAMP. A checked result equal to INT64_MIN overflows;
+   - pred_i64 takes NA, FINITE, NEGATIVE and ZERO;
+   - bit_i64 shift counts are 0..63 and rotate counts 0..63; a result of
+     0x8000000000000000 reads as NA; the counts (0..64) are written as
+     int32. */
+RSIMD_OP(sum_i64, void, (const int64_t *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(minmax_i64, void,
+         (const int64_t *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(find_i64, R_xlen_t, (const int64_t *x, R_xlen_t n, int64_t v))
+RSIMD_OP(anyall_i64, void,
+         (const int64_t *x, R_xlen_t n, int stop, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(na_i64, void,
+         (const int64_t *x, R_xlen_t n, int mode, R_xlen_t off, void *out, rsimd_reduce_result *r))
+RSIMD_OP(scan_i64, R_xlen_t,
+         (int op, const int64_t *x, R_xlen_t n, int64_t *out, rsimd_scan_state *s))
+RSIMD_OP(ew1_i64, int, (int op, const int64_t *x, R_xlen_t n, int64_t *out, const rsimd_opts *o))
+RSIMD_OP(ew2_i64, int,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, int64_t *out,
+          const rsimd_opts *o))
+RSIMD_OP(ew3_i64, int,
+         (int op, const void *x, const void *y, const void *z, R_xlen_t n, int flags,
+          int64_t *out, const rsimd_opts *o))
+RSIMD_OP(cmp_i64, void, (int op, const void *x, const void *y, R_xlen_t n, int flags, int *out))
+RSIMD_OP(pred_i64, int, (int op, const int64_t *x, R_xlen_t n, int mode, int *out))
+RSIMD_OP(bit_i64, void,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, int k, void *out,
+          const rsimd_opts *o))
+RSIMD_OP(popcnt_sum_i64, void,
+         (const int64_t *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))

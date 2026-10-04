@@ -3,6 +3,7 @@
    result types (rvec.h). Empty inputs run no kernel: the identity of the
    reduction is finished directly. */
 
+#include <string.h>
 #include "rsimd.h"
 #include "dispatch.h"
 #include "api_complex.h"
@@ -12,10 +13,11 @@ static void bad_type(rsimd_etype type) {
 }
 
 /* sum(x, na.rm): double for double x; integer for integer and logical x,
-   or double when the total does not fit in an integer; complex for
-   complex x, each part summed as a double vector would be (with na.rm an
-   element goes when either part is NA or NaN). precision is the integer
-   code RSIMD_PREC_*. */
+   or double when the total does not fit in an integer; integer64 for
+   integer64 x, exact, or NA with bit64's warning when the total does not
+   fit; complex for complex x, each part summed as a double vector would be
+   (with na.rm an element goes when either part is NA or NaN). precision is
+   the integer code RSIMD_PREC_*. */
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
@@ -31,6 +33,10 @@ SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   case RSIMD_I32:
   case RSIMD_LGL:
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sum_i32(px, len, &r, &o); });
+    break;
+  case RSIMD_I64:
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
+                        { rsimd_active->sum_i64((const int64_t *) px, len, &r, &o); });
     break;
   case RSIMD_C128: return rsimd_c128_sum(&in, &o);
   default: bad_type(in.type);
@@ -115,7 +121,9 @@ SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
 
 /* min (op 0), max (op 1) or range (op 2) of x: both extrema come from one
    pass. Integer and logical results are integer, except for empty input
-   (after na.rm), which gives Inf and -Inf with base R's warnings. */
+   (after na.rm), which gives Inf and -Inf with base R's warnings.
+   integer64 results are integer64; empty input gives +INT64_MAX and
+   -INT64_MAX with bit64's warnings (one for range). */
 SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   rsimd_reduce_result r, rmax;
   rsimd_opts o;
@@ -134,6 +142,10 @@ SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   case RSIMD_LGL:
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->minmax_i32(px, len, &r, &o); });
     break;
+  case RSIMD_I64:
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
+                        { rsimd_active->minmax_i64((const int64_t *) px, len, &r, &o); });
+    break;
   default: bad_type(in.type);
   }
   rmax = r;
@@ -141,6 +153,25 @@ SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   rmax.i64 = r.i64_hi;
   if (which == 0) return rsimd_reduce_finish(RSIMD_RED_MIN, in.type, in.n, &r, &o);
   if (which == 1) return rsimd_reduce_finish(RSIMD_RED_MAX, in.type, in.n, &rmax, &o);
+  if (in.type == RSIMD_I64) {
+    /* Both extrema (NA, or the empty-input pair with one warning) as
+       integer64. */
+    int64_t pair[2];
+    int missing = !o.na_rm && r.saw_na;
+    if (!missing && r.count == 0) {
+      Rf_warning("no non-NA value, returning c(+9223372036854775807, -9223372036854775807)");
+      pair[0] = INT64_MAX;
+      pair[1] = -INT64_MAX;
+    } else {
+      pair[0] = missing ? RSIMD_NA_I64 : r.i64;
+      pair[1] = missing ? RSIMD_NA_I64 : r.i64_hi;
+    }
+    out = PROTECT(rsimd_alloc_like(RSIMD_I64, 2));
+    memcpy(rsimd_out_ptr(out), pair, sizeof pair);
+    rsimd_set_i64_class(out);
+    UNPROTECT(1);
+    return out;
+  }
   lo = PROTECT(rsimd_reduce_finish(RSIMD_RED_MIN, in.type, in.n, &r, &o));
   hi = PROTECT(rsimd_reduce_finish(RSIMD_RED_MAX, in.type, in.n, &rmax, &o));
   out = rsimd_range_pair(lo, hi);
@@ -193,6 +224,21 @@ SEXP C_simd_which(SEXP x, SEXP max) {
     });
     break;
   }
+  case RSIMD_I64: {
+    int64_t v;
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
+                        { rsimd_active->minmax_i64((const int64_t *) px, len, &r, &o); });
+    if (r.count == 0) break;
+    v = dir ? r.i64_hi : r.i64;
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      R_xlen_t k = rsimd_active->find_i64((const int64_t *) px, len, v);
+      if (k >= 0) {
+        r.idx = off + k;
+        break;
+      }
+    });
+    break;
+  }
   case RSIMD_U8:
     RSIMD_FOREACH_CHUNK(&in, Rbyte, px, len, off,
                         { rsimd_active->which_u8(px, len, off, dir, &r); });
@@ -204,7 +250,8 @@ SEXP C_simd_which(SEXP x, SEXP max) {
 
 /* any (all = FALSE) or all (all = TRUE) with three-valued logic. Double and
    raw inputs are read as logical values without being converted, with
-   base R's warning; reading stops once the answer is known. */
+   base R's warning; integer64 inputs (non-zero TRUE) without one, as in
+   bit64; reading stops once the answer is known. */
 SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm) {
   rsimd_reduce_result r;
   rsimd_opts o;
@@ -243,6 +290,12 @@ SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm) {
       if (RSIMD_DONE_) break;
     });
     break;
+  case RSIMD_I64:
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      rsimd_active->anyall_i64((const int64_t *) px, len, stop, &r, &o);
+      if (RSIMD_DONE_) break;
+    });
+    break;
   default: bad_type(in.type);
   }
 #undef RSIMD_DONE_
@@ -272,14 +325,20 @@ static void na_scan(rsimd_in *in, int mode, void *out, rsimd_reduce_result *r) {
       if (r->saw_na) break;
     });
     break;
+  case RSIMD_I64:
+    RSIMD_FOREACH_CHUNK(in, double, px, len, off, {
+      rsimd_active->na_i64((const int64_t *) px, len, mode, off, out, r);
+      if (r->saw_na) break;
+    });
+    break;
   default: bad_type(in->type);
   }
 }
 
 /* any_na (mode 0, logical), count_na (mode 1, double) or which_na (mode 2,
    the 1-based indices of the missing elements: integer, or double when one
-   of them exceeds INT_MAX). NaN counts as missing. Raw vectors and inputs R knows
-   to be NA-free are not read. */
+   of them exceeds INT_MAX). NaN counts as missing, and so does an integer64
+   NA. Raw vectors and inputs R knows to be NA-free are not read. */
 SEXP C_simd_na(SEXP x, SEXP mode) {
   rsimd_reduce_result r;
   rsimd_opts o;
@@ -290,7 +349,6 @@ SEXP C_simd_na(SEXP x, SEXP mode) {
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, in.no_na_hint);
   rsimd_reduce_result_init(&r, m == 0 ? RSIMD_RED_ANY_NA : RSIMD_RED_COUNT_NA);
-  if (in.type == RSIMD_I64) bad_type(in.type);
   if (!in.no_na_hint) na_scan(&in, m == 0 ? RSIMD_NAMODE_ANY : RSIMD_NAMODE_COUNT, NULL, &r);
   if (m == 0) return rsimd_reduce_finish(RSIMD_RED_ANY_NA, in.type, in.n, &r, &o);
   if (m == 1) return rsimd_reduce_finish(RSIMD_RED_COUNT_NA, in.type, in.n, &r, &o);
@@ -501,9 +559,11 @@ static void fill_after_nan(const rsimd_in *in, R_xlen_t i, double *out) {
 
 /* cumsum (op 0), cumprod (op 1), cummin (op 2) or cummax (op 3) of x, with
    base R's result types: double for double x and for cumprod, integer for
-   the others on integer and logical x. Everything from the first missing
-   value on is missing; an integer cumsum that leaves the int32 range is NA
-   from there on, with base R's warning. */
+   the others on integer and logical x, integer64 for cumsum, cummin and
+   cummax of integer64 x. Everything from the first missing value on is
+   missing; an integer cumsum that leaves the int32 range is NA from there
+   on, with base R's warning, and an integer64 one that leaves int64 with
+   bit64's. */
 SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision) {
   rsimd_scan_state s;
   rsimd_opts o;
@@ -514,10 +574,28 @@ SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision) {
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, R_NilValue, R_NilValue, precision, in.no_na_hint);
-  if (!is_numeric(in.type)) bad_type(in.type);
   s.f64 = which == 1 ? 1.0 : which == 2 ? R_PosInf : which == 3 ? R_NegInf : 0.0;
   s.comp = 0.0;
+  s.i64 = which == 2 ? INT64_MAX : which == 3 ? -INT64_MAX : 0;
   s.overflow = 0;
+  if (in.type == RSIMD_I64 && which != 1) {
+    int64_t *po;
+    out = PROTECT(rsimd_alloc_like(RSIMD_I64, in.n));
+    po = (int64_t *) rsimd_out_ptr(out);
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      R_xlen_t k_ = rsimd_active->scan_i64(which, (const int64_t *) px, len, po + off, &s);
+      if (k_ >= 0) {
+        stop = off + k_;
+        break;
+      }
+    });
+    for (i = stop < 0 ? in.n : stop; i < in.n; i++) po[i] = RSIMD_NA_I64;
+    rsimd_set_i64_class(out);
+    if (s.overflow) rsimd_warn_i64_overflow();
+    UNPROTECT(1);
+    return out;
+  }
+  if (!is_numeric(in.type)) bad_type(in.type);
   out = PROTECT(rsimd_alloc_like(in.type == RSIMD_F64 || which == 1 ? RSIMD_F64 : RSIMD_I32, in.n));
 
 #define RSIMD_SCAN_LOOP_(T, call)                                                        \

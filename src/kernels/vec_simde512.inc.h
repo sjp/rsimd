@@ -42,6 +42,7 @@
 #include "x86/avx512/srl.h"
 #include "x86/avx512/srai.h"
 #include "x86/avx512/shuffle.h"
+#include "x86/avx512/movm.h"
 
 #define RSIMD_WIDTH_F64 8
 #define RSIMD_WIDTH_I64 8
@@ -338,6 +339,30 @@ RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v)
     if ((pg >> j) & 1) p[j] = buf[j];
   }
 }
+/* 64-bit lanes: shifts by a run-time count k in [0, 63], the sign mask
+   as a vector, the exact products of the low 32 bits (unsigned, signed),
+   an arithmetic shift as in the 256-bit layer (the vendored subset has no
+   512-bit 64-bit arithmetic shift) and the native conversion to double. */
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sll(rsimd_vi64 a, int k) {
+  return simde_mm512_sll_epi64(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_srl(rsimd_vi64 a, int k) {
+  return simde_mm512_srl_epi64(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sign(rsimd_vi64 a) {
+  return simde_mm512_movm_epi64(simde_mm512_cmpgt_epi64_mask(simde_mm512_setzero_si512(), a));
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_sra(rsimd_vi64 a, int k) {
+  rsimd_vi64 s = rsimd_vi64_sign(a);
+  return simde_mm512_xor_si512(rsimd_vi64_srl(simde_mm512_xor_si512(a, s), k), s);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mulu32(rsimd_vi64 a, rsimd_vi64 b) {
+  return simde_mm512_mul_epu32(a, b);
+}
+RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul32(rsimd_vi64 a, rsimd_vi64 b) {
+  return simde_mm512_mul_epi32(a, b);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) { return simde_mm512_cvtepi64_pd(a); }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
   return simde_mm512_cvtepi32_epi64(simde_mm256_loadu_si256((const simde__m256i *) (const void *) p));
 }

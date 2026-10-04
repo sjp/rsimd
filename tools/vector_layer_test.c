@@ -34,6 +34,7 @@
 #include "kernels/complex.inc.c"
 #include "kernels/compare.inc.c"
 #include "kernels/bitwise.inc.c"
+#include "kernels/int64.inc.c"
 #include "kernels/convert.inc.c"
 #include "kernels/math.inc.c"
 #include "kernels/ml.inc.c"
@@ -394,6 +395,27 @@ static void test_int(ptrdiff_t n) {
   I64_OP("i64 add", rsimd_vi64_add(x, y), (int64_t) ((uint64_t) a + (uint64_t) b));
   I64_OP("i64 sub", rsimd_vi64_sub(x, y), (int64_t) ((uint64_t) a - (uint64_t) b));
   I64_OP("i64 mul", rsimd_vi64_mul(x, y), (int64_t) ((uint64_t) a * (uint64_t) b));
+  {
+    int k;
+    for (k = 0; k < 64; k += k < 62 ? 9 : 1) {
+      I64_OP("i64 sll", rsimd_vi64_sll(x, k), (int64_t) ((uint64_t) a << k));
+      I64_OP("i64 srl", rsimd_vi64_srl(x, k), (int64_t) ((uint64_t) a >> k));
+      I64_OP("i64 sra", rsimd_vi64_sra(x, k),
+             a < 0 ? (int64_t) ~(~(uint64_t) a >> k) : (int64_t) ((uint64_t) a >> k));
+    }
+  }
+  I64_OP("i64 sign", rsimd_vi64_sign(x), a < 0 ? -1 : 0);
+  I64_OP("i64 mulu32", rsimd_vi64_mulu32(x, y),
+         (int64_t) (((uint64_t) a & 0xFFFFFFFFu) * ((uint64_t) b & 0xFFFFFFFFu)));
+  I64_OP("i64 mul32", rsimd_vi64_mul32(x, y),
+         (int64_t) (int32_t) (uint32_t) a * (int64_t) (int32_t) (uint32_t) b);
+#ifndef RSIMD_NO_F64_SIMD
+  reset_out();
+  LOOP(RSIMD_LANES_64, p64, vf64, rsimd_vi64 x = rsimd_vi64_loadu_p(pg, la + i, 7),
+       rsimd_vi64_to_vf64(x), fout);
+  for (j = 0; j < n; j++) fref[j] = (double) la[j];
+  check_f64("i64 to_vf64", n, fout, fref, 1);
+#endif
   I64_OP("i64 min", rsimd_vi64_min(x, y), a < b ? a : b);
   I64_OP("i64 max", rsimd_vi64_max(x, y), a > b ? a : b);
   I64_OP("i64 and", rsimd_vi64_and(x, y), a & b);
@@ -1863,7 +1885,7 @@ static void test_scan(ptrdiff_t n) {
         ref_scan(x, in_i32, n, op, out_i32, inits[op], &stop, &ovf);
         for (way = 0; way < 2; way++) {
           ptrdiff_t k = way ? n / 3 : n, off, len, got = -1;
-          rsimd_scan_state s = {inits[op], 0.0, 0};
+          rsimd_scan_state s = {inits[op], 0.0, 0, 0};
           rsimd_opts o = {0, 1, RSIMD_PREC_FAST};
           for (i = 0; i <= n; i++) {
             lout_f[i] = SENTINEL_F64;
@@ -1896,7 +1918,7 @@ static void test_scan(ptrdiff_t n) {
     }
     /* compensated cumsum: the scalar Neumaier sum on every tier */
     {
-      rsimd_scan_state s = {0.0, 0.0, 0};
+      rsimd_scan_state s = {0.0, 0.0, 0, 0};
       rsimd_opts o = {0, 1, RSIMD_PREC_COMPENSATED};
       double S = 0.0, C = 0.0;
       ptrdiff_t i, stop = -1;
@@ -2655,10 +2677,331 @@ static void test_complex(ptrdiff_t n) {
 }
 #endif
 
+/* ---- integer64 kernels (int64.inc.c), against the scalar forms ---------- */
+
+static int64_t lsmall[N + 1], lsmall2[N + 1]; /* within +-2^31, and edges */
+static double fbig[N + 1];                     /* doubles around the int64 range */
+
+static void init_i64_inputs(void) {
+  const int64_t edges[] = {INT64_C(3037000500), INT64_C(3037000499), -INT64_C(3037000499),
+                           INT64_C(4294967296), INT64_C(2147483648), -INT64_C(2147483648),
+                           INT64_MAX, -INT64_MAX, INT64_MIN, 0, 1, -1};
+  const double dedges[] = {9223372036854775808.0, -9223372036854775808.0, 9.5, -9.5, 0.0, -0.0,
+                           HUGE_VAL, -HUGE_VAL, from_bits(UINT64_C(0x7FF8000000000000)),
+                           18446744073709555712.0, -9223372036854779904.0,
+                           9223372036854777856.0, 1e300, -1e300, 4503599627370497.5};
+  const int ne = (int) (sizeof edges / sizeof edges[0]);
+  const int nd = (int) (sizeof dedges / sizeof dedges[0]);
+  int i;
+  for (i = 0; i < N; i++) {
+    if (i < 2 * ne) {
+      lsmall[i] = edges[i % ne];
+      lsmall2[i] = edges[(i * 5 + 3) % ne];
+    } else {
+      lsmall[i] = (int64_t) (next_rand() % UINT64_C(4294967295)) - INT64_C(2147483647);
+      lsmall2[i] = i % 9 == 0 ? INT64_MIN
+                              : (int64_t) (next_rand() % UINT64_C(4294967295)) - INT64_C(2147483647);
+    }
+    fbig[i] = i < 2 * nd ? dedges[i % nd]
+                         : ((double) (int64_t) (next_rand() >> 11) / 4503599627370496.0 - 1.0) *
+                             18446744073709551616.0 * 1.25;
+  }
+  /* Results exactly INT64_MIN: add, sub, mul. */
+  lsmall[0] = -INT64_MAX;
+  lsmall2[0] = -1;
+  lsmall[1] = -INT64_MAX;
+  lsmall2[1] = 1;
+  lsmall[2] = -INT64_C(4294967296);
+  lsmall2[2] = INT64_C(2147483648);
+}
+
+static void test_int64(ptrdiff_t n) {
+  static const rsimd_opts oc = {0, 1, 0}, onc = {0, 0, 0}, orm = {1, 1, 0};
+  const rsimd_opts *opts[3] = {&onc, &oc, &orm};
+  char what[96];
+  ptrdiff_t j;
+  int op, f, k, v, mode, st, want;
+
+  /* Reductions, with each of na_check off, on, and na.rm. */
+  for (v = 0; v < 3; v++) {
+    const rsimd_opts *o = opts[v];
+    const int check = o->na_check || o->na_rm;
+    int stop;
+    rsimd_reduce_result r, ref;
+    const int64_t *x = v == 2 ? lsmall2 : la;
+    memset(&r, 0, sizeof r);
+    memset(&ref, 0, sizeof ref);
+    RSIMD_KERNEL(sum_i64)(x, n, &r, o);
+    for (j = 0; j < n; j++) {
+      if (check && x[j] == INT64_MIN) {
+        ref.saw_na = 1;
+        if (o->na_rm) continue;
+      }
+      rsimd_add_carry_i64(&ref.i64, &ref.carry, x[j]);
+      ref.count++;
+    }
+    snprintf(what, sizeof what, "sum_i64 variant %d", v);
+    check_int(what, n, 0, (long) (r.i64 >> 32), (long) (ref.i64 >> 32));
+    check_int(what, n, 1, (long) (r.i64 & 0xFFFFFFFF), (long) (ref.i64 & 0xFFFFFFFF));
+    check_int(what, n, 2, (long) r.carry, (long) ref.carry);
+    check_flags(what, n, &r, &ref);
+
+    reduce_init(&r, 0.0);
+    reduce_init(&ref, 0.0);
+    RSIMD_KERNEL(minmax_i64)(x, n, &r, o);
+    for (j = 0; j < n; j++) {
+      if (check && x[j] == INT64_MIN) {
+        ref.saw_na = 1;
+        continue;
+      }
+      if (x[j] < ref.i64) ref.i64 = x[j];
+      if (x[j] > ref.i64_hi) ref.i64_hi = x[j];
+      ref.count++;
+    }
+    snprintf(what, sizeof what, "minmax_i64 variant %d", v);
+    check_int(what, n, 0, r.i64 == ref.i64, 1);
+    check_int(what, n, 1, r.i64_hi == ref.i64_hi, 1);
+    check_flags(what, n, &r, &ref);
+
+    for (stop = RSIMD_STOP_NONE; stop <= RSIMD_STOP_FALSE; stop++) {
+      memset(&r, 0, sizeof r);
+      memset(&ref, 0, sizeof ref);
+      RSIMD_KERNEL(anyall_i64)(x, n, stop, &r, o);
+      for (j = 0; j < n; j++) {
+        if (check && x[j] == INT64_MIN) ref.saw_na = 1;
+        else if (x[j] == 0) {
+          ref.any_false = 1;
+          if (stop == RSIMD_STOP_FALSE) break;
+        } else {
+          ref.any_true = 1;
+          if (stop == RSIMD_STOP_TRUE) break;
+        }
+      }
+      /* Only the answer that the stop decides is defined after an early
+         stop (any for TRUE, all for FALSE). */
+      snprintf(what, sizeof what, "anyall_i64 variant %d stop %d", v, stop);
+      if (stop != RSIMD_STOP_FALSE) {
+        check_int(what, n, 0, lgl3(&r, 0, o->na_rm), lgl3(&ref, 0, o->na_rm));
+      }
+      if (stop != RSIMD_STOP_TRUE) {
+        check_int(what, n, 1, lgl3(&r, 1, o->na_rm), lgl3(&ref, 1, o->na_rm));
+      }
+    }
+
+    memset(&r, 0, sizeof r);
+    memset(&ref, 0, sizeof ref);
+    RSIMD_KERNEL(popcnt_sum_i64)(x, n, &r, o);
+    for (j = 0; j < n; j++) {
+      if (check && x[j] == INT64_MIN) {
+        ref.saw_na = 1;
+        if (!o->na_rm) break;
+        continue;
+      }
+      ref.i64 += rsimd_popcnt64_1((uint64_t) x[j]);
+    }
+    snprintf(what, sizeof what, "popcnt_sum_i64 variant %d", v);
+    check_int(what, n, 0, r.saw_na, ref.saw_na);
+    if (!ref.saw_na || o->na_rm) check_int(what, n, 1, (long) r.i64, (long) ref.i64);
+  }
+  for (j = 0; j < n; j += 7) {
+    R_xlen_t got = RSIMD_KERNEL(find_i64)(la, n, la[j]), ref = 0;
+    while (la[ref] != la[j]) ref++;
+    check_int("find_i64", n, j, (long) got, (long) ref);
+  }
+  check_int("find_i64 absent", n, 0, (long) RSIMD_KERNEL(find_i64)(la, n, INT64_C(77)), -1L);
+  for (mode = RSIMD_NAMODE_ANY; mode <= RSIMD_NAMODE_WHICH_I32; mode++) {
+    rsimd_reduce_result r;
+    int32_t idx[N + 1];
+    ptrdiff_t count = 0;
+    memset(&r, 0, sizeof r);
+    RSIMD_KERNEL(na_i64)(lsmall2, n, mode, 10, idx, &r);
+    for (j = 0; j < n; j++) {
+      if (lsmall2[j] != INT64_MIN) continue;
+      if (mode == RSIMD_NAMODE_WHICH_I32) check_int("na_i64 which", n, j, idx[count], (long) j + 11);
+      count++;
+    }
+    snprintf(what, sizeof what, "na_i64 mode %d", mode);
+    if (mode == RSIMD_NAMODE_ANY) check_int(what, n, 0, r.saw_na, count > 0);
+    else check_int(what, n, 0, (long) r.i64, (long) count);
+  }
+#ifndef RSIMD_SKIP_scan_i64
+  for (op = 0; op <= 3; op += op == 0 ? 2 : 1) {
+    rsimd_scan_state s, sref;
+    R_xlen_t stopped;
+    memset(&s, 0, sizeof s);
+    s.i64 = op == 2 ? INT64_MAX : op == 3 ? -INT64_MAX : 0;
+    sref = s;
+    reset_out();
+    stopped = RSIMD_KERNEL(scan_i64)(op, lsmall2, n, lout, &s);
+    for (j = 0; j < n; j++) {
+      if (rsimd_scan_i64_1(op, lsmall2[j], lref + j, &sref)) break;
+    }
+    snprintf(what, sizeof what, "scan_i64 op %d", op);
+    check_int(what, n, 0, (long) stopped, j < n ? (long) j : -1L);
+    for (; j <= n; j++) lref[j] = lout[j];
+    check_i64(what, n, lout, lref);
+  }
+#endif
+
+  /* Elementwise: every op with each broadcast and int32-operand flag
+     combination, on full-range and small inputs, with and without NA
+     checks. */
+  for (op = RSIMD_EW_NEG; op <= RSIMD_EW_SIGN; op++) {
+    reset_out();
+    RSIMD_KERNEL(ew1_i64)(op, la, n, lout, &oc);
+    for (j = 0; j < n; j++) {
+      lref[j] = op == RSIMD_EW_NEG ? rsimd_neg_i64(la[j])
+              : op == RSIMD_EW_ABS ? rsimd_abs_i64(la[j]) : rsimd_sign_i64(la[j]);
+    }
+    snprintf(what, sizeof what, "ew1_i64 op %d", op);
+    check_i64(what, n, lout, lref);
+  }
+  for (v = 0; v < 2; v++) {
+    const int64_t *X = v ? lsmall : la, *Y = v ? lsmall2 : lb;
+    for (op = RSIMD_EW_ADD; op <= RSIMD_EW_MUL_WRAP; op++) {
+      if (op == RSIMD_EW_DIV || op == RSIMD_EW_COPYSIGN) continue;
+      for (f = 0; f < 32; f++) {
+        const int sc = f & 3, ti = f >> 3;
+        const void *x = ti & 1 ? (const void *) ia : (const void *) X;
+        const void *y = ti & 2 ? (const void *) ib : (const void *) Y;
+        int c;
+        if (sc == 3 || (f & 4)) continue;
+        for (c = 0; c < 2; c++) {
+          const int check = op >= RSIMD_EW_PMIN && op <= RSIMD_EW_PMAX_NUM ? 1 : c;
+          reset_out();
+          st = RSIMD_KERNEL(ew2_i64)(op, x, y, n, f, lout, c ? &oc : &onc);
+          want = 0;
+          for (j = 0; j < n; j++) {
+            lref[j] = rsimd_ew2_i64_1(op, rsimd_i64_get(x, f, 0, j, check),
+                                      rsimd_i64_get(y, f, 1, j, check), check, &want);
+          }
+          snprintf(what, sizeof what, "ew2_i64 op %d flags %d check %d input %d", op, f, c, v);
+          check_i64(what, n, lout, lref);
+          check_int(what, n, 0, st, want);
+        }
+      }
+    }
+    for (op = RSIMD_EW_MUL_ADD; op <= RSIMD_EW_CLAMP; op++) {
+      if (op == RSIMD_EW_LERP) continue;
+      for (f = 0; f < 7; f++) {
+        const int64_t *Z = op == RSIMD_EW_CLAMP ? Y : la;
+        const int check = 1;
+        reset_out();
+        st = RSIMD_KERNEL(ew3_i64)(op, X, op == RSIMD_EW_CLAMP ? X : Y, Z, n, f, lout, &oc);
+        want = 0;
+        for (j = 0; j < n; j++) {
+          lref[j] = rsimd_ew3_i64_1(op, rsimd_i64_get(X, f, 0, j, check),
+                                    rsimd_i64_get(op == RSIMD_EW_CLAMP ? X : Y, f, 1, j, check),
+                                    rsimd_i64_get(Z, f, 2, j, check), check, &want);
+        }
+        snprintf(what, sizeof what, "ew3_i64 op %d flags %d input %d", op, f, v);
+        check_i64(what, n, lout, lref);
+        check_int(what, n, 0, st, want);
+      }
+    }
+    for (op = RSIMD_CMP_EQ; op <= RSIMD_CMP_GE; op++) {
+      for (f = 0; f < 32; f++) {
+        const int sc = f & 3, ti = f >> 3;
+        const void *x = ti & 1 ? (const void *) ia : (const void *) X;
+        const void *y = ti & 2 ? (const void *) ib : (const void *) Y;
+        if (sc == 3 || (f & 4)) continue;
+        reset_out();
+        RSIMD_KERNEL(cmp_i64)(op, x, y, n, f, iout);
+        for (j = 0; j < n; j++) {
+          iref[j] = rsimd_cmp_i64_1(op, rsimd_i64_get(x, f, 0, j, 1), rsimd_i64_get(y, f, 1, j, 1));
+        }
+        snprintf(what, sizeof what, "cmp_i64 op %d flags %d input %d", op, f, v);
+        check_i32(what, n, iout, iref);
+      }
+    }
+    for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_ZERO; op++) {
+      int pm;
+      if (op == RSIMD_PRED_NAN || op == RSIMD_PRED_INFINITE) continue;
+      for (pm = RSIMD_PRED_ELT; pm <= RSIMD_PRED_ALL; pm++) {
+        int got, ref = pm == RSIMD_PRED_ALL;
+        reset_out();
+        got = RSIMD_KERNEL(pred_i64)(op, Y, n, pm, iout);
+        for (j = 0; j < n; j++) {
+          iref[j] = rsimd_pred_i64_1(op, Y[j]);
+          if (pm == RSIMD_PRED_ANY && iref[j]) ref = 1;
+          if (pm == RSIMD_PRED_ALL && !iref[j]) ref = 0;
+        }
+        snprintf(what, sizeof what, "pred_i64 op %d mode %d input %d", op, pm, v);
+        if (pm == RSIMD_PRED_ELT) check_i32(what, n, iout, iref);
+        else check_int(what, n, 0, got, ref);
+      }
+    }
+  }
+  for (op = RSIMD_BIT_AND; op <= RSIMD_BIT_TZCNT; op++) {
+    const int binary = op <= RSIMD_BIT_XOR, counts = rsimd_bit_counts_i64(op);
+    const int kmax = op >= RSIMD_BIT_SHL && op <= RSIMD_BIT_ROTR ? 63 : 0;
+    for (f = 0; f < (binary ? 32 : 1); f++) {
+      const int sc = f & 3, ti = f >> 3;
+      const void *x = ti & 1 ? (const void *) ia : (const void *) la;
+      const void *y = binary ? (ti & 2 ? (const void *) ib : (const void *) lb) : NULL;
+      int c;
+      if (sc == 3 || (f & 4)) continue;
+      for (k = 0; k <= kmax; k++) {
+        for (c = 0; c < 2; c++) {
+          reset_out();
+          RSIMD_KERNEL(bit_i64)(op, x, y, n, f, k, counts ? (void *) iout : (void *) lout,
+                                c ? &oc : &onc);
+          for (j = 0; j < n; j++) {
+            int64_t a = rsimd_i64_get(x, f, 0, j, 1), b = binary ? rsimd_i64_get(y, f, 1, j, 1) : 0;
+            int na = c && rsimd_na2_i64(a, b);
+            if (counts) iref[j] = na ? RSIMD_NA_I32 : (int32_t) rsimd_bit_i64_1(op, a, b, k);
+            else lref[j] = na ? INT64_MIN : rsimd_bit_i64_1(op, a, b, k);
+          }
+          snprintf(what, sizeof what, "bit_i64 op %d flags %d k %d check %d", op, f, k, c);
+          if (counts) check_i32(what, n, iout, iref);
+          else check_i64(what, n, lout, lref);
+        }
+      }
+    }
+  }
+
+  /* Conversions, every mode, through the slot's integer64 part. */
+  for (mode = RSIMD_CVT_CHECKED; mode <= RSIMD_CVT_TRUNCATING; mode++) {
+    for (op = RSIMD_CVT_I64_F64; op <= RSIMD_CVT_U8_I64; op++) {
+      for (v = 0; v < 3; v++) {
+        const void *x = op == RSIMD_CVT_F64_I64 ? (const void *) (v == 0 ? fbig : v == 1 ? fa : fconv)
+                      : op == RSIMD_CVT_I32_I64 ? (const void *) ia
+                      : op == RSIMD_CVT_U8_I64 ? (const void *) la
+                      : (const void *) (v == 0 ? la : v == 1 ? lsmall : lsmall2);
+        void *out, *ref;
+        size_t size;
+        int i;
+        if (op == RSIMD_CVT_I64_F64 || op == RSIMD_CVT_F64_I64) size = 8;
+        else size = op == RSIMD_CVT_I64_U8 ? 1 : op == RSIMD_CVT_I32_I64 || op == RSIMD_CVT_U8_I64 ? 8 : 4;
+        out = size == 8 ? (void *) lout : (void *) iout;
+        ref = size == 8 ? (void *) lref : (void *) iref;
+        reset_out();
+        for (i = 0; i <= N; i++) {
+          lref[i] = SENTINEL_I64;
+          iref[i] = SENTINEL_I32;
+        }
+        if (size == 1) {
+          memset(iout, 0x5A, sizeof iout);
+          memset(iref, 0x5A, sizeof iref);
+        }
+        st = RSIMD_KERNEL(convert_i64_)(op, mode, x, n, out);
+        want = 0;
+        for (j = 0; j < n; j++) want |= rsimd_cvt_i64_1(op, mode, x, j, ref);
+        snprintf(what, sizeof what, "convert_i64 op %d mode %d input %d", op, mode, v);
+        check_int(what, n, 0, st, want);
+        if (size == 8) check_i64(what, n, lout, lref);
+        else if (size == 4) check_i32(what, n, iout, iref);
+        else check_int(what, n, 1, memcmp(iout, iref, (size_t) n + 1) == 0, 1);
+      }
+    }
+  }
+}
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
   init_logical_inputs();
+  init_i64_inputs();
 #ifndef RSIMD_NO_F64_SIMD
   init_mod_inputs();
 #endif
@@ -2678,6 +3021,7 @@ int main(void) {
     test_scan(n);
     test_arith(n);
     test_logical(n);
+    test_int64(n);
 #ifndef RSIMD_NO_F64_SIMD
     test_complex(n);
 #endif

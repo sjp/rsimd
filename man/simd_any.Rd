@@ -8,7 +8,8 @@ simd_any(x, na.rm = FALSE)
 simd_all(x, na.rm = FALSE)
 }
 \arguments{
-\item{x}{A logical, integer, double or raw vector.}
+\item{x}{A logical, integer, double, raw or \pkg{bit64} \code{integer64}
+vector.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: ignore missing values?}
 }
 \description{
@@ -29,7 +30,9 @@ Integer, double and raw values are read as logical values without being
 converted: non-zero is \code{TRUE} and zero \code{FALSE}; an integer
 \code{NA} and a double \code{NA} or \code{NaN} are \code{NA}. As in base R,
 a non-empty double or raw \code{x} gives the warning \code{"coercing
-argument of type 'double' to logical"} (or \code{'raw'}).
+argument of type 'double' to logical"} (or \code{'raw'}). Integer64 values
+are read the same way, without a warning, as in \pkg{bit64} (see
+\link{rsimd-integer64}).
 
 The results are the same for every implementation; all have their own
 kernels, except that on 32-bit ARM the double version uses the scalar
@@ -39,7 +42,8 @@ kernels, except that on 32-bit ARM the double version uses the scalar
 \code{TRUE}, \code{FALSE} or \code{NA}.
 }
 \seealso{
-\code{\link{any}}, \code{\link{all}}, \code{\link{simd_any_na}}.
+\code{\link{any}}, \code{\link{all}}, \code{\link{simd_any_na}},
+\link{rsimd-integer64}.
 }
 \examples{
 simd_any(c(FALSE, NA, TRUE))

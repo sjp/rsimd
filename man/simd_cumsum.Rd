@@ -14,7 +14,8 @@ simd_cummin(x)
 simd_cummax(x)
 }
 \arguments{
-\item{x}{A double, integer or logical vector.}
+\item{x}{A double, integer or logical vector, or except for
+\code{simd_cumprod()} a \pkg{bit64} \code{integer64} vector.}
 }
 \description{
 Running sums, products, minima and maxima of the elements of a vector, like
@@ -53,13 +54,18 @@ kernels for these functions, and on 32-bit ARM they use the scalar
 \rsimdPrecision
 
 \rsimdAttributes
+
+Integer64 input gives integer64 results, computed sequentially on every
+implementation; a \code{simd_cumsum()} that leaves the integer64 range is
+\code{NA} from there on, with \pkg{bit64}'s warning (see \link{rsimd-integer64}).
 }
 \value{
 A vector of the same length as \code{x}: double, or integer as described in
 Details.
 }
 \seealso{
-\code{\link{cumsum}}, \code{\link{simd_sum}}, \code{\link{simd_precision}}.
+\code{\link{cumsum}}, \code{\link{simd_sum}}, \code{\link{simd_precision}},
+\link{rsimd-integer64}.
 }
 \examples{
 simd_cumsum(1:10)

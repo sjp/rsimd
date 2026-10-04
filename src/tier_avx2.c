@@ -12,6 +12,7 @@
 #include "kernels/complex.inc.c"
 #include "kernels/compare.inc.c"
 #include "kernels/bitwise.inc.c"
+#include "kernels/int64.inc.c"
 #include "kernels/convert.inc.c"
 #include "kernels/math.inc.c"
 #include "kernels/ml.inc.c"

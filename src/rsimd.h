@@ -53,7 +53,7 @@ SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check);
 SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check);
 
 /* conversions */
-SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode);
+SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode, SEXP quiet);
 
 /* elementary functions */
 SEXP C_simd_math1(SEXP x, SEXP op);
