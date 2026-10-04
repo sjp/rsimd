@@ -38,9 +38,14 @@
  *
  * Elementwise doubles: arithmetic propagates NaN by itself, but which
  * payload survives when both operands are NaN differs between CPUs. Kernels
- * whose result is missing when an input is (add, sub, mul, div, fma, pmin,
- * pmax, clamp, lerp, math) put NA_real_ wherever an input is NA
- * (rsimd_na_merge_f64 / rsimd_vf64_na_merge), unless na_check = 0.
+ * whose result is missing when an input is (add, sub, mul, div, %/%, %%,
+ * copysign, fma, mul_add, add_mul, lerp, math) put NA_real_ wherever an
+ * input is NA (rsimd_na_merge_f64 / rsimd_vf64_na_merge), unless
+ * na_check = 0. pmin, pmax and clamp instead return one of their operands,
+ * payload and all, as base R does: a missing operand propagates (NA or
+ * NaN as it is), the second one when both are missing; the _num forms
+ * (na.rm = TRUE) skip a missing operand. Unary ops (neg, abs, sqrt,
+ * floor ...) keep the payload of a NaN operand by themselves.
  * Elementwise integers: NA in gives NA out, for the checked and the
  * wrapping (_wrap) variants alike, unless na_check = 0.
  *
@@ -195,6 +200,88 @@ static inline int32_t rsimd_intdiv_i32(int32_t x, int32_t y, int mod, int check)
   q = floor(xd / yd);
   if (!(q >= -INT32_MAX && q <= INT32_MAX)) return RSIMD_NA_I32;
   return (int32_t) (mod ? xd - q * yd : q);
+}
+
+/* r, or NA_real_ if x, y or z is NA (elementwise doubles). */
+static inline double rsimd_na_merge3_f64(double r, double x, double y, double z) {
+  return rsimd_is_na_f64(z) ? rsimd_na_real() : rsimd_na_merge_f64(r, x, y);
+}
+
+/* Base R's x %/% y for doubles (myfloor in R's arithmetic.c): the exact
+   floor of the real quotient, which is floor(x / y) or one less when
+   x / y rounded up to an integer; -2 %/% Inf is -1 and 2 %/% Inf is 0;
+   x %/% 0 is x / 0. The residual x - k * y is computed with a single
+   rounding (fma), so its sign is exact. A zero quotient is +0. */
+static inline double rsimd_idiv_f64(double x, double y) {
+  double k = floor(x / y), res = isinf(y) ? x : fma(-k, y, x);
+  if ((res < 0 && y > 0) || (res > 0 && y < 0)) k -= 1;
+  return k + 0.0;
+}
+/* Base R's x %% y for doubles (myfmod), exactly: x - floor(x / y) * y
+   with the real quotient, rounded once, which has the sign of y. fmod is
+   exact, and adding y to a remainder of the wrong sign rounds once. Zero
+   is +0, except that an infinite y returns x (or y when x has the other
+   sign), as base R does; x %% 0 and Inf %% y are NaN. */
+static inline double rsimd_mod_f64(double x, double y) {
+  double r;
+  if (isnan(x) || isnan(y)) return x + y;
+  if (isinf(y) && isfinite(x)) return (x < 0 && y > 0) || (x > 0 && y < 0) ? y : x;
+  r = fmod(x, y);
+  if ((r < 0 && y > 0) || (r > 0 && y < 0)) r += y;
+  return r + 0.0;
+}
+
+/* Base R's pmin(x, y) and pmax(x, y) for one pair: a missing operand is
+   returned as it is (y when both are); ties return x, so pmin(0, -0) is 0.
+   The _num forms (na.rm = TRUE) return the other operand when one is
+   missing, and y when both are. */
+static inline double rsimd_pmin_f64(double x, double y) {
+  if (isnan(y)) return y;
+  if (isnan(x)) return x;
+  return y < x ? y : x;
+}
+static inline double rsimd_pmax_f64(double x, double y) {
+  if (isnan(y)) return y;
+  if (isnan(x)) return x;
+  return y > x ? y : x;
+}
+static inline double rsimd_pmin_num_f64(double x, double y) {
+  if (isnan(x)) return y;
+  if (isnan(y)) return x;
+  return y < x ? y : x;
+}
+static inline double rsimd_pmax_num_f64(double x, double y) {
+  if (isnan(x)) return y;
+  if (isnan(y)) return x;
+  return y > x ? y : x;
+}
+static inline int32_t rsimd_pmin_i32(int32_t x, int32_t y) {
+  return rsimd_na2_i32(x, y) ? RSIMD_NA_I32 : (y < x ? y : x);
+}
+static inline int32_t rsimd_pmax_i32(int32_t x, int32_t y) {
+  return rsimd_na2_i32(x, y) ? RSIMD_NA_I32 : (y > x ? y : x);
+}
+static inline int32_t rsimd_pmin_num_i32(int32_t x, int32_t y) {
+  if (x == RSIMD_NA_I32) return y;
+  if (y == RSIMD_NA_I32) return x;
+  return y < x ? y : x;
+}
+static inline int32_t rsimd_pmax_num_i32(int32_t x, int32_t y) {
+  if (x == RSIMD_NA_I32) return y;
+  if (y == RSIMD_NA_I32) return x;
+  return y > x ? y : x;
+}
+
+/* |x| with the sign of s; a NaN s (NA included) is returned as it is. A
+   NaN x keeps its payload. */
+static inline double rsimd_copysign_f64(double x, double s) {
+  return isnan(s) ? s : copysign(x, s);
+}
+/* Base R's sign(): -1, 0 or 1, +0 for -0, NaN payloads kept. */
+static inline double rsimd_sign_f64(double x) {
+  if (x > 0) return 1.0;
+  if (x < 0) return -1.0;
+  return x == 0 ? 0.0 : x;
 }
 
 /* Floating-point accumulation. */
@@ -527,6 +614,74 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_intdiv(rsimd_vf64 x, rsimd_vf64 y, int mod, i
     bad = rsimd_mf64_or(bad, rsimd_mf64_or(rsimd_vf64_cmp_eq(x, na), rsimd_vf64_cmp_eq(y, na)));
   }
   return rsimd_vf64_blend(r, rsimd_vf64_set1(RSIMD_NA_I32_AS_F64), bad);
+}
+
+/* r with NA_real_ wherever x, y or z is NA. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_na_merge3(rsimd_vf64 r, rsimd_vf64 x, rsimd_vf64 y,
+                                             rsimd_vf64 z) {
+  rsimd_mf64 m = rsimd_mf64_or(rsimd_mf64_or(rsimd_vf64_is_na(x), rsimd_vf64_is_na(y)),
+                               rsimd_vf64_is_na(z));
+  return rsimd_vf64_blend(r, rsimd_vf64_set1(rsimd_na_real()), m);
+}
+
+/* x %/% y for doubles as rsimd_idiv_f64(). */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_idiv(rsimd_vf64 x, rsimd_vf64 y) {
+  const rsimd_vf64 zero = rsimd_vf64_zero();
+  rsimd_vf64 k = rsimd_vf64_floor(rsimd_vf64_div(x, y));
+  rsimd_mf64 yinf = rsimd_vf64_cmp_eq(rsimd_vf64_abs(y), rsimd_vf64_set1(HUGE_VAL));
+  rsimd_vf64 res = rsimd_vf64_blend(rsimd_vf64_fma(rsimd_vf64_neg(k), y, x), x, yinf);
+  rsimd_mf64 low =
+    rsimd_mf64_or(rsimd_mf64_and(rsimd_vf64_cmp_lt(res, zero), rsimd_vf64_cmp_gt(y, zero)),
+                  rsimd_mf64_and(rsimd_vf64_cmp_gt(res, zero), rsimd_vf64_cmp_lt(y, zero)));
+  k = rsimd_vf64_blend(k, rsimd_vf64_sub(k, rsimd_vf64_set1(1.0)), low);
+  return rsimd_vf64_add(k, zero);
+}
+
+/* x %% y for doubles as rsimd_mod_f64(), for the lanes where |x / y| <
+   2^52, so that the corrected quotient k and k - 1 are exact and
+   x - k * y rounds once. *slow is set to the finite lanes with a larger
+   (or overflowing) quotient, which the caller recomputes with
+   rsimd_mod_f64(). */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_mod(rsimd_vf64 x, rsimd_vf64 y, rsimd_mf64 *slow) {
+  const rsimd_vf64 zero = rsimd_vf64_zero(), inf = rsimd_vf64_set1(HUGE_VAL);
+  rsimd_vf64 k = rsimd_vf64_idiv(x, y);
+  rsimd_vf64 r = rsimd_vf64_add(rsimd_vf64_fma(rsimd_vf64_neg(k), y, x), zero);
+  rsimd_vf64 ay = rsimd_vf64_abs(y);
+  rsimd_mf64 yinf = rsimd_mf64_and(rsimd_vf64_cmp_eq(ay, inf),
+                                   rsimd_vf64_cmp_lt(rsimd_vf64_abs(x), inf));
+  rsimd_mf64 differ =
+    rsimd_mf64_or(rsimd_mf64_and(rsimd_vf64_cmp_lt(x, zero), rsimd_vf64_cmp_gt(y, zero)),
+                  rsimd_mf64_and(rsimd_vf64_cmp_gt(x, zero), rsimd_vf64_cmp_lt(y, zero)));
+  rsimd_mf64 finite = rsimd_mf64_and(rsimd_vf64_cmp_lt(rsimd_vf64_abs(x), inf),
+                                     rsimd_vf64_cmp_lt(ay, inf));
+  rsimd_mf64 small = rsimd_vf64_cmp_lt(rsimd_vf64_abs(rsimd_vf64_div(x, y)),
+                                       rsimd_vf64_set1(4503599627370496.0));
+  *slow = rsimd_mf64_andnot(small,
+                            rsimd_mf64_and(finite, rsimd_vf64_cmp_ne(y, zero)));
+  return rsimd_vf64_blend(r, rsimd_vf64_blend(x, y, differ), yinf);
+}
+
+/* Base R's pmin/pmax rules (rsimd_pmin_f64 ...), lane by lane: the
+   layer's min(y, x) is y < x ? y : x, which already returns x when x is
+   NaN or on a tie. num = 1 gives the _num forms. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_pminmax(rsimd_vf64 x, rsimd_vf64 y, int max, int num) {
+  rsimd_vf64 r = max ? rsimd_vf64_max(y, x) : rsimd_vf64_min(y, x);
+  return rsimd_vf64_blend(r, y, rsimd_vf64_is_nan(num ? x : y));
+}
+
+/* rsimd_copysign_f64() lane by lane. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_copysign(rsimd_vf64 x, rsimd_vf64 s) {
+  const rsimd_vf64 sign = rsimd_vf64_set1(-0.0);
+  rsimd_vf64 r = rsimd_vf64_or(rsimd_vf64_andnot(sign, x), rsimd_vf64_and(sign, s));
+  return rsimd_vf64_blend(r, s, rsimd_vf64_is_nan(s));
+}
+
+/* rsimd_sign_f64() lane by lane. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_sign(rsimd_vf64 x) {
+  const rsimd_vf64 zero = rsimd_vf64_zero();
+  rsimd_vf64 r = rsimd_vf64_blend(x, rsimd_vf64_set1(1.0), rsimd_vf64_cmp_gt(x, zero));
+  r = rsimd_vf64_blend(r, rsimd_vf64_set1(-1.0), rsimd_vf64_cmp_lt(x, zero));
+  return rsimd_vf64_blend(r, zero, rsimd_vf64_cmp_eq(x, zero));
 }
 
 /* The lanes of v added pairwise: ((l0 + l1) + (l2 + l3)) + ...; with an

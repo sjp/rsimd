@@ -74,10 +74,61 @@ typedef struct {
   unsigned overflow : 1;
 } rsimd_scan_state;
 
-/* Signature of every elementwise binary kernel, shown for double; other
-   element types substitute their C type. A scalar operand (x_scalar or
-   y_scalar set) is read from x[0] or y[0] and broadcast. */
-typedef void (*rsimd_binop_f64)(const double *x, const double *y, R_xlen_t n, int x_scalar,
-                                int y_scalar, double *out, const rsimd_opts *o);
+/* Elementwise kernels (kernels/arith.inc.c) take an op code and flags.
+
+   Binary op codes, for ew2_f64 (ADD .. COPYSIGN) and ew2_i32 (ADD .. MOD,
+   PMIN .. PMAX_NUM and the _WRAP ops). PMIN and PMAX propagate missing
+   values like base R's pmin/pmax: when both operands are missing the
+   second one's kind (NA or NaN) wins. PMIN_NUM and PMAX_NUM ignore a
+   missing operand (base R's na.rm = TRUE), and give the second operand
+   when both are missing. */
+enum {
+  RSIMD_EW_ADD = 0,
+  RSIMD_EW_SUB,
+  RSIMD_EW_MUL,
+  RSIMD_EW_DIV,
+  RSIMD_EW_IDIV,
+  RSIMD_EW_MOD,
+  RSIMD_EW_PMIN,
+  RSIMD_EW_PMAX,
+  RSIMD_EW_PMIN_NUM,
+  RSIMD_EW_PMAX_NUM,
+  RSIMD_EW_COPYSIGN,
+  RSIMD_EW_ADD_WRAP,
+  RSIMD_EW_SUB_WRAP,
+  RSIMD_EW_MUL_WRAP
+};
+/* Ternary op codes (ew3_f64, ew3_i32): fma(x, y, z) rounds once; mul_add
+   is (x * y) + z and add_mul (x + y) * z, each step rounded (checked for
+   integers, as base R's composition); lerp(x, y, t) is
+   fma(t, y, (1 - t) * x); clamp(x, lo, hi) is pmin(pmax(x, lo), hi).
+   ew3_i32 takes MUL_ADD, ADD_MUL and CLAMP. */
+enum { RSIMD_EW_FMA = 0, RSIMD_EW_MUL_ADD, RSIMD_EW_ADD_MUL, RSIMD_EW_LERP, RSIMD_EW_CLAMP };
+/* Unary op codes: ew1_f64 takes them all (ROUND is half to even);
+   ew1_i32 takes NEG and ABS, which wrap and so map NA to itself. */
+enum {
+  RSIMD_EW_NEG = 0,
+  RSIMD_EW_ABS,
+  RSIMD_EW_SIGN,
+  RSIMD_EW_RECIP,
+  RSIMD_EW_SQRT,
+  RSIMD_EW_FLOOR,
+  RSIMD_EW_CEIL,
+  RSIMD_EW_TRUNC,
+  RSIMD_EW_ROUND
+};
+
+/* Operand flags of the elementwise kernels, for operand k (0 = x, 1 = y,
+   2 = z): RSIMD_EW_SCALAR(k) broadcasts element 0 of the operand;
+   RSIMD_EW_I32(k), for the f64 kernels, says the operand holds int32
+   elements (integer or logical, NA becoming NA_real_) rather than
+   doubles. */
+#define RSIMD_EW_SCALAR(k) (1 << (k))
+#define RSIMD_EW_I32(k) (8 << (k))
+
+/* Status bits returned by the elementwise kernels: a checked integer op
+   overflowed (outside the NA lanes), sqrt made NaN from a number, clamp
+   saw lo > hi. */
+enum { RSIMD_EW_OVERFLOW = 1, RSIMD_EW_NAN_PRODUCED = 2, RSIMD_EW_LO_GT_HI = 4 };
 
 #endif /* RSIMD_KERNEL_TYPES_H */

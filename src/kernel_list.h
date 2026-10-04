@@ -133,3 +133,26 @@ RSIMD_OP(cumminmax_f64, R_xlen_t,
          (const double *x, R_xlen_t n, int max, double *out, rsimd_scan_state *s))
 RSIMD_OP(cumminmax_i32, R_xlen_t,
          (const int *x, R_xlen_t n, int max, int *out, rsimd_scan_state *s))
+
+/* Elementwise operations: out[i] = op(x[i], y[i], z[i]) for the chunk's
+   n elements, with the op codes, operand flags and status bits of
+   kernel_types.h. The f64 kernels write doubles and read each operand as
+   doubles or int32 (flag RSIMD_EW_I32(k)); the i32 kernels read and write
+   int32. A scalar operand (RSIMD_EW_SCALAR(k)) is element 0, broadcast.
+   o->na_check selects NA masking where an op has any (see na.h). Each
+   returns the status bits of the chunk. */
+RSIMD_OP(ew1_f64, int,
+         (int op, const void *x, R_xlen_t n, int flags, double *out, const rsimd_opts *o))
+RSIMD_OP(ew2_f64, int,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, double *out,
+          const rsimd_opts *o))
+RSIMD_OP(ew3_f64, int,
+         (int op, const void *x, const void *y, const void *z, R_xlen_t n, int flags,
+          double *out, const rsimd_opts *o))
+RSIMD_OP(ew1_i32, int, (int op, const int *x, R_xlen_t n, int *out, const rsimd_opts *o))
+RSIMD_OP(ew2_i32, int,
+         (int op, const int *x, const int *y, R_xlen_t n, int flags, int *out,
+          const rsimd_opts *o))
+RSIMD_OP(ew3_i32, int,
+         (int op, const int *x, const int *y, const int *z, R_xlen_t n, int flags, int *out,
+          const rsimd_opts *o))

@@ -26,8 +26,10 @@ promise is broken, the result is unspecified (but never a crash): an integer
 back as \code{NaN}. \code{na.rm = TRUE} always looks for missing values.
 
 Elementwise operations on doubles return \code{NA} wherever an operand is
-\code{NA}, and \code{NaN} where IEEE arithmetic gives one. On integers an
-\code{NA} operand gives \code{NA}.
+\code{NA}, and \code{NaN} where IEEE arithmetic gives one (base R may give
+\code{NaN} for \code{NaN + NA}, depending on the CPU). \code{pmin},
+\code{pmax} and \code{clamp} instead return one of their operands, as base
+R does. On integers an \code{NA} operand gives \code{NA}.
 
 \strong{Integer overflow.} Integer results outside
 \code{[-.Machine$integer.max, .Machine$integer.max]} are \code{NA}, with the
@@ -78,3 +80,15 @@ differ from base R's sequential running sum in the last bits. In
 \code{"compensated"} mode it is a sequential compensated running sum,
 identical on every implementation. \code{norm} and \code{dist} are not
 protected against overflow of the sum of squares.}
+
+\newcommand{\rsimdBroadcast}{\strong{Lengths.} The operands must have the same
+length, or length one: a length-one operand is used for every element
+(broadcast). Any other combination is an error; there is no general
+recycling. A zero-length operand with length-one operands gives a
+zero-length result.
+
+\strong{Types.} Logical operands count as integers. Integer and logical
+operands give an integer result where base R's operator does; any double
+operand makes the result double. Integers mixed with doubles are converted
+as they are read. Raw vectors are rejected with base R's message; complex
+and \pkg{bit64} \code{integer64} operands are not supported.}

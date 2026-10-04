@@ -10,8 +10,10 @@
  * a plain C reference. The reduction and scan kernels
  * (src/kernels/reduce.inc.c, src/kernels/scan.inc.c) are run on inputs full
  * of ties, signed zeros and missing values, whole and split into two
- * chunks, and compared with plain C references too. Prints a summary and
- * exits non-zero on any mismatch.
+ * chunks, and compared with plain C references too, and so are the
+ * elementwise kernels (src/kernels/arith.inc.c) with every combination of
+ * broadcast and int32 operands. Prints a summary and exits non-zero on any
+ * mismatch.
  */
 
 #include <float.h>
@@ -19,6 +21,7 @@
 #include "kernels/common.inc.h"
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
+#include "kernels/arith.inc.c"
 
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
 #define SENTINEL_F64 -12345.678
@@ -259,6 +262,9 @@ static void test_f64(ptrdiff_t n) {
   F64_OP("f64 neg", rsimd_vf64_neg(x), from_bits(bits(a) ^ (UINT64_C(1) << 63)), 1);
   F64_OP("f64 sqrt", rsimd_vf64_sqrt(x), sqrt(a), 0);
   F64_OP("f64 floor", rsimd_vf64_floor(x), floor(a), 0);
+  F64_OP("f64 ceil", rsimd_vf64_ceil(x), ceil(a), 0);
+  F64_OP("f64 trunc", rsimd_vf64_trunc(x), trunc(a), 0);
+  F64_OP("f64 rint", rsimd_vf64_rint(x), nearbyint(a), 0);
   F64_OP("f64 and", rsimd_vf64_and(x, y), from_bits(bits(a) & bits(b)), 1);
   F64_OP("f64 or", rsimd_vf64_or(x, y), from_bits(bits(a) | bits(b)), 1);
   F64_OP("f64 xor", rsimd_vf64_xor(x, y), from_bits(bits(a) ^ bits(b)), 1);
@@ -1388,9 +1394,271 @@ static void test_scan(ptrdiff_t n) { (void) n; }
 
 #undef TWO_WAYS
 
+/* ---- Elementwise kernels ------------------------------------------------ */
+
+#ifndef RSIMD_NO_F64_SIMD
+/* Bit-identical, except that two NaNs match when both or neither are NA. */
+static void check_f64_kind(const char *what, ptrdiff_t n, const double *got, const double *want) {
+  ptrdiff_t i;
+  char buf[160];
+  for (i = 0; i < n; i++) {
+    int ok = bits(got[i]) == bits(want[i]) ||
+             (isnan(got[i]) && isnan(want[i]) && is_na_ref(got[i]) == is_na_ref(want[i]));
+    n_checks++;
+    if (!ok) {
+      snprintf(buf, sizeof buf, "got %a (%016llx) want %a (%016llx)", got[i],
+               (unsigned long long) bits(got[i]), want[i], (unsigned long long) bits(want[i]));
+      fail(what, n, i, buf);
+    }
+  }
+}
+
+/* Element i of an elementwise operand: double or int32 (NA becoming
+   NA_real_), broadcast or not. */
+static double ew_get(const void *p, int i32, int scalar, ptrdiff_t i) {
+  ptrdiff_t j = scalar ? 0 : i;
+  if (i32) {
+    int32_t v = ((const int32_t *) p)[j];
+    return v == RSIMD_NA_I32 ? rsimd_na_real() : (double) v;
+  }
+  return ((const double *) p)[j];
+}
+
+/* Doubles for %% with huge and overflowing quotients and exact ties. */
+static double fmodx[N + 1], fmody[N + 1];
+
+static void init_mod_inputs(void) {
+  const double xs[] = {1e20, -1e20, 1e308, -1e308, 3 + 0x1p-51, -(3 + 0x1p-51), 7.5, -0.0,
+                       5e-324, 1e300, HUGE_VAL, 0x1p60};
+  const double ys[] = {3, 0.1, 5e-324, -5e-324, 1 + 0x1p-52, 1 + 0x1p-52, -2.5, 2, 1e-300,
+                       -1e-10, 2, 7};
+  int i, k = (int) (sizeof xs / sizeof xs[0]);
+  for (i = 0; i < N; i++) {
+    fmodx[i] = i < 2 * k ? xs[i % k] : fa[i] * 1e15;
+    fmody[i] = i < 2 * k ? ys[(i + i / k) % k] : fb[i];
+  }
+}
+
+static double ref_ew1(int op, double a) {
+  switch (op) {
+  case RSIMD_EW_NEG: return -a;
+  case RSIMD_EW_ABS: return fabs(a);
+  case RSIMD_EW_SIGN: return rsimd_sign_f64(a);
+  case RSIMD_EW_RECIP: return 1.0 / a;
+  case RSIMD_EW_SQRT: return sqrt(a);
+  case RSIMD_EW_FLOOR: return floor(a);
+  case RSIMD_EW_CEIL: return ceil(a);
+  case RSIMD_EW_TRUNC: return trunc(a);
+  default: return nearbyint(a);
+  }
+}
+
+static double ref_ew2(int op, double a, double b) {
+  double r;
+  switch (op) {
+  case RSIMD_EW_ADD: r = a + b; break;
+  case RSIMD_EW_SUB: r = a - b; break;
+  case RSIMD_EW_MUL: r = a * b; break;
+  case RSIMD_EW_DIV: r = a / b; break;
+  case RSIMD_EW_IDIV: r = rsimd_idiv_f64(a, b); break;
+  case RSIMD_EW_MOD: r = rsimd_mod_f64(a, b); break;
+  case RSIMD_EW_PMIN: return rsimd_pmin_f64(a, b);
+  case RSIMD_EW_PMAX: return rsimd_pmax_f64(a, b);
+  case RSIMD_EW_PMIN_NUM: return rsimd_pmin_num_f64(a, b);
+  case RSIMD_EW_PMAX_NUM: return rsimd_pmax_num_f64(a, b);
+  default: r = rsimd_copysign_f64(a, b); break;
+  }
+  return rsimd_na_merge_f64(r, a, b);
+}
+
+static double ref_ew3(int op, double a, double b, double c) {
+  switch (op) {
+  case RSIMD_EW_FMA: return rsimd_na_merge3_f64(fma(a, b, c), a, b, c);
+  case RSIMD_EW_MUL_ADD: return rsimd_na_merge3_f64(a * b + c, a, b, c);
+  case RSIMD_EW_ADD_MUL: return rsimd_na_merge3_f64((a + b) * c, a, b, c);
+  case RSIMD_EW_LERP: return rsimd_na_merge3_f64(fma(c, b, (1.0 - c) * a), a, b, c);
+  default: return rsimd_pmin_f64(rsimd_pmax_f64(a, b), c);
+  }
+}
+
+#endif /* RSIMD_NO_F64_SIMD */
+
+static int32_t ref_ew2_i32(int op, int32_t a, int32_t b, int check, int *ovf) {
+  switch (op) {
+  case RSIMD_EW_ADD: return rsimd_add_i32(a, b, check, ovf);
+  case RSIMD_EW_SUB: return rsimd_sub_i32(a, b, check, ovf);
+  case RSIMD_EW_MUL: return rsimd_mul_i32(a, b, check, ovf);
+  case RSIMD_EW_ADD_WRAP: return rsimd_add_wrap_i32(a, b, check);
+  case RSIMD_EW_SUB_WRAP: return rsimd_sub_wrap_i32(a, b, check);
+  case RSIMD_EW_MUL_WRAP: return rsimd_mul_wrap_i32(a, b, check);
+  case RSIMD_EW_IDIV: return rsimd_intdiv_i32(a, b, 0, check);
+  case RSIMD_EW_MOD: return rsimd_intdiv_i32(a, b, 1, check);
+  case RSIMD_EW_PMIN: return rsimd_pmin_i32(a, b);
+  case RSIMD_EW_PMAX: return rsimd_pmax_i32(a, b);
+  case RSIMD_EW_PMIN_NUM: return rsimd_pmin_num_i32(a, b);
+  default: return rsimd_pmax_num_i32(a, b);
+  }
+}
+
+static int32_t ref_ew3_i32(int op, int32_t a, int32_t b, int32_t c, int check, int *ovf,
+                           int *lohi) {
+  int32_t t;
+  switch (op) {
+  case RSIMD_EW_MUL_ADD:
+    t = rsimd_mul_i32(a, b, check, ovf);
+    return t == RSIMD_NA_I32 ? t : rsimd_add_i32(t, c, check, ovf);
+  case RSIMD_EW_ADD_MUL:
+    t = rsimd_add_i32(a, b, check, ovf);
+    return t == RSIMD_NA_I32 ? t : rsimd_mul_i32(t, c, check, ovf);
+  default:
+    if (b != RSIMD_NA_I32 && c != RSIMD_NA_I32 && b > c) *lohi = 1;
+    return rsimd_pmin_i32(rsimd_pmax_i32(a, b), c);
+  }
+}
+
+static void test_arith(ptrdiff_t n) {
+  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST}, o_nocheck = {0, 0, RSIMD_PREC_FAST};
+  int op, f, st, want_st, check;
+  ptrdiff_t j;
+  char what[96];
+  if (n == 0) return; /* kernels are never called for no elements */
+  /* int32 kernels: every op, each operand broadcast or not. */
+  /* int32 kernels: every op, each operand broadcast or not, with and
+     without NA checks. */
+  for (check = 0; check < 2; check++) {
+    const rsimd_opts *oc = check ? &o : &o_nocheck;
+    for (op = RSIMD_EW_ADD; op <= RSIMD_EW_MUL_WRAP; op++) {
+      if (op == RSIMD_EW_DIV || op == RSIMD_EW_COPYSIGN) continue;
+      for (f = 0; f < 3; f++) {
+        const int32_t *x = op == RSIMD_EW_MUL || op == RSIMD_EW_MUL_WRAP ? ismall : ia;
+        const int32_t *y = op == RSIMD_EW_MUL || op == RSIMD_EW_MUL_WRAP ? ismall2 : ib;
+        int ovf = 0;
+        reset_out();
+        st = RSIMD_KERNEL(ew2_i32)(op, x, y, n, f, iout, oc);
+        for (j = 0; j < n; j++) {
+          iref[j] = ref_ew2_i32(op, x[f & 1 ? 0 : j], y[f & 2 ? 0 : j], check, &ovf);
+        }
+        snprintf(what, sizeof what, "ew2_i32 op %d flags %d check %d", op, f, check);
+        check_i32(what, n, iout, iref);
+        /* Without checks, NA operands may or may not count as overflow. */
+        if (check) check_int(what, n, 0, st, ovf ? RSIMD_EW_OVERFLOW : 0);
+      }
+    }
+    for (op = RSIMD_EW_MUL_ADD; op <= RSIMD_EW_CLAMP; op++) {
+      if (op == RSIMD_EW_LERP) continue;
+      for (f = 0; f < 7; f++) {
+        const int32_t *z = op == RSIMD_EW_CLAMP ? ib : ia;
+        int ovf = 0, lohi = 0;
+        reset_out();
+        st = RSIMD_KERNEL(ew3_i32)(op, ismall, ismall2, z, n, f, iout, oc);
+        for (j = 0; j < n; j++) {
+          iref[j] = ref_ew3_i32(op, ismall[f & 1 ? 0 : j], ismall2[f & 2 ? 0 : j],
+                                z[f & 4 ? 0 : j], check, &ovf, &lohi);
+        }
+        snprintf(what, sizeof what, "ew3_i32 op %d flags %d check %d", op, f, check);
+        check_i32(what, n, iout, iref);
+        if (check) {
+          check_int(what, n, 0, st, (ovf ? RSIMD_EW_OVERFLOW : 0) | (lohi ? RSIMD_EW_LO_GT_HI : 0));
+        }
+      }
+    }
+  }
+  /* The inactive lanes of the last vector must not raise a status bit:
+     (x + 65536) * 32768 is 0 for x = -65536 but overflows for x = 0, and
+     clamp's broadcast lo = 5 is above 0 but not above hi = 10. */
+  {
+    static int32_t xm[N + 1];
+    const int32_t y1 = 65536, z1 = 32768;
+    for (j = 0; j < n; j++) xm[j] = -65536;
+    st = RSIMD_KERNEL(ew3_i32)(RSIMD_EW_ADD_MUL, xm, &y1, &z1, n,
+                               RSIMD_EW_SCALAR(1) | RSIMD_EW_SCALAR(2), iout, &o);
+    check_int("ew3_i32 tail status", n, 0, st, 0);
+    st = RSIMD_KERNEL(ew2_i32)(RSIMD_EW_MUL, xm, &y1, n, RSIMD_EW_SCALAR(1), iout, &o);
+    check_int("ew2_i32 tail status", n, 0, st, RSIMD_EW_OVERFLOW);
+#ifndef RSIMD_NO_F64_SIMD
+    {
+      static double hi[N + 1];
+      const double lo = 5.0;
+      for (j = 0; j < n; j++) hi[j] = 10.0;
+      st = RSIMD_KERNEL(ew3_f64)(RSIMD_EW_CLAMP, fa, &lo, hi, n, RSIMD_EW_SCALAR(1), fout, &o);
+      check_int("ew3_f64 tail status", n, 0, st, 0);
+    }
+#endif
+  }
+  for (op = RSIMD_EW_NEG; op <= RSIMD_EW_ABS; op++) {
+    reset_out();
+    RSIMD_KERNEL(ew1_i32)(op, ia, n, iout, &o);
+    for (j = 0; j < n; j++) iref[j] = op == RSIMD_EW_ABS ? rsimd_abs_i32(ia[j]) : rsimd_neg_i32(ia[j]);
+    check_i32(op == RSIMD_EW_ABS ? "ew1_i32 abs" : "ew1_i32 neg", n, iout, iref);
+  }
+#ifndef RSIMD_NO_F64_SIMD
+  /* double kernels: every op, each operand double or int32, broadcast or
+     not. Flag bits 0-2 broadcast, 3-5 int32. */
+  for (op = RSIMD_EW_NEG; op <= RSIMD_EW_ROUND; op++) {
+    for (f = 0; f < 2; f++) {
+      const void *x = f ? (const void *) ia : (const void *) fa;
+      int nan_made = 0;
+      reset_out();
+      st = RSIMD_KERNEL(ew1_f64)(op, x, n, f ? RSIMD_EW_I32(0) : 0, fout, &o);
+      for (j = 0; j < n; j++) {
+        double a = ew_get(x, f, 0, j);
+        if (op == RSIMD_EW_SQRT && a < 0) nan_made = 1;
+        fref[j] = ref_ew1(op, a);
+      }
+      snprintf(what, sizeof what, "ew1_f64 op %d i32 %d", op, f);
+      check_f64_kind(what, n, fout, fref);
+      check_int(what, n, 0, st, nan_made ? RSIMD_EW_NAN_PRODUCED : 0);
+    }
+  }
+  for (op = RSIMD_EW_ADD; op <= RSIMD_EW_COPYSIGN; op++) {
+    for (f = 0; f < 64; f++) {
+      int sc = f & 7, ti = f >> 3;
+      const double *fx = op == RSIMD_EW_MOD || op == RSIMD_EW_IDIV ? fmodx : fa;
+      const double *fy = op == RSIMD_EW_MOD || op == RSIMD_EW_IDIV ? fmody : fb;
+      const void *x = ti & 1 ? (const void *) ia : (const void *) fx;
+      const void *y = ti & 2 ? (const void *) ib : (const void *) fy;
+      if ((sc & 3) == 3 || (sc & 4) || (ti & 4)) continue;
+      reset_out();
+      RSIMD_KERNEL(ew2_f64)(op, x, y, n, f, fout, &o);
+      for (j = 0; j < n; j++) {
+        fref[j] = ref_ew2(op, ew_get(x, ti & 1, sc & 1, j), ew_get(y, ti & 2, sc & 2, j));
+      }
+      snprintf(what, sizeof what, "ew2_f64 op %d flags %d", op, f);
+      check_f64_kind(what, n, fout, fref);
+    }
+  }
+  for (op = RSIMD_EW_FMA; op <= RSIMD_EW_CLAMP; op++) {
+    for (f = 0; f < 64; f++) {
+      int sc = f & 7, ti = f >> 3, lohi = 0;
+      const void *x = ti & 1 ? (const void *) ia : (const void *) fa;
+      const void *y = ti & 2 ? (const void *) ib : (const void *) fb;
+      const void *z = ti & 4 ? (const void *) ismall : (const void *) fc;
+      if (sc == 7) continue;
+      reset_out();
+      st = RSIMD_KERNEL(ew3_f64)(op, x, y, z, n, f, fout, &o);
+      for (j = 0; j < n; j++) {
+        double a = ew_get(x, ti & 1, sc & 1, j), b = ew_get(y, ti & 2, sc & 2, j),
+               c = ew_get(z, ti & 4, sc & 4, j);
+        if (op == RSIMD_EW_CLAMP && b > c) lohi = 1;
+        fref[j] = ref_ew3(op, a, b, c);
+      }
+      want_st = lohi ? RSIMD_EW_LO_GT_HI : 0;
+      snprintf(what, sizeof what, "ew3_f64 op %d flags %d", op, f);
+      check_f64_kind(what, n, fout, fref);
+      check_int(what, n, 0, st, want_st);
+    }
+  }
+#else
+  (void) want_st;
+#endif
+}
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
+#ifndef RSIMD_NO_F64_SIMD
+  init_mod_inputs();
+#endif
   for (n = 0; n <= N; n++) {
 #ifndef RSIMD_NO_F64_SIMD
     test_f64(n);
@@ -1405,6 +1673,7 @@ int main(void) {
     test_reduce(n);
     test_linalg(n);
     test_scan(n);
+    test_arith(n);
   }
 #ifndef RSIMD_NO_F64_SIMD
   test_na_cancel();

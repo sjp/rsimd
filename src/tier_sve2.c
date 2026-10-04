@@ -6,5 +6,6 @@
 /* Kernel sources (kernels/<family>.inc.c) are included here. */
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
+#include "kernels/arith.inc.c"
 #include "kernels/selftest.inc.c"
 #include "kernels/table.inc.c"

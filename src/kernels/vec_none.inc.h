@@ -201,6 +201,10 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v
   if (pg) rsimd_vi64_storeu_i32(p, v);
 }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return floor(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return ceil(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) { return trunc(a); }
+/* Half to even in R's default rounding mode, as base R's round(x). */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rint(rsimd_vf64 a) { return nearbyint(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) { return (double) *p; }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
   return (double) (pg ? *p : fill);

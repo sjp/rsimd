@@ -153,6 +153,42 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y) {
   return 0;
 }
 
+/* ---- Elementwise operands ----------------------------------------------- */
+
+int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names) {
+  R_xlen_t n = 1;
+  int i, have_n = 0, ok = 1;
+  if (k < 1 || k > RSIMD_EW_MAX_ARGS) Rf_error("internal error: %d operands", k);
+  e->k = k;
+  e->flags = 0;
+  e->no_na_hint = 1;
+  for (i = 0; i < k; i++) {
+    rsimd_in_init(&e->in[i], args[i], names[i]);
+    e->no_na_hint = e->no_na_hint && e->in[i].no_na_hint;
+    if (e->in[i].n == 1) continue;
+    if (!have_n) {
+      n = e->in[i].n;
+      have_n = 1;
+    } else if (e->in[i].n != n) {
+      ok = 0;
+    }
+  }
+  if (!ok) {
+    if (k == 2) {
+      Rf_error("lengths of '%s' (%lld) and '%s' (%lld) must be equal or one of them must be 1",
+               names[0], (long long) e->in[0].n, names[1], (long long) e->in[1].n);
+    }
+    Rf_error("lengths of '%s' (%lld), '%s' (%lld) and '%s' (%lld) must be equal or 1", names[0],
+             (long long) e->in[0].n, names[1], (long long) e->in[1].n, names[2],
+             (long long) e->in[2].n);
+  }
+  e->n = n;
+  for (i = 0; i < k; i++) {
+    if (e->in[i].n == 1 && n != 1) e->flags |= RSIMD_EW_SCALAR(i);
+  }
+  return 0;
+}
+
 /* ---- Reductions --------------------------------------------------------- */
 
 const char *const rsimd_reduce_op_names[RSIMD_RED_OP_COUNT] = {
@@ -395,6 +431,16 @@ double rsimd_arg_dbl1(SEXP x, const char *name) {
   if (Rf_xlength(x) == 1) {
     if (TYPEOF(x) == REALSXP && !ISNAN(REAL_ELT(x, 0))) return REAL_ELT(x, 0);
     if (TYPEOF(x) == INTSXP && INTEGER_ELT(x, 0) != NA_INTEGER) return INTEGER_ELT(x, 0);
+  }
+  Rf_error("'%s' must be a single number", name);
+  return 0; /* not reached */
+}
+
+double rsimd_arg_num1(SEXP x, const char *name) {
+  if (Rf_xlength(x) == 1) {
+    if (TYPEOF(x) == REALSXP) return REAL_ELT(x, 0);
+    if (TYPEOF(x) == INTSXP) return INTEGER_ELT(x, 0) == NA_INTEGER ? NA_REAL : INTEGER_ELT(x, 0);
+    if (TYPEOF(x) == LGLSXP && LOGICAL_ELT(x, 0) == NA_LOGICAL) return NA_REAL;
   }
   Rf_error("'%s' must be a single number", name);
   return 0; /* not reached */

@@ -55,3 +55,16 @@
   integer overflow warning. Integer results and running minima/maxima are
   identical to base R's; `simd_cumsum()` is a sequential compensated sum in
   the `"compensated"` mode.
+* Added elementwise arithmetic: `simd_add()`, `simd_sub()`, `simd_mul()`,
+  `simd_div()`, `simd_idiv()` (`%/%`), `simd_mod()` (`%%`), `simd_neg()`,
+  `simd_abs()`, `simd_sign()`, `simd_copysign()`, `simd_recip()`,
+  `simd_sqrt()`, `simd_fma()` (fused), `simd_mul_add()`, `simd_add_mul()`,
+  `simd_lerp()`, `simd_pmin()`, `simd_pmax()`, `simd_pmin_num()`,
+  `simd_pmax_num()`, `simd_clamp()`, `simd_floor()`, `simd_ceiling()`,
+  `simd_trunc()` and `simd_round()`, and the wrapping integer variants
+  `simd_add_wrap()`, `simd_sub_wrap()`, `simd_mul_wrap()`, `simd_neg_wrap()`
+  and `simd_abs_wrap()`. Operands must have equal lengths or length one.
+  Integer results, `pmin`/`pmax` and rounding are identical to base R's,
+  including `NA` positions, the sign of zero and the single overflow warning;
+  double `%/%` and `%%` are exact. `simd_fma()` and `simd_lerp()` round once
+  on every implementation, and `simd_lerp()` is exact at `t = 0` and `t = 1`.

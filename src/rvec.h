@@ -196,6 +196,69 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y);
     }                                                                                  \
   } while (0)
 
+/* ---- Elementwise operands ----------------------------------------------- */
+
+#define RSIMD_EW_MAX_ARGS 3
+
+/* The operands of an elementwise op (one to three), each of any element
+   type: entry points pick the kernel and its RSIMD_EW_I32(k) flags from
+   in[k].type. */
+typedef struct {
+  int k;                       /* number of operands */
+  rsimd_in in[RSIMD_EW_MAX_ARGS];
+  int flags;                   /* RSIMD_EW_SCALAR(k) bits: operand k is broadcast */
+  R_xlen_t n;                  /* result length */
+  int no_na_hint;              /* every operand is known NA-free */
+} rsimd_ew;
+
+/* Classifies the k operands args[0 .. k - 1], named names[0 .. k - 1] in
+   messages, and applies the length-1 broadcast rule: the operands that do
+   not have length 1 must all have the same length, which is the result
+   length (1 if every operand has length 1), and the operands of length 1
+   are broadcast when it is not 1. So a zero-length operand with scalars
+   gives a zero-length result. Otherwise errors, for two operands as
+   rsimd_bin_init() does, for three with "lengths of 'x' (<nx>), 'y' (<ny>)
+   and 'z' (<nz>) must be equal or 1". Returns 0. */
+int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names);
+
+/* Runs the statements in `...` once per chunk of the operands of `e` (an
+   rsimd_ew pointer) with
+     const void *p[RSIMD_EW_MAX_ARGS]  the chunk's elements of each operand
+                                       (a broadcast operand's single
+                                       element on every chunk),
+     R_xlen_t len, off                 as in RSIMD_FOREACH_CHUNK.
+   The body may not `break` or `continue`. Interrupts are checked after
+   every rsimd_stride elements. */
+#define RSIMD_FOREACH_CHUNK_EW(e, p, len, off, ...)                                    \
+  do {                                                                                 \
+    double rsimd_ebuf_[RSIMD_EW_MAX_ARGS][RSIMD_CHUNK];                                \
+    R_xlen_t rsimd_tick_ = 0, rsimd_l_;                                                \
+    const void *p[RSIMD_EW_MAX_ARGS] = {NULL, NULL, NULL};                             \
+    int rsimd_k_;                                                                      \
+    for (rsimd_k_ = 0; rsimd_k_ < (e)->k; rsimd_k_++) {                                \
+      if ((e)->flags & RSIMD_EW_SCALAR(rsimd_k_)) {                                    \
+        p[rsimd_k_] = rsimd_in_region(&(e)->in[rsimd_k_], 0, &rsimd_l_, rsimd_ebuf_[rsimd_k_]); \
+      }                                                                                \
+    }                                                                                  \
+    for (R_xlen_t off = 0; off < (e)->n;) {                                            \
+      R_xlen_t len = (e)->n - off;                                                     \
+      if (len > rsimd_stride) len = rsimd_stride;                                      \
+      for (rsimd_k_ = 0; rsimd_k_ < (e)->k; rsimd_k_++) {                              \
+        if (!((e)->flags & RSIMD_EW_SCALAR(rsimd_k_))) {                               \
+          p[rsimd_k_] = rsimd_in_region(&(e)->in[rsimd_k_], off, &rsimd_l_, rsimd_ebuf_[rsimd_k_]); \
+          if (rsimd_l_ < len) len = rsimd_l_;                                          \
+        }                                                                              \
+      }                                                                                \
+      __VA_ARGS__                                                                      \
+      off += len;                                                                      \
+      rsimd_tick_ += len;                                                              \
+      if (rsimd_tick_ >= rsimd_stride) {                                               \
+        rsimd_tick_ = 0;                                                               \
+        rsimd_check_interrupt();                                                       \
+      }                                                                                \
+    }                                                                                  \
+  } while (0)
+
 /* ---- Reductions --------------------------------------------------------- */
 
 /* Reductions with a scalar result. simd_range() finishes the min and the
@@ -301,6 +364,9 @@ void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, SEXP precision, i
 int rsimd_arg_lgl1(SEXP x, const char *name);
 int rsimd_arg_int1(SEXP x, const char *name);
 double rsimd_arg_dbl1(SEXP x, const char *name);
+/* As rsimd_arg_dbl1(), but a missing value (NA, NaN or a logical NA) is
+   allowed and returned as NA_real_ or NaN. */
+double rsimd_arg_num1(SEXP x, const char *name);
 const char *rsimd_arg_str(SEXP x, const char *name);
 
 /* ---- Complex ------------------------------------------------------------ */

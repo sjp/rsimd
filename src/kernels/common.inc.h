@@ -28,7 +28,7 @@
  *   all vector types  loadu storeu loadu_p storeu_p set1 zero add sub mul
  *                     min max and or xor andnot cmp_eq cmp_gt cmp_lt blend
  *                     is_na reduce_add reduce_min reduce_max
- *   rsimd_vf64 also   div fma abs neg sqrt floor cmp_ne cmp_le cmp_ge
+ *   rsimd_vf64 also   div fma abs neg sqrt floor ceil trunc rint cmp_ne cmp_le cmp_ge
  *                     is_nan as_vi64 loadu_i32 loadu_i32_p storeu_i32
  *                     storeu_i32_p
  *   rsimd_vi32 also   mulhi
@@ -41,6 +41,8 @@
  * Semantics shared by all tiers:
  *   - Loads and stores are unaligned (R vectors are only 8-byte aligned).
  *   - fma(a, b, c) is a * b + c with a single rounding, on every tier.
+ *   - floor, ceil, trunc and rint (half to even) are exact for every
+ *     double, keep the sign of zero and pass NaN payloads through.
  *   - min(a, b) is a < b ? a : b and max(a, b) is a > b ? a : b, as on x86:
  *     when either operand is NaN the result is b.
  *   - andnot(a, b) is (~a) & b, as on x86.
@@ -217,6 +219,9 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VF64_NEG rsimd_vf64_neg
 #define RSIMD_VF64_SQRT rsimd_vf64_sqrt
 #define RSIMD_VF64_FLOOR rsimd_vf64_floor
+#define RSIMD_VF64_CEIL rsimd_vf64_ceil
+#define RSIMD_VF64_TRUNC rsimd_vf64_trunc
+#define RSIMD_VF64_RINT rsimd_vf64_rint
 #define RSIMD_VF64_LOADU_I32 rsimd_vf64_loadu_i32
 #define RSIMD_VF64_LOADU_I32_P rsimd_vf64_loadu_i32_p
 #define RSIMD_VF64_STOREU_I32 rsimd_vf64_storeu_i32

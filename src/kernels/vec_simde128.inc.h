@@ -250,7 +250,54 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
                         simde_mm_shuffle_epi32(v, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
 }
 #ifndef RSIMD_NO_F64_SIMD
+#if defined(__aarch64__) || defined(_M_ARM64)
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return simde_mm_floor_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return simde_mm_ceil_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) {
+  return simde_mm_round_pd(a, SIMDE_MM_FROUND_TO_ZERO | SIMDE_MM_FROUND_NO_EXC);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rint(rsimd_vf64 a) {
+  return simde_mm_round_pd(a, SIMDE_MM_FROUND_TO_NEAREST_INT | SIMDE_MM_FROUND_NO_EXC);
+}
+#else
+/* SSE2 has no rounding instruction (SIMDe would round lane by lane with
+   libm). For |a| < 2^52, (|a| + 2^52) - 2^52 is |a| rounded half to even
+   (in the default rounding mode); larger values, infinities and NaN are
+   left as they are. floor, ceil and trunc step that by one where it went
+   the wrong way, and every result takes the sign bit of a, which gives -0
+   for ceil(-0.5), trunc(-0.5) and rint(-0.4) as libm does. */
+RSIMD_INLINE simde__m128d rsimd_sse2_sel(simde__m128d m, simde__m128d a, simde__m128d b) {
+  return simde_mm_or_pd(simde_mm_and_pd(m, a), simde_mm_andnot_pd(m, b));
+}
+RSIMD_INLINE simde__m128d rsimd_sse2_rint_abs(simde__m128d ax) {
+  const simde__m128d big = simde_mm_set1_pd(4503599627370496.0);
+  return rsimd_sse2_sel(simde_mm_cmplt_pd(ax, big),
+                        simde_mm_sub_pd(simde_mm_add_pd(ax, big), big), ax);
+}
+RSIMD_INLINE simde__m128d rsimd_sse2_with_sign(simde__m128d r, simde__m128d a) {
+  return simde_mm_or_pd(r, simde_mm_and_pd(a, simde_mm_set1_pd(-0.0)));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rint(rsimd_vf64 a) {
+  simde__m128d ax = simde_mm_andnot_pd(simde_mm_set1_pd(-0.0), a);
+  return rsimd_sse2_with_sign(rsimd_sse2_rint_abs(ax), a);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) {
+  simde__m128d r = rsimd_vf64_rint(a);
+  r = simde_mm_sub_pd(r, simde_mm_and_pd(simde_mm_cmpgt_pd(r, a), simde_mm_set1_pd(1.0)));
+  return rsimd_sse2_with_sign(r, a);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) {
+  simde__m128d r = rsimd_vf64_rint(a);
+  r = simde_mm_add_pd(r, simde_mm_and_pd(simde_mm_cmplt_pd(r, a), simde_mm_set1_pd(1.0)));
+  return rsimd_sse2_with_sign(r, a);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) {
+  simde__m128d ax = simde_mm_andnot_pd(simde_mm_set1_pd(-0.0), a);
+  simde__m128d r = rsimd_sse2_rint_abs(ax);
+  r = simde_mm_sub_pd(r, simde_mm_and_pd(simde_mm_cmpgt_pd(r, ax), simde_mm_set1_pd(1.0)));
+  return rsimd_sse2_with_sign(r, a);
+}
+#endif
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
   return simde_mm_cvtepi32_pd(simde_mm_loadl_epi64((const simde__m128i *) (const void *) p));
 }

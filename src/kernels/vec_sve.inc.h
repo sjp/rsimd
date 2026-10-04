@@ -207,6 +207,9 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v
   svst1w_s64(pg, p, v);
 }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return svrintm_f64_x(RSIMD_PT64, a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return svrintp_f64_x(RSIMD_PT64, a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) { return svrintz_f64_x(RSIMD_PT64, a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rint(rsimd_vf64 a) { return svrintn_f64_x(RSIMD_PT64, a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
   return svcvt_f64_s64_x(RSIMD_PT64, rsimd_vi64_loadu_i32(p));
 }

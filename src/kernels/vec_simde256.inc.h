@@ -222,6 +222,13 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
   simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm256_castsi256_si128(low));
 }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return simde_mm256_floor_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return simde_mm256_ceil_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) {
+  return simde_mm256_round_pd(a, SIMDE_MM_FROUND_TO_ZERO | SIMDE_MM_FROUND_NO_EXC);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rint(rsimd_vf64 a) {
+  return simde_mm256_round_pd(a, SIMDE_MM_FROUND_TO_NEAREST_INT | SIMDE_MM_FROUND_NO_EXC);
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
   return simde_mm256_cvtepi32_pd(simde_mm_loadu_si128((const simde__m128i *) (const void *) p));
 }

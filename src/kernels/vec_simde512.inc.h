@@ -299,6 +299,15 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) {
   return simde_mm512_roundscale_pd(a, SIMDE_MM_FROUND_TO_NEG_INF | SIMDE_MM_FROUND_NO_EXC);
 }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) {
+  return simde_mm512_roundscale_pd(a, SIMDE_MM_FROUND_TO_POS_INF | SIMDE_MM_FROUND_NO_EXC);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) {
+  return simde_mm512_roundscale_pd(a, SIMDE_MM_FROUND_TO_ZERO | SIMDE_MM_FROUND_NO_EXC);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rint(rsimd_vf64 a) {
+  return simde_mm512_roundscale_pd(a, SIMDE_MM_FROUND_TO_NEAREST_INT | SIMDE_MM_FROUND_NO_EXC);
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
   return simde_mm512_cvtepi64_pd(rsimd_vi64_loadu_i32(p));
 }

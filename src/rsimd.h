@@ -37,6 +37,12 @@ SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precisi
 SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision);
 
+/* elementwise arithmetic */
+SEXP C_simd_ew1(SEXP x, SEXP op);
+SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check);
+SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check);
+SEXP C_simd_round_digits(SEXP x, SEXP digits);
+
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);
