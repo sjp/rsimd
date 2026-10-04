@@ -8,7 +8,10 @@ test_that("special values give the same kind of result as base R on every tier",
   for (name in names(tab)) {
     spec <- tab[[name]]
     base_f <- if (is.null(spec[[2]])) refs[[name]] else spec[[2]]
-    zeros <- !(name %in% r46_plus_zero && getRversion() >= "4.6.0")
+    # Base R's sinpi() zero signs depend on the platform: glibc >= 2.41's
+    # sinpi gives the sign of x (as simd_sinpi does, tested below), R's own
+    # fallback gives +0 at every integer.
+    zeros <- !(name %in% r46_plus_zero && getRversion() >= "4.6.0") && name != "sinpi"
     res <- with_each_tier(function() suppressWarnings(spec[[1]](x)))
     for (tier in names(res)) {
       got <- res[[tier]]
