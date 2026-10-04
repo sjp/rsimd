@@ -231,26 +231,3 @@ int RSIMD_KERNEL(selftest_arith_i32)(int op, const int *x, const int *y, R_xlen_
 }
 
 #endif /* vector tiers */
-
-/* Kernel for the selftest_sleef_exp slot. */
-#if RSIMD_TIER_IS(none)
-void RSIMD_KERNEL(selftest_sleef_exp)(const double *x, R_xlen_t n, double *out);
-void RSIMD_KERNEL(selftest_sleef_exp)(const double *x, R_xlen_t n, double *out) {
-  R_xlen_t i;
-  for (i = 0; i < n; i++) out[i] = exp(x[i]);
-}
-#elif defined(RSIMD_HAVE_SLEEF)
-void RSIMD_KERNEL(selftest_sleef_exp)(const double *x, R_xlen_t n, double *out);
-void RSIMD_KERNEL(selftest_sleef_exp)(const double *x, R_xlen_t n, double *out) {
-  ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_vf64_storeu(out + i, rsimd_sleef_exp(rsimd_vf64_loadu(x + i)));
-  }
-  if (i < n) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_vf64_storeu_p(pg, out + i, rsimd_sleef_exp(rsimd_vf64_loadu_p(pg, x + i, 0.0)));
-  }
-}
-#else
-#define RSIMD_SKIP_selftest_sleef_exp 1
-#endif

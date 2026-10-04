@@ -38,10 +38,6 @@ RSIMD_OP(selftest_arith_i32, int,
 RSIMD_OP(selftest_arith_f64, void,
          (int op, const double *x, const double *y, R_xlen_t n, int x_scalar, int y_scalar,
           double *out, const rsimd_opts *o))
-/* out[i] = exp(x[i]) through the tier's SLEEF exp, or libm's exp in the
-   none tier: a check that the SLEEF headers are wired into every tier
-   that has them. Tiers without SLEEF leave the slot empty. */
-RSIMD_OP(selftest_sleef_exp, void, (const double *x, R_xlen_t n, double *out))
 
 /* Reductions. Each call folds one chunk into the running result (see
    rsimd_reduce_result in kernel_types.h); the entry point merges chunks
@@ -160,6 +156,19 @@ RSIMD_OP(ew2_i32, int,
 RSIMD_OP(ew3_i32, int,
          (int op, const int *x, const int *y, const int *z, R_xlen_t n, int flags, int *out,
           const rsimd_opts *o))
+
+/* Elementary functions, out[i] = f(x[i]) (math1_f64, op codes
+   RSIMD_MATH_EXP .. ATANH, p used by LOGB only), out[i] = f(x[i], y[i])
+   (math2_f64, RSIMD_MATH_POW .. HYPOT) and both sin(x[i]) and cos(x[i])
+   (sincos_f64), with base R's missing-value rules. Operands are read as
+   doubles or int32 elements with the flags of the elementwise kernels
+   (an int32 NA is always NA_real_). Each returns the status bits of the
+   chunk (RSIMD_EW_NAN_PRODUCED). The SIMD tiers use SLEEF and leave these
+   slots empty when built without it; the none tier uses libm. */
+RSIMD_OP(math1_f64, int, (int op, const void *x, R_xlen_t n, int flags, double p, double *out))
+RSIMD_OP(math2_f64, int,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, double *out))
+RSIMD_OP(sincos_f64, int, (const void *x, R_xlen_t n, int flags, double *s, double *c))
 
 /* Predicates: for mode RSIMD_PRED_ELT, out[i] = 1 or 0 for each element
    (never NA) and the return value is 0; for ANY and ALL nothing is

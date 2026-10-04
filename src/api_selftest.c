@@ -153,22 +153,3 @@ SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   UNPROTECT(1);
   return out;
 }
-
-/* exp(x) for a double vector through the selftest_sleef_exp slot of the
-   active implementation: SLEEF's exp on the tiers that have it, else the
-   kernel of the next lower tier that does, ultimately libm's exp. */
-SEXP C_simd_debug_sleef_exp(SEXP x) {
-  rsimd_in in;
-  SEXP out;
-  double *po;
-
-  rsimd_in_init(&in, x, "x");
-  if (in.type != RSIMD_F64) Rf_error("'x' must be a double vector");
-  out = PROTECT(rsimd_alloc_like(RSIMD_F64, in.n));
-  po = (double *) rsimd_out_ptr(out);
-  RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
-    rsimd_active->selftest_sleef_exp(px, len, po + off);
-  });
-  UNPROTECT(1);
-  return out;
-}

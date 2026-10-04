@@ -55,10 +55,16 @@ SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check);
 /* conversions */
 SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode);
 
+/* elementary functions */
+SEXP C_simd_math1(SEXP x, SEXP op);
+SEXP C_simd_log(SEXP x, SEXP base);
+SEXP C_simd_math2(SEXP x, SEXP y, SEXP op);
+SEXP C_simd_sincos(SEXP x);
+SEXP C_simd_ulp_dist(SEXP a, SEXP b);
+
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);
 SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check);
-SEXP C_simd_debug_sleef_exp(SEXP x);
 
 #endif /* RSIMD_H */

@@ -94,3 +94,31 @@ operands give an integer result where base R's operator does; any double
 operand makes the result double. Integers mixed with doubles are converted
 as they are read. Raw vectors are rejected with base R's message; complex
 and \pkg{bit64} \code{integer64} operands are not supported.}
+
+\newcommand{\rsimdMath}{\strong{Implementations and accuracy.} The SIMD
+implementations use the vectorised functions of the bundled SLEEF library:
+its 1-ULP (\code{_u10}) variants, and its 0.5-ULP (\code{_u05}) variants for
+\code{sinpi}, \code{cospi} and \code{hypot}. Results are within 1 ULP (unit
+in the last place) of the exact value (0.5 ULP for the \code{_u05}
+functions), and so may differ from base R in the last bit. The \code{"none"}
+implementation calls the C math library, as base R does, and is the
+reference the others are tested against (within 2 ULP). An implementation
+built without SLEEF (see \code{\link{simd_available}}) uses the next lower
+one that has it, ultimately \code{"none"}.
+
+\strong{Missing values and warnings.} A \code{NaN} input gives that
+\code{NaN} back (so \code{NA} stays \code{NA}), and functions of two
+arguments give \code{NA} if either is \code{NA} and otherwise \code{NaN} if
+either is \code{NaN}, as base R's math functions do. When a result is
+\code{NaN} although its inputs were not (\code{simd_log(-1)},
+\code{simd_sin(Inf)}), the function warns \code{"NaNs produced"} once per
+call. Overflow to \code{Inf} and underflow to zero (subnormal results are
+produced, never flushed to zero) are not warned about. Integer and logical
+input is converted to double, an integer \code{NA} becoming
+\code{NA_real_}; complex and \code{integer64} input is not supported.
+
+\strong{Signed zeros.} Odd functions return \code{-0} for \code{-0}, as C
+does and base R did before version 4.6.0; since 4.6.0 base R returns
+\code{0} for \code{sin}, \code{tan}, \code{asin}, \code{atan}, \code{sinh},
+\code{tanh}, \code{asinh}, \code{atanh}, \code{expm1} and \code{log1p} of
+\code{-0}.}

@@ -47,10 +47,14 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_bit, 5),
   CALLDEF(C_simd_popcount_total, 3),
   CALLDEF(C_simd_convert, 3),
+  CALLDEF(C_simd_math1, 2),
+  CALLDEF(C_simd_log, 2),
+  CALLDEF(C_simd_math2, 3),
+  CALLDEF(C_simd_sincos, 1),
+  CALLDEF(C_simd_ulp_dist, 2),
   CALLDEF(C_simd_debug_fold, 6),
   CALLDEF(C_simd_debug_lgl, 4),
   CALLDEF(C_simd_debug_arith, 4),
-  CALLDEF(C_simd_debug_sleef_exp, 1),
   {NULL, NULL, 0}
 };
 

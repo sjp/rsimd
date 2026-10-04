@@ -1,6 +1,6 @@
 # The bundled SLEEF inline headers: which tiers configure built with them,
-# and the SLEEF exp of the selftest_sleef_exp slot on every tier. Elementary
-# function semantics are tested with the math functions themselves.
+# and which tier's elementary-function kernels each tier uses. Elementary
+# function semantics are tested in test-math-*.R.
 
 split_list <- function(x) {
   if (identical(x, "")) character() else strsplit(x, ",", fixed = TRUE)[[1]]
@@ -17,22 +17,6 @@ expected_owner <- function(tier) {
   c(intersect(below, sleef_tiers()), "none")[[1]]
 }
 
-# Largest error of y against libm's exp(x) in units of the last place of
-# the reference (at least the smallest subnormal), over the elements where
-# the reference is finite and not zero; the others must match exactly (NaN
-# for NaN). SLEEF's exp is within 1 ULP of the exact value and libm's
-# close to 0.5, so they can differ by up to about 1.5 ULP.
-max_ulp_error <- function(y, x) {
-  ref <- exp(x)
-  finite <- is.finite(ref) & ref != 0
-  expect_identical(is.nan(y[!finite]), is.nan(ref[!finite]))
-  expect_identical(y[!finite & !is.nan(ref)], ref[!finite & !is.nan(ref)])
-  if (!any(finite)) {
-    return(0)
-  }
-  max(abs(y[finite] - ref[finite]) / pmax(ulp(ref[finite]), 5e-324))
-}
-
 test_that("SLEEF is only reported for compiled tiers that have a header", {
   tiers <- simd_compiled_tiers()
   sleef <- sleef_tiers()
@@ -44,51 +28,37 @@ test_that("SLEEF is only reported for compiled tiers that have a header", {
   }
 })
 
-test_that("the SLEEF slot runs the tier's own kernel or fills down", {
+test_that("the math slots run the tier's own kernels or fill down", {
   res <- for_each_tier(function(tier) {
-    list(reported = simd_kernel_tiers()[["selftest_sleef_exp"]], expected = expected_owner(tier))
+    list(
+      reported = simd_kernel_tiers()[c("math1_f64", "math2_f64", "sincos_f64")],
+      expected = expected_owner(tier)
+    )
   })
   for (tier in names(res)) {
-    expect_identical(res[[tier]]$reported, res[[tier]]$expected, info = tier)
+    expect_true(all(res[[tier]]$reported == res[[tier]]$expected), info = tier)
   }
 })
 
-test_that("SLEEF exp is within 2 ULP of libm on every tier", {
+test_that("SLEEF exp is within 2 ULP of libm on every tier, at every length", {
   x <- c(
     0, -0, 1, -1, 0.5, -0.5, 1e-300, -1e-300, 5e-324, 1e-8, 20, -20, 100, -100,
     700, 709.78, -708, -745, -746, 710, Inf, -Inf, NaN,
     seq(-30, 30, length.out = 241), with_seed(13L, stats::runif(500, -740, 709))
   )
-  res <- for_each_tier(function(tier) .debug_sleef_exp(x))
-  for (tier in names(res)) {
-    expect_lte(max_ulp_error(res[[tier]], x), 2, label = paste("max ULP error on", tier))
-    # exp(0) and exp(-0) are exactly 1 and the infinities are exact.
-    expect_identical(res[[tier]][c(1, 2)], c(1, 1), info = tier)
-  }
-})
-
-test_that("SLEEF exp handles every length, including the vector tails", {
+  ref <- expect_tiers_close(simd_exp, x, ulps = 2)
+  expect_identical(ref, exp(x))
   for (n in edge_lengths()) {
-    x <- with_seed(n, stats::runif(n, -50, 50))
-    res <- for_each_tier(function(tier) .debug_sleef_exp(x))
-    for (tier in names(res)) {
-      expect_length(res[[tier]], n)
-      expect_lte(max_ulp_error(res[[tier]], x), 2, label = paste("n =", n, "on", tier))
-    }
+    expect_tiers_close(simd_exp, with_seed(n, stats::runif(n, -50, 50)), ulps = 2)
   }
 })
 
-test_that("a build without SLEEF takes exp from none on every tier", {
+test_that("a build without SLEEF takes the math kernels from none on every tier", {
   skip_if(length(sleef_tiers()) > 0, "package built with SLEEF")
-  res <- for_each_tier(function(tier) simd_kernel_tiers()[["selftest_sleef_exp"]])
+  res <- for_each_tier(function(tier) simd_kernel_tiers()[["math1_f64"]])
   expect_true(all(unlist(res) == "none"))
   x <- c(-1, 0, 1, 2.5)
   for (tier in names(res)) {
-    expect_identical(simd_with_impl(tier, .debug_sleef_exp(x)), exp(x), info = tier)
+    expect_identical(simd_with_impl(tier, simd_exp(x)), exp(x), info = tier)
   }
-})
-
-test_that(".debug_sleef_exp() checks its argument", {
-  expect_error(.debug_sleef_exp(1L), "double")
-  expect_identical(.debug_sleef_exp(double()), double())
 })

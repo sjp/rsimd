@@ -49,7 +49,7 @@
   .Call(C_simd_debug_arith, x, y, op, na_check)
 }
 
-# exp(x) through the SLEEF self-test slot: SLEEF's exp on a tier built
-# with SLEEF, else the kernel of the next lower tier that has one (libm's
-# exp in none).
-.debug_sleef_exp <- function(x) .Call(C_simd_debug_sleef_exp, x)
+# The distance between the doubles a and b in units in the last place, for
+# the accuracy tests: 0 for two NAs, two other NaNs or equal values (+0 and
+# -0 included), Inf when only one is missing or they are NA and NaN.
+.ulp_dist <- function(a, b) .Call(C_simd_ulp_dist, a, b)

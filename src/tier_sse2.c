@@ -12,5 +12,6 @@
 #include "kernels/compare.inc.c"
 #include "kernels/bitwise.inc.c"
 #include "kernels/convert.inc.c"
+#include "kernels/math.inc.c"
 #include "kernels/selftest.inc.c"
 #include "kernels/table.inc.c"

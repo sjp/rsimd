@@ -6,14 +6,14 @@ PKG_CPPFLAGS = -I. -Ivendor/simde -Ivendor/sleef @RSIMD_CPPFLAGS@
 
 OBJECTS = init.o version.o tiers.o cpu_features.o dispatch.o api_control.o rvec.o \
   api_rvec.o api_selftest.o api_reduce.o api_arith.o api_predicates.o api_bitwise.o \
-  api_convert.o @RSIMD_OBJECTS@
+  api_convert.o api_math.o @RSIMD_OBJECTS@
 
 RSIMD_DISPATCH_DEPS = rsimd_config.h tiers.h dispatch.h kernel_list.h kernel_types.h na.h
 
 RSIMD_TIER_DEPS = $(RSIMD_DISPATCH_DEPS) kernels/common.inc.h kernels/tier_info.inc.c \
   kernels/table.inc.c kernels/reduce.inc.c kernels/scan.inc.c kernels/arith.inc.c \
   kernels/logical.inc.h kernels/predicates.inc.c kernels/compare.inc.c kernels/bitwise.inc.c \
-  kernels/convert.inc.c \
+  kernels/convert.inc.c kernels/math.inc.c \
   kernels/selftest.inc.c selftest.h \
   kernels/vec_none.inc.h kernels/vec_fixed.inc.h kernels/vec_simde128.inc.h \
   kernels/vec_simde256.inc.h kernels/vec_simde512.inc.h kernels/vec_sve.inc.h
@@ -24,8 +24,8 @@ all: $(SHLIB)
 cpu_features.o: rsimd_config.h
 init.o dispatch.o api_control.o: $(RSIMD_DISPATCH_DEPS)
 init.o rvec.o api_rvec.o api_selftest.o api_reduce.o api_arith.o api_predicates.o \
-  api_bitwise.o api_convert.o: rvec.h kernel_types.h na.h
+  api_bitwise.o api_convert.o api_math.o: rvec.h kernel_types.h na.h
 api_selftest.o: $(RSIMD_DISPATCH_DEPS) selftest.h
-api_reduce.o api_arith.o api_predicates.o api_bitwise.o api_convert.o: $(RSIMD_DISPATCH_DEPS)
+api_reduce.o api_arith.o api_predicates.o api_bitwise.o api_convert.o api_math.o: $(RSIMD_DISPATCH_DEPS)
 
 @RSIMD_TIER_RULES@

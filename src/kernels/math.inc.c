@@ -1,0 +1,583 @@
+/* Elementary functions: out[i] = f(x[i]) (math1_f64), f(x[i], y[i])
+ * (math2_f64), and sin and cos together (sincos_f64), with the op codes of
+ * kernel_types.h.
+ *
+ * Missing values follow base R. A unary function returns a NaN input as it
+ * is (payload kept, so NA stays NA), as R's math1 does; atan2 and hypot
+ * give NA if either operand is NA and otherwise NaN if either is NaN, as
+ * R's math2 does; pow follows R's ^ (rsimd_pow_f64). A NaN result from
+ * operands that were not NaN sets RSIMD_EW_NAN_PRODUCED ("NaNs produced"),
+ * except for pow, since base R's ^ never warns.
+ *
+ * The none tier calls libm, as base R does, except for sinpi, cospi and
+ * tanpi, which reduce the argument exactly and then call libm's sin and
+ * cos on |t| <= 1/4 or tan on |t| < 1/2 (base R uses the platform's sinpi when there is one and
+ * a less accurate fallback otherwise), and exp2 and exp10, which are base
+ * R's 2^x and 10^x. It is the reference the SIMD tiers are tested
+ * against. The SIMD tiers call SLEEF (the RSIMD_SLEEF_* wrappers of
+ * common.inc.h) with the same reductions and special cases, and recompute
+ * with libm the rare lanes outside the range where SLEEF is accurate:
+ * sinh and cosh for |x| > 709, asinh and acosh for |x| > 1e154, and pow
+ * with an infinite operand (base R's rules there are not C's). A SIMD tier
+ * built without SLEEF leaves these slots empty, so they are filled from
+ * the next tier down, ultimately none.
+ *
+ * Signed zeros follow C and IEEE 754: f(-0) = -0 for every odd function
+ * (base R 4.6 returns +0 for some of them). sinpi of an integer is a zero
+ * with the sign of the argument; tanpi of an integer is +0, as in base R.
+ */
+
+#define RSIMD_MATH_PI 3.141592653589793
+/* pi - RSIMD_MATH_PI, the low part of pi in double-double. */
+#define RSIMD_MATH_PI_LO 1.2246467991473532e-16
+
+/* ---- scalar functions ----------------------------------------------------
+   Compiled in every tier: the none kernels use them, the SIMD tiers use
+   rsimd_rpow_f64 for fallback lanes, and the vector layer test compares
+   the SIMD kernels with them. */
+
+/* Base R's x ^ y (R_pow in R's arithmetic.c), including its special cases
+   y == 2, y == 3 or 4 with |x| <= 11, x == 0, and its rules for infinite
+   operands, which differ from C's pow: (-Inf)^0.5 and (-2)^Inf are NaN. */
+static inline double rsimd_rpow_f64(double x, double y) {
+  if (y == 2.0) return x * x;
+  if (x == 1.0 || y == 0.0) return 1.0;
+  if (x == 0.0) {
+    if (y > 0.0) return 0.0;
+    if (y < 0.0) return INFINITY;
+    return y;
+  }
+  if (x >= -11.0 && x <= 11.0) {
+    if (y == 4.0) return x * x * x * x;
+    if (y == 3.0) return x * x * x;
+  }
+  if (isfinite(x) && isfinite(y)) return pow(x, y);
+  if (isnan(x) || isnan(y)) return x + y;
+  if (isinf(x)) {
+    if (x > 0) return y < 0.0 ? 0.0 : INFINITY;
+    if (isfinite(y) && y == floor(y)) return y < 0.0 ? 0.0 : (fmod(y, 2.0) != 0 ? x : -x);
+  }
+  if (isinf(y) && x >= 0) {
+    if (y > 0) return x >= 1 ? INFINITY : 0.0;
+    return x < 1 ? INFINITY : 0.0;
+  }
+  return NAN;
+}
+
+/* x ^ y with the missing-value rule of the package's elementwise ops: 1
+   when x is 1 or y is 0 (whatever the other operand), else NA if either
+   operand is NA. */
+static inline double rsimd_pow_f64(double x, double y) {
+  if (x == 1.0 || y == 0.0) return 1.0;
+  return rsimd_na_merge_f64(rsimd_rpow_f64(x, y), x, y);
+}
+
+/* atan2 and hypot with R's math2 missing-value rule. */
+static inline double rsimd_math2_na_f64(double r, double x, double y) {
+  if (rsimd_is_na_f64(x) || rsimd_is_na_f64(y)) return rsimd_na_real();
+  if (isnan(x) || isnan(y)) return NAN;
+  return r;
+}
+
+/* sin(pi t) and cos(pi t) for |t| <= 1/4, with pi t as the double-double
+   hi + lo, so that libm's sin and cos and the final addition are the only
+   rounding errors. */
+static inline double rsimd_sinpi_small(double t) {
+  double hi = RSIMD_MATH_PI * t, lo = fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
+  return sin(hi) + cos(hi) * lo;
+}
+static inline double rsimd_cospi_small(double t) {
+  double hi = RSIMD_MATH_PI * t, lo = fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
+  return cos(hi) - sin(hi) * lo;
+}
+
+/* tan(pi t) for 0 < t < 1/2, corrected to first order for the low part
+   of pi t (within about 1 ULP, measured). */
+static inline double rsimd_tanpi_small(double t) {
+  double hi = RSIMD_MATH_PI * t, lo = fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
+  double th = tan(hi);
+  return th + (1.0 + th * th) * lo;
+}
+
+/* sin(pi x): x reduced exactly modulo 2 into (-1, 1] as base R does, exact
+   at the integers (a zero with the sign of x) and half-integers. */
+static inline double rsimd_sinpi_f64(double x) {
+  double r, a, s;
+  if (isnan(x)) return x;
+  if (isinf(x)) return NAN;
+  r = fmod(x, 2.0);
+  if (r <= -1.0) {
+    r += 2.0;
+  } else if (r > 1.0) {
+    r -= 2.0;
+  }
+  if (r == 0.0 || r == 1.0) return copysign(0.0, x);
+  a = fabs(r);
+  if (a == 0.5) {
+    s = 1.0;
+  } else {
+    if (a > 0.5) a = 1.0 - a;
+    s = a <= 0.25 ? rsimd_sinpi_small(a) : rsimd_cospi_small(0.5 - a);
+  }
+  return r < 0 ? -s : s;
+}
+
+/* cos(pi x): |x| reduced exactly modulo 2, exact at the integers and
+   half-integers (+0 there). */
+static inline double rsimd_cospi_f64(double x) {
+  double a, c;
+  int neg;
+  if (isnan(x)) return x;
+  if (isinf(x)) return NAN;
+  a = fmod(fabs(x), 2.0);
+  if (a > 1.0) a = 2.0 - a;
+  if (a == 0.5) return 0.0;
+  if (a == 0.0) return 1.0;
+  if (a == 1.0) return -1.0;
+  neg = a > 0.5;
+  if (neg) a = 1.0 - a;
+  c = a <= 0.25 ? rsimd_cospi_small(a) : rsimd_sinpi_small(0.5 - a);
+  return neg ? -c : c;
+}
+
+/* tan(pi x) as base R's tanpi: x reduced exactly modulo 1 into
+   (-1/2, 1/2], +0 at the integers, NaN at the half-integers, exactly 1 and
+   -1 at 1/4 and -1/4, otherwise tan(pi |r|) with the sign of r. */
+static inline double rsimd_tanpi_f64(double x) {
+  double r, a, t;
+  if (isnan(x)) return x;
+  if (isinf(x)) return NAN;
+  r = fmod(x, 1.0);
+  if (r <= -0.5) {
+    r += 1.0;
+  } else if (r > 0.5) {
+    r -= 1.0;
+  }
+  if (r == 0.0) return 0.0;
+  if (r == 0.5) return NAN;
+  if (r == 0.25) return 1.0;
+  if (r == -0.25) return -1.0;
+  a = fabs(r);
+  t = rsimd_tanpi_small(a);
+  return r < 0 ? -t : t;
+}
+
+/* f(x) for unary op code `op`; p is the divisor of LOGB. */
+static inline double rsimd_math1_f64(int op, double x, double p) {
+  switch (op) {
+  case RSIMD_MATH_EXP: return exp(x);
+  case RSIMD_MATH_EXP2: return rsimd_rpow_f64(2.0, x);
+  case RSIMD_MATH_EXP10: return rsimd_rpow_f64(10.0, x);
+  case RSIMD_MATH_EXPM1: return expm1(x);
+  case RSIMD_MATH_LOG: return log(x);
+  case RSIMD_MATH_LOG2: return log2(x);
+  case RSIMD_MATH_LOG10: return log10(x);
+  case RSIMD_MATH_LOG1P: return log1p(x);
+  case RSIMD_MATH_LOGB: return log(x) / p;
+  case RSIMD_MATH_CBRT: return cbrt(x);
+  case RSIMD_MATH_SIN: return sin(x);
+  case RSIMD_MATH_COS: return cos(x);
+  case RSIMD_MATH_TAN: return tan(x);
+  case RSIMD_MATH_ASIN: return asin(x);
+  case RSIMD_MATH_ACOS: return acos(x);
+  case RSIMD_MATH_ATAN: return atan(x);
+  case RSIMD_MATH_SINPI: return rsimd_sinpi_f64(x);
+  case RSIMD_MATH_COSPI: return rsimd_cospi_f64(x);
+  case RSIMD_MATH_TANPI: return rsimd_tanpi_f64(x);
+  case RSIMD_MATH_SINH: return sinh(x);
+  case RSIMD_MATH_COSH: return cosh(x);
+  case RSIMD_MATH_TANH: return tanh(x);
+  case RSIMD_MATH_ASINH: return asinh(x);
+  case RSIMD_MATH_ACOSH: return acosh(x);
+  case RSIMD_MATH_ATANH: return atanh(x);
+  default: return NAN;
+  }
+}
+
+#if RSIMD_TIER_IS(none)
+
+/* Element i of operand k as a double (an int32 NA as NA_real_). */
+static inline double rsimd_math_get(const void *p, int flags, int k, R_xlen_t i) {
+  R_xlen_t j = (flags & RSIMD_EW_SCALAR(k)) ? 0 : i;
+  if (flags & RSIMD_EW_I32(k)) {
+    int v = ((const int *) p)[j];
+    return v == RSIMD_NA_I32 ? rsimd_na_real() : (double) v;
+  }
+  return ((const double *) p)[j];
+}
+
+/* Runs out[i] = f(x[i]) over the chunk with math1's rule; f is an
+   expression in a. Double input (flags 0) has its own loop. */
+#define RSIMD_MATH1_NONE_ELT(get, f)                                             \
+  for (i = 0; i < n; i++) {                                                      \
+    double a = (get), r;                                                         \
+    if (isnan(a)) {                                                              \
+      r = a;                                                                     \
+    } else {                                                                     \
+      r = (f);                                                                   \
+      if (isnan(r)) st = RSIMD_EW_NAN_PRODUCED;                                  \
+    }                                                                            \
+    out[i] = r;                                                                  \
+  }
+#define RSIMD_MATH1_NONE_LOOP(f)                                                 \
+  if (flags == 0) {                                                              \
+    RSIMD_MATH1_NONE_ELT(((const double *) x)[i], f)                             \
+  } else {                                                                       \
+    RSIMD_MATH1_NONE_ELT(rsimd_math_get(x, flags, 0, i), f)                      \
+  }
+
+int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
+int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out) {
+  int st = 0;
+  R_xlen_t i;
+  /* The common functions get their own loops; the others go through
+     rsimd_math1_f64(). */
+  switch (op) {
+  case RSIMD_MATH_EXP: RSIMD_MATH1_NONE_LOOP(exp(a)) break;
+  case RSIMD_MATH_LOG: RSIMD_MATH1_NONE_LOOP(log(a)) break;
+  case RSIMD_MATH_SIN: RSIMD_MATH1_NONE_LOOP(sin(a)) break;
+  case RSIMD_MATH_COS: RSIMD_MATH1_NONE_LOOP(cos(a)) break;
+  case RSIMD_MATH_TANH: RSIMD_MATH1_NONE_LOOP(tanh(a)) break;
+  default: RSIMD_MATH1_NONE_LOOP(rsimd_math1_f64(op, a, p)) break;
+  }
+  return st;
+}
+
+#undef RSIMD_MATH1_NONE_LOOP
+#undef RSIMD_MATH1_NONE_ELT
+
+int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                            double *out);
+int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                            double *out) {
+  int st = 0;
+  R_xlen_t i;
+  for (i = 0; i < n; i++) {
+    double a = rsimd_math_get(x, flags, 0, i), b = rsimd_math_get(y, flags, 1, i), r;
+    switch (op) {
+    case RSIMD_MATH_POW: r = rsimd_pow_f64(a, b); break;
+    case RSIMD_MATH_ATAN2: r = rsimd_math2_na_f64(atan2(a, b), a, b); break;
+    case RSIMD_MATH_HYPOT: r = rsimd_math2_na_f64(hypot(a, b), a, b); break;
+    default: r = NAN; break;
+    }
+    if (op != RSIMD_MATH_POW && isnan(r) && !isnan(a) && !isnan(b)) st = RSIMD_EW_NAN_PRODUCED;
+    out[i] = r;
+  }
+  return st;
+}
+
+int RSIMD_KERNEL(sincos_f64)(const void *x, R_xlen_t n, int flags, double *s, double *c);
+int RSIMD_KERNEL(sincos_f64)(const void *x, R_xlen_t n, int flags, double *s, double *c) {
+  int st = 0;
+  R_xlen_t i;
+  for (i = 0; i < n; i++) {
+    double a = rsimd_math_get(x, flags, 0, i);
+    if (isnan(a)) {
+      s[i] = c[i] = a;
+    } else {
+      s[i] = sin(a);
+      c[i] = cos(a);
+      if (isnan(s[i]) || isnan(c[i])) st = RSIMD_EW_NAN_PRODUCED;
+    }
+  }
+  return st;
+}
+
+#elif defined(RSIMD_HAVE_SLEEF)
+
+/* Lanes of the vector r (of `lanes` active lanes) where `m` is set,
+   recomputed from the operands a (and b) with the scalar function f1 (or
+   f2): the fallback for lanes outside SLEEF's accurate range. */
+static inline rsimd_vf64 rsimd_math_fix1(rsimd_vf64 r, rsimd_vf64 a, rsimd_mf64 m, int lanes,
+                                         double (*f1)(double)) {
+  double ba[RSIMD_MAX_LANES_64], br[RSIMD_MAX_LANES_64], bm[RSIMD_MAX_LANES_64];
+  int j;
+  rsimd_vf64_storeu(ba, a);
+  rsimd_vf64_storeu(br, r);
+  rsimd_vf64_storeu(bm, rsimd_vf64_blend(rsimd_vf64_zero(), rsimd_vf64_set1(1.0), m));
+  for (j = 0; j < lanes; j++) {
+    if (bm[j] != 0) br[j] = f1(ba[j]);
+  }
+  return rsimd_vf64_loadu(br);
+}
+static inline rsimd_vf64 rsimd_math_fix2(rsimd_vf64 r, rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m,
+                                         int lanes, double (*f2)(double, double)) {
+  double ba[RSIMD_MAX_LANES_64], bb[RSIMD_MAX_LANES_64], br[RSIMD_MAX_LANES_64],
+    bm[RSIMD_MAX_LANES_64];
+  int j;
+  rsimd_vf64_storeu(ba, a);
+  rsimd_vf64_storeu(bb, b);
+  rsimd_vf64_storeu(br, r);
+  rsimd_vf64_storeu(bm, rsimd_vf64_blend(rsimd_vf64_zero(), rsimd_vf64_set1(1.0), m));
+  for (j = 0; j < lanes; j++) {
+    if (bm[j] != 0) br[j] = f2(ba[j], bb[j]);
+  }
+  return rsimd_vf64_loadu(br);
+}
+
+/* Lanes where |a| > t. */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_math_abs_gt(rsimd_vf64 a, double t) {
+  return rsimd_vf64_cmp_gt(rsimd_vf64_abs(a), rsimd_vf64_set1(t));
+}
+
+/* f(a) for the libm function f, recomputed in the lanes where |a| > t. */
+#define RSIMD_MATH_FIXED(r, a, t, f)                                             \
+  do {                                                                           \
+    rsimd_mf64 big_ = rsimd_math_abs_gt(a, t);                                   \
+    if (rsimd_mf64_any(big_)) r = rsimd_math_fix1(r, a, big_, lanes, f);         \
+  } while (0)
+
+/* A zero with the sign of each lane of a. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_signed_zero(rsimd_vf64 a) {
+  return rsimd_vf64_and(rsimd_vf64_set1(-0.0), a);
+}
+
+/* rsimd_sinpi_f64() lane by lane (none tier): x - 2 trunc(x / 2) is
+   fmod(x, 2) up to the sign of a zero result, exactly. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_sinpi(rsimd_vf64 x) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0), two = rsimd_vf64_set1(2.0);
+  rsimd_vf64 r = rsimd_vf64_sub(x, rsimd_vf64_mul(two, rsimd_vf64_trunc(rsimd_vf64_mul(x, rsimd_vf64_set1(0.5)))));
+  rsimd_vf64 s;
+  r = rsimd_vf64_blend(r, rsimd_vf64_add(r, two), rsimd_vf64_cmp_le(r, rsimd_vf64_set1(-1.0)));
+  r = rsimd_vf64_blend(r, rsimd_vf64_sub(r, two), rsimd_vf64_cmp_gt(r, one));
+  s = rsimd_sleef_sinpi(r);
+  return rsimd_vf64_blend(
+    s, rsimd_math_signed_zero(x),
+    rsimd_mf64_or(rsimd_vf64_cmp_eq(r, rsimd_vf64_zero()), rsimd_vf64_cmp_eq(r, one)));
+}
+
+/* rsimd_cospi_f64() lane by lane. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_cospi(rsimd_vf64 x) {
+  const rsimd_vf64 two = rsimd_vf64_set1(2.0), half = rsimd_vf64_set1(0.5);
+  rsimd_vf64 a = rsimd_vf64_abs(x);
+  a = rsimd_vf64_sub(a, rsimd_vf64_mul(two, rsimd_vf64_trunc(rsimd_vf64_mul(a, half))));
+  a = rsimd_vf64_blend(a, rsimd_vf64_sub(two, a), rsimd_vf64_cmp_gt(a, rsimd_vf64_set1(1.0)));
+  /* SLEEF is exact at 0 and 1 but gives -0 at 1/2. */
+  return rsimd_vf64_blend(rsimd_sleef_cospi(a), rsimd_vf64_zero(), rsimd_vf64_cmp_eq(a, half));
+}
+
+/* rsimd_tanpi_f64() lane by lane. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_tanpi(rsimd_vf64 x) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0), half = rsimd_vf64_set1(0.5),
+                   quarter = rsimd_vf64_set1(0.25), zero = rsimd_vf64_zero();
+  rsimd_vf64 r = rsimd_vf64_sub(x, rsimd_vf64_trunc(x)), s, c, t;
+  r = rsimd_vf64_blend(r, rsimd_vf64_add(r, one), rsimd_vf64_cmp_le(r, rsimd_vf64_neg(half)));
+  r = rsimd_vf64_blend(r, rsimd_vf64_sub(r, one), rsimd_vf64_cmp_gt(r, half));
+  rsimd_sleef_sincospi(r, &s, &c);
+  t = rsimd_vf64_div(s, c);
+  t = rsimd_vf64_blend(t, zero, rsimd_vf64_cmp_eq(r, zero));
+  t = rsimd_vf64_blend(t, rsimd_vf64_set1(NAN), rsimd_vf64_cmp_eq(r, half));
+  t = rsimd_vf64_blend(t, one, rsimd_vf64_cmp_eq(r, quarter));
+  return rsimd_vf64_blend(t, rsimd_vf64_neg(one), rsimd_vf64_cmp_eq(r, rsimd_vf64_neg(quarter)));
+}
+
+/* rsimd_pow_f64() lane by lane: SLEEF's pow for finite operands, base R's
+   special cases blended over it in reverse order of precedence, and the
+   lanes with an infinite operand recomputed by the scalar rules. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_pow(rsimd_vf64 a, rsimd_vf64 b, int lanes) {
+  const rsimd_vf64 zero = rsimd_vf64_zero(), one = rsimd_vf64_set1(1.0),
+                   inf = rsimd_vf64_set1(INFINITY);
+  rsimd_vf64 r = rsimd_sleef_pow(a, b), a3 = rsimd_vf64_mul(rsimd_vf64_mul(a, a), a);
+  rsimd_mf64 m, az = rsimd_vf64_cmp_eq(a, zero);
+  rsimd_mf64 small = rsimd_vf64_cmp_le(rsimd_vf64_abs(a), rsimd_vf64_set1(11.0));
+  r = rsimd_vf64_blend(r, a3, rsimd_mf64_and(small, rsimd_vf64_cmp_eq(b, rsimd_vf64_set1(3.0))));
+  r = rsimd_vf64_blend(r, rsimd_vf64_mul(a3, a),
+                       rsimd_mf64_and(small, rsimd_vf64_cmp_eq(b, rsimd_vf64_set1(4.0))));
+  r = rsimd_vf64_blend(r, zero, rsimd_mf64_and(az, rsimd_vf64_cmp_gt(b, zero)));
+  r = rsimd_vf64_blend(r, inf, rsimd_mf64_and(az, rsimd_vf64_cmp_lt(b, zero)));
+  m = rsimd_mf64_or(rsimd_vf64_cmp_eq(rsimd_vf64_abs(a), inf),
+                    rsimd_vf64_cmp_eq(rsimd_vf64_abs(b), inf));
+  if (rsimd_mf64_any(m)) r = rsimd_math_fix2(r, a, b, m, lanes, rsimd_rpow_f64);
+  r = rsimd_vf64_blend(r, rsimd_vf64_mul(a, a), rsimd_vf64_cmp_eq(b, rsimd_vf64_set1(2.0)));
+  m = rsimd_mf64_or(rsimd_vf64_is_nan(a), rsimd_vf64_is_nan(b));
+  if (rsimd_mf64_any(m)) {
+    r = rsimd_vf64_blend(r, rsimd_vf64_set1(NAN), m);
+    r = rsimd_vf64_na_merge(r, a, b);
+  }
+  return rsimd_vf64_blend(r, one,
+                          rsimd_mf64_or(rsimd_vf64_cmp_eq(a, one), rsimd_vf64_cmp_eq(b, zero)));
+}
+
+/* Runs `expr`, which sets the rsimd_vf64 r from a (and b), over the
+   chunk, with the loads of the elementwise kernels (arith.inc.c); `lanes`
+   is the number of active lanes. */
+#define RSIMD_MATH_LOOP(nargs, expr)                                             \
+  do {                                                                           \
+    ptrdiff_t i = 0;                                                             \
+    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                       \
+      const int lanes = (int) RSIMD_LANES_64;                                    \
+      rsimd_vf64 a = rsimd_ew_ld(x, flags, 0, bc0, i, 1), b = bc1, r;            \
+      if ((nargs) > 1) b = rsimd_ew_ld(y, flags, 1, bc1, i, 1);                  \
+      (void) b;                                                                  \
+      (void) lanes;                                                              \
+      expr;                                                                      \
+      rsimd_vf64_storeu(out + i, r);                                             \
+    }                                                                            \
+    if (i < n) {                                                                 \
+      rsimd_p64 pg = rsimd_p64_while(i, n);                                      \
+      const int lanes = rsimd_p64_count(pg);                                     \
+      rsimd_vf64 a = rsimd_ew_ld_p(x, flags, 0, bc0, i, pg, 1), b = bc1, r;      \
+      if ((nargs) > 1) b = rsimd_ew_ld_p(y, flags, 1, bc1, i, pg, 1);            \
+      (void) b;                                                                  \
+      (void) lanes;                                                              \
+      expr;                                                                      \
+      rsimd_vf64_storeu_p(pg, out + i, r);                                       \
+    }                                                                            \
+  } while (0)
+
+/* Finishes r = f(a) with math1's rule: a NaN input is returned as it is,
+   and a NaN result from any other input sets the status. Every function
+   gives NaN for a NaN input, so only a vector with a NaN result needs
+   either. */
+#define RSIMD_MATH1_FINISH()                                                     \
+  do {                                                                           \
+    rsimd_mf64 rn_ = rsimd_vf64_is_nan(r);                                       \
+    if (rsimd_mf64_any(rn_)) {                                                   \
+      rsimd_mf64 in_ = rsimd_vf64_is_nan(a);                                     \
+      if (rsimd_mf64_any(rsimd_mf64_andnot(in_, rn_))) st = RSIMD_EW_NAN_PRODUCED; \
+      r = rsimd_vf64_blend(r, a, in_);                                           \
+    }                                                                            \
+  } while (0)
+
+#define RSIMD_MATH1_RESULT(e)                                                    \
+  do {                                                                           \
+    r = (e);                                                                     \
+    RSIMD_MATH1_FINISH();                                                        \
+  } while (0)
+
+/* As RSIMD_MATH1_RESULT, with the lanes where |a| > t recomputed by the
+   libm function f. */
+#define RSIMD_MATH1_FIXED(e, t, f)                                               \
+  do {                                                                           \
+    r = (e);                                                                     \
+    RSIMD_MATH_FIXED(r, a, t, f);                                                \
+    RSIMD_MATH1_FINISH();                                                        \
+  } while (0)
+
+int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
+int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out) {
+  const void *y = NULL;
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1), bc1 = rsimd_vf64_zero();
+  const rsimd_vf64 vp = rsimd_vf64_set1(p);
+  int st = 0;
+  (void) y;
+  switch (op) {
+  case RSIMD_MATH_EXP: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_exp(a))); break;
+  case RSIMD_MATH_EXP2: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_exp2(a))); break;
+  case RSIMD_MATH_EXP10: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_exp10(a))); break;
+  case RSIMD_MATH_EXPM1: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_expm1(a))); break;
+  case RSIMD_MATH_LOG: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_log(a))); break;
+  case RSIMD_MATH_LOG2: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_log2(a))); break;
+  case RSIMD_MATH_LOG10: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_log10(a))); break;
+  case RSIMD_MATH_LOG1P: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_log1p(a))); break;
+  case RSIMD_MATH_LOGB:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_vf64_div(rsimd_sleef_log(a), vp)));
+    break;
+  case RSIMD_MATH_CBRT: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_cbrt(a))); break;
+  case RSIMD_MATH_SIN: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_sin(a))); break;
+  case RSIMD_MATH_COS: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_cos(a))); break;
+  case RSIMD_MATH_TAN: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_tan(a))); break;
+  case RSIMD_MATH_ASIN: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_asin(a))); break;
+  case RSIMD_MATH_ACOS: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_acos(a))); break;
+  case RSIMD_MATH_ATAN: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_atan(a))); break;
+  case RSIMD_MATH_SINPI: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_sinpi(a))); break;
+  case RSIMD_MATH_COSPI: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_cospi(a))); break;
+  case RSIMD_MATH_TANPI: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_tanpi(a))); break;
+  case RSIMD_MATH_SINH:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_FIXED(rsimd_sleef_sinh(a), 709.0, sinh));
+    break;
+  case RSIMD_MATH_COSH:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_FIXED(rsimd_sleef_cosh(a), 709.0, cosh));
+    break;
+  case RSIMD_MATH_TANH: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_tanh(a))); break;
+  case RSIMD_MATH_ASINH:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_FIXED(rsimd_sleef_asinh(a), 1e154, asinh));
+    break;
+  case RSIMD_MATH_ACOSH:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_FIXED(rsimd_sleef_acosh(a), 1e154, acosh));
+    break;
+  case RSIMD_MATH_ATANH: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_sleef_atanh(a))); break;
+  default: break;
+  }
+  return st;
+}
+
+/* r = f(a, b) with math2's rule: NA if either operand is NA, else NaN if
+   either is NaN; a NaN result from operands that are not NaN sets the
+   status. */
+#define RSIMD_MATH2_RESULT(e)                                                    \
+  do {                                                                           \
+    rsimd_mf64 rn_, in_;                                                         \
+    r = (e);                                                                     \
+    rn_ = rsimd_vf64_is_nan(r);                                                  \
+    in_ = rsimd_mf64_or(rsimd_vf64_is_nan(a), rsimd_vf64_is_nan(b));             \
+    if (rsimd_mf64_any(rsimd_mf64_or(rn_, in_))) {                               \
+      if (rsimd_mf64_any(rsimd_mf64_andnot(in_, rn_))) st = RSIMD_EW_NAN_PRODUCED; \
+      r = rsimd_vf64_na_merge(rsimd_vf64_blend(r, rsimd_vf64_set1(NAN), in_), a, b); \
+    }                                                                            \
+  } while (0)
+
+int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                            double *out);
+int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                            double *out) {
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1), bc1 = rsimd_ew_bcast(y, flags, 1, 1);
+  int st = 0;
+  switch (op) {
+  case RSIMD_MATH_POW: RSIMD_MATH_LOOP(2, r = rsimd_math_pow(a, b, lanes)); break;
+  case RSIMD_MATH_ATAN2: RSIMD_MATH_LOOP(2, RSIMD_MATH2_RESULT(rsimd_sleef_atan2(a, b))); break;
+  case RSIMD_MATH_HYPOT: RSIMD_MATH_LOOP(2, RSIMD_MATH2_RESULT(rsimd_sleef_hypot(a, b))); break;
+  default: break;
+  }
+  return st;
+}
+
+int RSIMD_KERNEL(sincos_f64)(const void *x, R_xlen_t n, int flags, double *s, double *c);
+int RSIMD_KERNEL(sincos_f64)(const void *x, R_xlen_t n, int flags, double *s, double *c) {
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1);
+  int st = 0;
+  ptrdiff_t i = 0;
+/* sin and cos of a into vs and vc, with math1's rule for each. */
+#define RSIMD_MATH_SINCOS(a, vs, vc)                                             \
+  do {                                                                           \
+    rsimd_mf64 in_ = rsimd_vf64_is_nan(a);                                       \
+    rsimd_sleef_sincos(a, &vs, &vc);                                             \
+    if (rsimd_mf64_any(rsimd_mf64_andnot(                                        \
+          in_, rsimd_mf64_or(rsimd_vf64_is_nan(vs), rsimd_vf64_is_nan(vc))))) {  \
+      st = RSIMD_EW_NAN_PRODUCED;                                                \
+    }                                                                            \
+    vs = rsimd_vf64_blend(vs, a, in_);                                           \
+    vc = rsimd_vf64_blend(vc, a, in_);                                           \
+  } while (0)
+  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
+    rsimd_vf64 a = rsimd_ew_ld(x, flags, 0, bc0, i, 1), vs, vc;
+    RSIMD_MATH_SINCOS(a, vs, vc);
+    rsimd_vf64_storeu(s + i, vs);
+    rsimd_vf64_storeu(c + i, vc);
+  }
+  if (i < n) {
+    rsimd_p64 pg = rsimd_p64_while(i, n);
+    rsimd_vf64 a = rsimd_ew_ld_p(x, flags, 0, bc0, i, pg, 1), vs, vc;
+    RSIMD_MATH_SINCOS(a, vs, vc);
+    rsimd_vf64_storeu_p(pg, s + i, vs);
+    rsimd_vf64_storeu_p(pg, c + i, vc);
+  }
+#undef RSIMD_MATH_SINCOS
+  return st;
+}
+
+#undef RSIMD_MATH_LOOP
+#undef RSIMD_MATH1_FINISH
+#undef RSIMD_MATH1_RESULT
+#undef RSIMD_MATH1_FIXED
+#undef RSIMD_MATH2_RESULT
+#undef RSIMD_MATH_FIXED
+
+#else /* a SIMD tier without SLEEF: the slots are filled from below */
+#define RSIMD_SKIP_math1_f64 1
+#define RSIMD_SKIP_math2_f64 1
+#define RSIMD_SKIP_sincos_f64 1
+#endif
+
+#undef RSIMD_MATH_PI
+#undef RSIMD_MATH_PI_LO

@@ -4,9 +4,10 @@
 # comparison, bitwise and conversion kernels (src/kernels/reduce.inc.c,
 # scan.inc.c, arith.inc.c, predicates.inc.c, compare.inc.c, bitwise.inc.c,
 # convert.inc.c) on every tier, against plain C references
-# (tools/vector_layer_test.c), and the SLEEF elementary-function wrappers
-# on the tiers that have a SLEEF header (unless RSIMD_DISABLE_SLEEF=1),
-# against C99 libm.
+# (tools/vector_layer_test.c), and, on the tiers that have a SLEEF header
+# (unless RSIMD_DISABLE_SLEEF=1), the SLEEF elementary-function wrappers
+# against long double libm and the elementary-function kernels
+# (src/kernels/math.inc.c) against the none tier's scalar forms.
 #
 # Each tier is compiled with its flags from tools/tiers.txt plus
 # -ffp-contract=off and -Wall -Wextra -pedantic -Werror (R's headers, which

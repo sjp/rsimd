@@ -96,3 +96,14 @@
   functions when its header compiles (1.0-ULP variants, 0.5-ULP for `sinpi`,
   `cospi` and `hypot`); `RSIMD_DISABLE_SLEEF=1` turns them off. Every tier is
   compiled with `-ffp-contract=off`.
+* Added the elementary functions `simd_exp()`, `simd_exp2()`, `simd_exp10()`,
+  `simd_expm1()`, `simd_log()` (with a single `base`), `simd_log2()`,
+  `simd_log10()`, `simd_log1p()`, `simd_pow()`, `simd_cbrt()`, `simd_hypot()`,
+  `simd_sin()`, `simd_cos()`, `simd_tan()`, `simd_sincos()`, `simd_asin()`,
+  `simd_acos()`, `simd_atan()`, `simd_atan2()`, `simd_sinpi()`, `simd_cospi()`,
+  `simd_tanpi()`, `simd_sinh()`, `simd_cosh()`, `simd_tanh()`, `simd_asinh()`,
+  `simd_acosh()` and `simd_atanh()`, using SLEEF on the SIMD tiers and the C
+  math library on `"none"`. They follow base R's rules for missing values and
+  its single "NaNs produced" warning; `simd_pow()` reproduces base R's `^`
+  exactly at its special cases, and the pi functions are exact at integers and
+  half-integers. Odd functions keep `-0` (base R 4.6 returns `0` for some).
