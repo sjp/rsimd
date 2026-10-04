@@ -52,11 +52,20 @@ jobs:
 
       - name: Install the LaTeX packages the vignettes use
         run: |
+          # tlmgr does not install a package's dependencies, so this is the
+          # full set of packages the vignettes load, directly or through
+          # Sweave.sty, graphicx and hyperref (from pdflatex -recorder).
+          pkgs="lm ec fontname geometry hyperref tools url fancyvrb etoolbox
+            graphics graphics-cfg graphics-def epstopdf-pkg grfext
+            bigintcalc bitset gettitlestring hycolor iftex infwarerr intcalc
+            kvdefinekeys kvoptions kvsetkeys ltxcmds pdfescape pdftexcmds
+            refcount rerunfilecheck stringenc uniquecounter"
+          pkgs=$(echo $pkgs)
           # On Windows tlmgr is a batch file, which bash cannot run itself.
           if [ "$RUNNER_OS" = Windows ]; then
-            cmd //c "tlmgr install lm geometry hyperref tools"
+            cmd //c "tlmgr install $pkgs"
           else
-            tlmgr install lm geometry hyperref tools
+            tlmgr install $pkgs
           fi
 
       - name: Install qpdf and Ghostscript for compacting the vignette PDF
@@ -81,7 +90,14 @@ jobs:
 
       - name: Show the CPU features and tiers of this runner
         if: always()
+        shell: bash
         run: |
+          # When the build or check failed early there is no installed
+          # package to load, and that failure is already reported above.
+          if [ ! -d check/rsimd.Rcheck/rsimd ]; then
+            echo "rsimd was not installed by R CMD check; skipping."
+            exit 0
+          fi
           Rscript -e '.libPaths(c("check/rsimd.Rcheck", .libPaths())); library(rsimd)
             str(simd_cpu_features()); print(simd_available())'
 
