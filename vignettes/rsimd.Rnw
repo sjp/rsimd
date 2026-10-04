@@ -1,0 +1,98 @@
+%\VignetteIndexEntry{Getting started with rsimd}
+%\VignetteEngine{utils::Sweave}
+%\VignetteEncoding{UTF-8}
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\pkg}[1]{\textbf{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Getting started with \pkg{rsimd}}
+\author{Simon Potter}
+
+\begin{document}
+\SweaveOpts{concordance=FALSE}
+\maketitle
+
+<<setup, echo=FALSE>>=
+options(width = 72, prompt = "R> ", continue = "+  ")
+@
+
+\section{Introduction}
+
+\pkg{rsimd} computes common operations on R's atomic vectors, such as sums,
+elementwise arithmetic, predicates and elementary functions, with the single
+instruction, multiple data (SIMD) instructions of x86-64 and arm64 CPUs.
+Each function is a drop-in counterpart of a base R function, named
+\code{simd\_} followed by what it computes, and follows base R's rules for
+result types, missing values and warnings, with any differences documented
+on its help page. The package detects the CPU's instruction sets when it is
+loaded and uses the best implementation it supports; \code{simd\_current()}
+names it and \code{simd\_available()} lists the alternatives, ending with the
+plain C implementation \code{"none"}.
+
+<<intro>>=
+library(rsimd)
+simd_current()
+x <- c(1.5, 2.5, NA, 4)
+simd_sum(x, na.rm = TRUE)
+simd_add(x, 10)
+@
+
+\section{Complex numbers}
+
+R stores a complex vector as pairs of doubles: the real part, then the
+imaginary part. \pkg{rsimd} supports the complex operations that treat the
+two parts separately:
+
+\begin{itemize}
+\item \code{simd\_add()}, \code{simd\_sub()} and \code{simd\_neg()};
+\item \code{simd\_sum()}, in every \code{simd\_precision()} mode;
+\item \code{simd\_conj()}, \code{simd\_re()} and \code{simd\_im()};
+\item the predicates \code{simd\_is\_na()}, \code{simd\_is\_nan()},
+  \code{simd\_is\_finite()} and \code{simd\_is\_infinite()}, with their
+  \code{\_any} and \code{\_all} forms, and \code{simd\_any\_na()},
+  \code{simd\_count\_na()} and \code{simd\_which\_na()}.
+\end{itemize}
+
+A double, integer or logical operand of \code{simd\_add()} or
+\code{simd\_sub()} is converted to complex, and a length-one operand is
+reused for every element, as in base R:
+
+<<complex-arith>>=
+z <- complex(real = c(1, -2, 3), imaginary = c(0.5, 1, -1))
+simd_add(z, 1i)
+simd_sub(c(10, 20, 30), z)
+simd_conj(z)
+simd_re(z)
+simd_sum(z)
+@
+
+Missing values propagate part by part, so a sum can have a missing real part
+and a known imaginary part, exactly as with \code{sum()}. A complex number
+is missing for \code{is.na()} when either part is, so \code{na.rm = TRUE}
+removes the whole element:
+
+<<complex-na>>=
+w <- c(1 + 2i, NA, 3 + 1i)
+simd_im(w)
+simd_sum(w)
+Im(simd_sum(w))
+simd_sum(w, na.rm = TRUE)
+simd_is_na(complex(real = 1, imaginary = NaN))
+@
+
+The other functions reject complex input with an error, including
+multiplication and division, \code{Mod()}, \code{Arg()}, comparisons and the
+elementary functions. These need the two parts of each number to interact,
+and are planned for a later version.
+
+<<complex-unsupported>>=
+tryCatch(simd_mul(z, z), error = conditionMessage)
+@
+
+\end{document}

@@ -3,12 +3,16 @@
 # Are a and b the same values: same type and length, missing values of the
 # same kind (NA or NaN) in the same places, and every other element
 # identical bit for bit (so 0 and -0 differ)? Attributes are compared too.
+# Complex values are compared part by part.
 same_values <- function(a, b) {
   if (!identical(typeof(a), typeof(b)) || length(a) != length(b)) {
     return(FALSE)
   }
   if (!identical(attributes(a), attributes(b))) {
     return(FALSE)
+  }
+  if (is.complex(a)) {
+    return(same_values(Re(a), Re(b)) && same_values(Im(a), Im(b)))
   }
   if (!is.double(a)) {
     return(identical(a, b))
@@ -28,6 +32,11 @@ first_difference <- function(a, b) {
   }
   if (!identical(attributes(a), attributes(b))) {
     return("attributes differ")
+  }
+  if (is.complex(a)) {
+    part <- if (same_values(Re(a), Re(b))) "imaginary" else "real"
+    f <- if (part == "real") Re else Im
+    return(paste(part, "part,", first_difference(f(a), f(b))))
   }
   kind <- function(v) {
     if (is.double(v)) {

@@ -119,13 +119,10 @@ test_that("attributes are dropped and unsupported types rejected", {
   x <- c(a = 1, b = NA)
   expect_identical(simd_is_na(x), c(FALSE, TRUE))
   expect_identical(simd_is_na(matrix(c(1L, NA), 1)), c(FALSE, TRUE))
-  expect_error(simd_is_na(1i), "simd_is_na() does not support 'x' of type complex yet",
+  expect_error(simd_is_negative(1i), "simd_is_negative() does not support 'x' of type complex",
     fixed = TRUE
   )
-  expect_error(simd_is_nan_any(1i), "does not support 'x' of type complex yet", fixed = TRUE)
-  expect_error(simd_is_finite(1i), "simd_is_finite() does not support 'x' of type complex",
-    fixed = TRUE
-  )
+  expect_error(simd_is_zero_any(1i), "does not support 'x' of type complex$")
   expect_error(simd_is_zero("a"), "must be an atomic vector")
   expect_error(simd_is_na(factor("a")), "must be an atomic vector")
 })

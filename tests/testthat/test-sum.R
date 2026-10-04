@@ -238,7 +238,10 @@ test_that("na_check = FALSE gives the same result on NA-free input", {
 })
 
 test_that("simd_sum validates its arguments", {
-  expect_error(simd_sum(1i), "simd_sum() does not support 'x' of type complex yet", fixed = TRUE)
+  expect_error(simd_sum(structure(0, class = "integer64")),
+    "simd_sum() does not support 'x' of type integer64 yet",
+    fixed = TRUE
+  )
   expect_error(simd_sum(as.raw(1)), "invalid 'type' (raw) of argument", fixed = TRUE)
   expect_error(simd_sum("a"), "'x' must be an atomic vector", fixed = TRUE)
   expect_error(simd_sum(factor("a")), "not factor", fixed = TRUE)

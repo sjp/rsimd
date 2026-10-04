@@ -30,7 +30,7 @@
  *                     is_na reduce_add reduce_min reduce_max
  *   rsimd_vf64 also   div fma abs neg sqrt floor ceil trunc rint cmp_ne cmp_le cmp_ge
  *                     is_nan as_vi64 loadu_i32 loadu_i32_p storeu_i32
- *                     storeu_i32_p
+ *                     storeu_i32_p uzp_even uzp_odd
  *   rsimd_vi32 also   mulhi sll srl sra loadu_u8 loadu_u8_p storeu_u8
  *                     storeu_u8_p
  *   rsimd_vi64 also   as_vf64 loadu_i32 loadu_i32_p storeu_i32 storeu_i32_p
@@ -72,6 +72,9 @@
  *     reduce_max are unspecified when a lane is NaN.
  *   - Mask any/all/count look at every lane, so the lanes a predicated load
  *     filled with its fill value count too: pick a neutral fill value.
+ *   - uzp_even(a, b) and uzp_odd(a, b) are the even and the odd lanes of
+ *     the concatenation a:b (on the none tier a and b), which deinterleave
+ *     the real and imaginary parts of complex numbers loaded as doubles.
  *   - Prefix scans (sse2, avx2, avx512, neon only; not none or the SVE
  *     tiers): rsimd_vf64_shift_up(v, k, fill) moves lane j to lane j + k
  *     for a power of two k < RSIMD_WIDTH_F64 and takes lanes 0 .. k - 1
@@ -250,6 +253,8 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VF64_REDUCE_MIN rsimd_vf64_reduce_min
 #define RSIMD_VF64_REDUCE_MAX rsimd_vf64_reduce_max
 #define RSIMD_VF64_AS_VI64 rsimd_vf64_as_vi64
+#define RSIMD_VF64_UZP_EVEN rsimd_vf64_uzp_even
+#define RSIMD_VF64_UZP_ODD rsimd_vf64_uzp_odd
 #if !RSIMD_TIER_IS(none) && !RSIMD_TIER_IS(sve) && !RSIMD_TIER_IS(sve2)
 #define RSIMD_VF64_SHIFT_UP rsimd_vf64_shift_up
 #define RSIMD_VF64_BCAST_LAST rsimd_vf64_bcast_last

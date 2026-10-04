@@ -83,6 +83,15 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
   return simde_mm_or_pd(simde_mm_and_pd(m, b), simde_mm_andnot_pd(m, a));
 }
+/* Deinterleave: lanes 0, 2, 4 ... (uzp_even) or 1, 3, 5 ... (uzp_odd) of
+   the concatenation a:b, so the real and the imaginary parts of the
+   complex numbers held in a and then b. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm_unpacklo_pd(a, b);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm_unpackhi_pd(a, b);
+}
 /* Lane moves for prefix scans: lanes shifted up by k (k = 1 here), with
    the lanes of `fill` below k; the last lane in every lane; lane 0. */
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {

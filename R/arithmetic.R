@@ -3,9 +3,12 @@
 # calls one of four entry points with the op's name; the C side applies the
 # broadcast rule, picks the kernel and warns.
 
-# Functions that will take complex or integer64 operands: their messages
-# say "yet".
-.ew_later_complex <- c("simd_add", "simd_sub", "simd_neg")
+# Functions that take complex operands. A double, integer or logical
+# operand of a binary one is converted to complex when the other operand
+# is complex, as in base R.
+.ew_complex <- c("simd_add", "simd_sub", "simd_neg")
+
+# Functions that will take integer64 operands: their messages say "yet".
 .ew_later_i64 <- c(
   "simd_add", "simd_sub", "simd_mul", "simd_add_wrap", "simd_sub_wrap", "simd_mul_wrap",
   "simd_neg", "simd_abs", "simd_neg_wrap", "simd_abs_wrap", "simd_idiv", "simd_mod",
@@ -15,12 +18,20 @@
 # Checks every operand in `args` (a named list) for function `fun`; the
 # _wrap ops (`wrap = TRUE`) also reject doubles.
 .ew_check <- function(fun, args, wrap = FALSE) {
-  unsupported <- c("integer64", "complex", if (wrap) "double")
-  later <- c(
-    if (fun %in% .ew_later_complex) "complex",
-    if (fun %in% .ew_later_i64) "integer64"
-  )
+  cplx <- fun %in% .ew_complex
+  unsupported <- c("integer64", if (!cplx) "complex", if (wrap) "double")
+  later <- if (fun %in% .ew_later_i64) "integer64"
+  if (cplx && length(args) == 2L) .check_complex_i64(fun, args[[1L]], args[[2L]])
   for (arg in names(args)) .check_supported(args[[arg]], fun, unsupported, later, arg)
+  invisible()
+}
+
+# Complex operands do not combine with integer64 ones.
+.check_complex_i64 <- function(fun, x, y) {
+  i64 <- inherits(x, "integer64") || inherits(y, "integer64")
+  if (i64 && (is.complex(x) || is.complex(y))) {
+    stop(fun, "() cannot combine complex and integer64 operands", call. = FALSE)
+  }
   invisible()
 }
 
@@ -35,6 +46,12 @@
   args <- list(x, y)
   names(args) <- names
   .ew_check(fun, args, wrap)
+  # A raw operand is left for the C side, which gives base R's message.
+  if ((is.complex(x) || is.complex(y)) && !is.raw(x) && !is.raw(y)) {
+    p <- .promote_pair(x, y)
+    x <- p$x
+    y <- p$y
+  }
   .Call(C_simd_ew2, x, y, op, na_check)
 }
 

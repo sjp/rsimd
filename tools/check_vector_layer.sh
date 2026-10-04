@@ -3,7 +3,7 @@
 # vector forms of src/na.h and the reduction, scan, elementwise, predicate,
 # comparison, bitwise and conversion kernels (src/kernels/reduce.inc.c,
 # scan.inc.c, arith.inc.c, predicates.inc.c, compare.inc.c, bitwise.inc.c,
-# convert.inc.c) on every tier, against plain C references
+# convert.inc.c, complex.inc.c) on every tier, against plain C references
 # (tools/vector_layer_test.c), and, on the tiers that have a SLEEF header
 # (unless RSIMD_DISABLE_SLEEF=1), the SLEEF elementary-function wrappers
 # against long double libm and the elementary-function kernels

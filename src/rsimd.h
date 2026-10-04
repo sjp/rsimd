@@ -66,6 +66,10 @@ SEXP C_simd_ulp_dist(SEXP a, SEXP b);
 SEXP C_simd_softmax(SEXP x, SEXP precision);
 SEXP C_simd_log_softmax(SEXP x, SEXP precision);
 
+/* complex numbers: Conj, Re and Im (the complex paths of the other entry
+   points are in api_complex.h) */
+SEXP C_simd_cplx(SEXP z, SEXP op);
+
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);

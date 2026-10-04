@@ -15,7 +15,8 @@
  * broadcast and int32 operands, and so are the predicate, comparison,
  * logical, bitwise and conversion kernels (src/kernels/predicates.inc.c,
  * compare.inc.c, bitwise.inc.c, convert.inc.c), against the scalar forms
- * those files define for the none tier. On tiers built with SLEEF the
+ * those files define for the none tier, and so are the complex kernels
+ * (src/kernels/complex.inc.c). On tiers built with SLEEF the
  * elementary-function wrappers are compared with long double libm, and the
  * elementary-function kernels (src/kernels/math.inc.c) with the scalar
  * forms that file defines for the none tier, and the softmax passes
@@ -30,6 +31,7 @@
 #include "kernels/scan.inc.c"
 #include "kernels/arith.inc.c"
 #include "kernels/predicates.inc.c"
+#include "kernels/complex.inc.c"
 #include "kernels/compare.inc.c"
 #include "kernels/bitwise.inc.c"
 #include "kernels/convert.inc.c"
@@ -2499,6 +2501,160 @@ static void test_bytes_exhaustive(void) {
   }
 }
 
+/* ---- Complex kernels ------------------------------------------------------ */
+
+#ifndef RSIMD_NO_F64_SIMD
+static Rcomplex cz[N + 1], czout[N + 1];
+static double cre[N + 1], cim[N + 1];
+
+/* The layer's deinterleave on two full vectors. */
+static void test_uzp(void) {
+  ptrdiff_t W = RSIMD_LANES_64, j;
+  double a[2 * RSIMD_MAX_LANES_64], e[RSIMD_MAX_LANES_64 + 1], o[RSIMD_MAX_LANES_64 + 1];
+  for (j = 0; j < 2 * W; j++) a[j] = (double) j;
+  e[W] = o[W] = SENTINEL_F64;
+  rsimd_vf64_storeu(e, rsimd_vf64_uzp_even(rsimd_vf64_loadu(a), rsimd_vf64_loadu(a + W)));
+  rsimd_vf64_storeu(o, rsimd_vf64_uzp_odd(rsimd_vf64_loadu(a), rsimd_vf64_loadu(a + W)));
+  for (j = 0; j < W; j++) {
+    check_int("uzp_even", W, j, (long) e[j], (long) (2 * j));
+    check_int("uzp_odd", W, j, (long) o[j], (long) (2 * j + 1));
+  }
+}
+
+/* Complex numbers from the reduction inputs: rd[i] and another element of
+   rd, so that NA and NaN turn up in either part or both. */
+static void fill_complex(void) {
+  int i;
+  for (i = 0; i < N; i++) {
+    cz[i].r = rd[i];
+    cz[i].i = rd[(i * 7 + 3) % N];
+  }
+}
+
+static int same_or_nan(double a, double b) { return bits(a) == bits(b) || (isnan(a) && isnan(b)); }
+
+static void test_complex(ptrdiff_t n) {
+  static const int ops[] = {RSIMD_PRED_NA, RSIMD_PRED_NAN, RSIMD_PRED_FINITE, RSIMD_PRED_INFINITE};
+  int variant, k, mode, narm, check, prec, way;
+  char what[64];
+  ptrdiff_t i;
+  for (variant = 0; variant < 4; variant++) {
+    fill_reduce(variant);
+    fill_complex();
+
+    /* conj: bit-exact, the imaginary sign flipped */
+    for (i = 0; i <= n; i++) czout[i].r = czout[i].i = SENTINEL_F64;
+    RSIMD_KERNEL(conj_c128)(cz, n, czout);
+    for (i = 0; i < n; i++) {
+      n_checks++;
+      if (bits(czout[i].r) != bits(cz[i].r) ||
+          bits(czout[i].i) != (bits(cz[i].i) ^ UINT64_C(0x8000000000000000))) {
+        fail("conj_c128", n, i, "mismatch");
+      }
+    }
+    n_checks++;
+    if (bits(czout[n].r) != bits(SENTINEL_F64)) fail("conj_c128", n, n, "wrote past the end");
+
+    /* real and imaginary parts */
+    for (k = 0; k < 2; k++) {
+      for (i = 0; i < n; i++) fref[i] = k ? cz[i].i : cz[i].r;
+      fout[n] = SENTINEL_F64;
+      RSIMD_KERNEL(part_c128)(k, cz, n, fout);
+      check_f64(k ? "part_c128 im" : "part_c128 re", n, fout, fref, 1);
+    }
+
+    /* predicates */
+    for (k = 0; k < 4; k++) {
+      int want_any = 0, want_all = 1;
+      for (i = 0; i < n; i++) {
+        iref[i] = rsimd_pred_c128_1(ops[k], cz[i]);
+        want_any |= iref[i];
+        want_all &= iref[i];
+      }
+      iout[n] = SENTINEL_I32;
+      snprintf(what, sizeof what, "pred_c128 op%d v%d", ops[k], variant);
+      RSIMD_KERNEL(pred_c128)(ops[k], cz, n, RSIMD_PRED_ELT, iout);
+      check_i32(what, n, iout, iref);
+      check_int(what, n, -1, RSIMD_KERNEL(pred_c128)(ops[k], cz, n, RSIMD_PRED_ANY, NULL), want_any);
+      check_int(what, n, -2, RSIMD_KERNEL(pred_c128)(ops[k], cz, n, RSIMD_PRED_ALL, NULL), want_all);
+    }
+
+    /* missing-value scans */
+    for (mode = 0; mode < 3; mode++) {
+      rsimd_reduce_result r;
+      long cnt = 0;
+      int any = 0;
+      for (i = 0; i < n; i++) {
+        if (isnan(cz[i].r) || isnan(cz[i].i)) iref[cnt++] = (int) (i + 1);
+      }
+      any = cnt > 0;
+      reduce_init(&r, 0.0);
+      r.i64 = 0;
+      snprintf(what, sizeof what, "na_c128 mode%d v%d", mode, variant);
+      RSIMD_KERNEL(na_c128)(cz, n, mode, 0, iout, &r);
+      if (mode == RSIMD_NAMODE_ANY) {
+        check_int(what, n, 0, r.saw_na, any);
+      } else if (mode == RSIMD_NAMODE_COUNT) {
+        check_int(what, n, 0, (long) r.i64, cnt);
+      } else {
+        check_int(what, n, 0, (long) r.i64, cnt);
+        for (i = 0; i < cnt; i++) check_int(what, n, i + 1, iout[i], iref[i]);
+      }
+    }
+
+    /* sum: each part as the scalar fold of that part (the values are exact
+       in any order, so only Inf - Inf can differ, as NaN) */
+    for (narm = 0; narm < 2; narm++) {
+      for (check = 0; check < 2; check++) {
+        for (prec = 0; prec < 3; prec++) {
+          rsimd_opts o = {narm, check, prec}, po = {0, check, prec};
+          rsimd_reduce_result r[2], want[2];
+          ptrdiff_t removed = 0;
+          if (!check && !narm && (variant == 1 || variant == 3)) continue;
+          for (i = 0; i < n; i++) {
+            cre[i] = cz[i].r;
+            cim[i] = cz[i].i;
+            if (narm && (isnan(cre[i]) || isnan(cim[i]))) {
+              cre[i] = cim[i] = 0.0;
+              removed++;
+            }
+          }
+          if (narm) po.na_check = 0;
+          reduce_init(&want[0], 0.0);
+          reduce_init(&want[1], 0.0);
+          rsimd_fold_f64(cre, NULL, n, RSIMD_TERM_X, &want[0], &po);
+          rsimd_fold_f64(cim, NULL, n, RSIMD_TERM_X, &want[1], &po);
+          want[0].count -= removed;
+          want[1].count -= removed;
+#define REF_CHECK                                                                         \
+  for (k = 0; k < 2; k++) {                                                               \
+    snprintf(what, sizeof what, "sum_c128 part%d v%d narm%d chk%d prec%d way%d", k, variant, \
+             narm, check, prec, way);                                                     \
+    check_flags(what, n, &r[k], &want[k]);                                                \
+    n_checks++;                                                                           \
+    if (!same_or_nan(rsimd_reduce_value(&r[k], prec), rsimd_reduce_value(&want[k], prec))) { \
+      fail(what, n, 0, "sum differs");                                                    \
+    }                                                                                     \
+  }
+          /* Pairwise chunks must start at a multiple of the leaf size. */
+          for (way = 0; way < (prec == RSIMD_PREC_PAIRWISE ? 1 : 2); way++) {
+            ptrdiff_t kk = way ? n / 3 : n, off, len;
+            reduce_init(&r[0], 0.0);
+            reduce_init(&r[1], 0.0);
+            for (off = 0; off < n; off += len) {
+              len = off < kk ? kk - off : n - off;
+              RSIMD_KERNEL(sum_c128)(cz + off, len, r, &o);
+            }
+            REF_CHECK;
+          }
+#undef REF_CHECK
+        }
+      }
+    }
+  }
+}
+#endif
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
@@ -2522,6 +2678,9 @@ int main(void) {
     test_scan(n);
     test_arith(n);
     test_logical(n);
+#ifndef RSIMD_NO_F64_SIMD
+    test_complex(n);
+#endif
   }
   test_bytes_exhaustive();
 #ifndef RSIMD_NO_F64_SIMD
@@ -2529,6 +2688,7 @@ int main(void) {
 #endif
 #ifndef RSIMD_NO_F64_SIMD
   test_f64_horizontal();
+  test_uzp();
 #endif
   test_int_horizontal();
 #ifdef RSIMD_HAVE_SLEEF

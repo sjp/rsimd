@@ -2,16 +2,20 @@
 
 ## Development dependencies
 
-You need R (>= 4.3) and a C11 compiler. Install the packages used by the tests,
-benchmarks and vignettes into your user library:
+You need R (>= 4.3) and a C11 compiler. Install the packages used by the tests and
+benchmarks into your user library:
 
 ```sh
 mkdir -p "$(Rscript -e 'cat(Sys.getenv("R_LIBS_USER"))')"
-Rscript -e 'install.packages(c("testthat", "bit64", "bench", "knitr", "rmarkdown"),
+Rscript -e 'install.packages(c("testthat", "bit64", "bench", "callr"),
   lib = Sys.getenv("R_LIBS_USER"), repos = "https://cloud.r-project.org")'
 ```
 
 Optional: `lintr` (configured by `.lintr`) and `styler` (run `Rscript tools/style.R`).
+
+The vignettes in `vignettes/` are Sweave (`.Rnw`) files built with R's own
+`utils::Sweave` engine, so they need no packages, but building them (`R CMD build`)
+needs a LaTeX installation with `pdflatex`. Use `R CMD build --no-build-vignettes` without one.
 
 ## Documentation and NAMESPACE
 
@@ -28,9 +32,12 @@ exported function:
 ## Checking the package
 
 ```sh
-R CMD build .
+R CMD build --compact-vignettes=both .
 _R_CHECK_CRAN_INCOMING_REMOTE_=false R CMD check --as-cran rsimd_*.tar.gz
 ```
+
+`--compact-vignettes=both` shrinks the vignette PDFs with Ghostscript and qpdf; without it
+`--as-cran` warns that they could be made much smaller.
 
 The check must finish without errors or warnings, and with no notes other than those
 CRAN raises for every new submission.

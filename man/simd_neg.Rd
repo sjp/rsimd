@@ -27,7 +27,8 @@ simd_sqrt(x)
 }
 \arguments{
 \item{x}{A double, integer or logical vector; integer or logical only for
-the \code{_wrap} functions.}
+the \code{_wrap} functions. \code{simd_neg()} also takes a complex
+vector.}
 \item{sign}{A double, integer or logical vector whose signs are copied to
 \code{x}.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
@@ -47,6 +48,8 @@ integer, like \code{-} and \code{abs()}. They cannot overflow: the only
 integer whose negation is out of range is \code{-2147483648}, which is
 \code{NA}. The \code{_wrap} spellings are the same functions, provided for
 symmetry with \code{\link{simd_add_wrap}()}, and reject doubles.
+\code{simd_neg()} of a complex vector negates both parts, as \code{-z}
+does (see \code{\link{simd_conj}()} for the conjugate).
 
 \code{simd_sign()}, \code{simd_recip()} and \code{simd_sqrt()} return
 doubles for every input, as base R does for \code{sign()} and
@@ -73,7 +76,8 @@ on 32-bit ARM the double operations use the scalar \code{"none"} code.
 \value{
 A vector of the length of \code{x} (for \code{simd_copysign()}, of the
 longer operand): integer for \code{simd_neg()} and \code{simd_abs()} of
-integer or logical input, otherwise double.
+integer or logical input, complex for \code{simd_neg()} of complex input,
+otherwise double.
 }
 \seealso{
 \code{\link{abs}}, \code{\link{sign}}, \code{\link{sqrt}},

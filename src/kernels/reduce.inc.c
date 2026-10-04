@@ -234,29 +234,11 @@ void RSIMD_KERNEL(na_i32)(const int *x, R_xlen_t n, int mode, R_xlen_t off, void
   }
 }
 
-/* Complex values have no vector kernels: every tier uses this one. */
-void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
-                           rsimd_reduce_result *r);
-void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
-                           rsimd_reduce_result *r) {
-  R_xlen_t i;
-  for (i = 0; i < n; i++) {
-    if (!(isnan(x[i].r) || isnan(x[i].i))) continue;
-    if (mode == RSIMD_NAMODE_ANY) {
-      r->saw_na = 1;
-      return;
-    }
-    if (mode == RSIMD_NAMODE_COUNT) r->i64++;
-    else RSIMD_PUT_INDEX(mode, out, r, off + i);
-  }
-}
-
 #else /* vector tiers */
 
-/* Raw which_min/which_max and complex missing values have no vector
-   kernels; the none tier's are used. */
+/* Raw which_min/which_max has no vector kernel; the none tier's is used.
+   The complex missing-value kernel is in complex.inc.c. */
 #define RSIMD_SKIP_which_u8 1
-#define RSIMD_SKIP_na_c128 1
 
 void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o);
 void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o) {

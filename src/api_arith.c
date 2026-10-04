@@ -9,7 +9,7 @@
 #include <Rmath.h>
 #include "rsimd.h"
 #include "dispatch.h"
-#include "rvec.h"
+#include "api_complex.h"
 
 static int is_int_like(rsimd_etype t) { return t == RSIMD_I32 || t == RSIMD_LGL; }
 
@@ -24,17 +24,22 @@ static int lookup_op(SEXP op, const char *const *names, int count) {
 }
 
 /* Errors for an operand type the elementwise ops do not take, with base
-   R's message for raw (`raw_msg`). Complex and integer64 operands are
-   rejected on the R side, which names the function. */
-static void check_numeric(const rsimd_ew *e, const char *raw_msg) {
-  int i;
+   R's message for raw (`raw_msg`); complex operands are allowed when
+   `cplx` is set. Returns 1 if an operand is complex. The R side rejects
+   complex for the other ops and integer64, naming the function. */
+static int check_numeric(const rsimd_ew *e, const char *raw_msg, int cplx) {
+  int i, any_c128 = 0;
+  for (i = 0; i < e->k; i++) {
+    if (e->in[i].type == RSIMD_U8) Rf_error("%s", raw_msg);
+  }
   for (i = 0; i < e->k; i++) {
     rsimd_etype t = e->in[i].type;
-    if (t == RSIMD_U8) Rf_error("%s", raw_msg);
-    if (t != RSIMD_F64 && !is_int_like(t)) {
+    if (t == RSIMD_C128 && cplx) any_c128 = 1;
+    else if (t != RSIMD_F64 && !is_int_like(t)) {
       Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
     }
   }
+  return any_c128;
 }
 
 /* RSIMD_EW_I32(k) for each int32 operand of a double kernel. */
@@ -65,7 +70,8 @@ static const char *const binop_msg = "non-numeric argument to binary operator";
    x %/% y, x %% y, pmin, pmax, their na.rm = TRUE forms, copysign and the
    wrapping integer ops. Integer and logical operands give an integer
    result, except for / and copysign; the R side ensures that the _wrap ops
-   only see integer and logical operands. */
+   only see integer and logical operands. + and - also take complex
+   operands, which the R side has made both complex. */
 SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   static const char *const names[] = {"add",      "sub",      "mul",      "div",     "idiv",
                                       "mod",      "pmin",     "pmax",     "pmin_num", "pmax_num",
@@ -79,7 +85,10 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   sargs[0] = x;
   sargs[1] = y;
   rsimd_ew_init(&e, 2, sargs, args);
-  check_numeric(&e, binop_msg);
+  if (check_numeric(&e, binop_msg, code == RSIMD_EW_ADD || code == RSIMD_EW_SUB)) {
+    rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, 0);
+    return rsimd_c128_add(code, x, y, &o);
+  }
   rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
   if (all_int_like(&e) && code != RSIMD_EW_DIV && code != RSIMD_EW_COPYSIGN) {
     int *po;
@@ -122,7 +131,7 @@ SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   sargs[2] = z;
   rsimd_ew_init(&e, 3, sargs,
                 code == RSIMD_EW_CLAMP ? xlohi : code == RSIMD_EW_LERP ? xyt : xyz);
-  check_numeric(&e, binop_msg);
+  check_numeric(&e, binop_msg, 0);
   rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
   if (all_int_like(&e) && code != RSIMD_EW_FMA && code != RSIMD_EW_LERP) {
     int *po;
@@ -150,7 +159,8 @@ SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
 /* Unary ops by name: neg and abs keep integer and logical input integer
    (they wrap, so NA stays NA); sign, recip, sqrt, floor, ceiling, trunc
    and round (half to even) are double for every input, as in base R.
-   sqrt warns "NaNs produced" for a negative number. */
+   sqrt warns "NaNs produced" for a negative number. neg also takes
+   complex input. */
 SEXP C_simd_ew1(SEXP x, SEXP op) {
   static const char *const names[] = {"neg",   "abs",     "sign",  "recip", "sqrt",
                                       "floor", "ceiling", "trunc", "round"};
@@ -160,8 +170,12 @@ SEXP C_simd_ew1(SEXP x, SEXP op) {
   rsimd_ew e;
 
   rsimd_ew_init(&e, 1, &x, (const char *const[]){"x"});
-  check_numeric(&e, code == RSIMD_EW_NEG ? "invalid argument to unary operator"
-                                         : "non-numeric argument to mathematical function");
+  if (check_numeric(&e,
+                    code == RSIMD_EW_NEG ? "invalid argument to unary operator"
+                                         : "non-numeric argument to mathematical function",
+                    code == RSIMD_EW_NEG)) {
+    return rsimd_c128_neg(&e.in[0]);
+  }
   rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, e.no_na_hint);
   if (is_int_like(e.in[0].type) && (code == RSIMD_EW_NEG || code == RSIMD_EW_ABS)) {
     int *po;
@@ -195,7 +209,7 @@ SEXP C_simd_round_digits(SEXP x, SEXP digits) {
   rsimd_ew e;
 
   rsimd_ew_init(&e, 1, &x, (const char *const[]){"x"});
-  check_numeric(&e, "non-numeric argument to mathematical function");
+  check_numeric(&e, "non-numeric argument to mathematical function", 0);
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, e.n));
   po = (double *) rsimd_out_ptr(out);
   RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {

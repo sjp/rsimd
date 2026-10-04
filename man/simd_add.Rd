@@ -30,7 +30,8 @@ simd_mul_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
 \item{x, y}{Double, integer or logical vectors; integer or logical only for
-the \code{_wrap} functions.}
+the \code{_wrap} functions. \code{simd_add()} and \code{simd_sub()} also
+take complex vectors.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
 \code{x} and \code{y} have no missing values, so they are not looked for; see
 Details.}
@@ -45,6 +46,14 @@ and \code{Remainder} of .NET's \code{TensorPrimitives} (whose
 }
 \details{
 \rsimdBroadcast
+
+\code{simd_add()} and \code{simd_sub()} take complex operands: if either
+operand is complex, the other (double, integer or logical) is converted
+with \code{as.complex()}, so an integer or logical \code{NA} becomes
+\code{NA} with a zero imaginary part. The real and imaginary parts are then
+added or subtracted separately, each following the rules for doubles
+below, so a missing part makes only that part of the result missing.
+Complex operands do not combine with \code{integer64} ones.
 
 \code{simd_div()} always returns a double, like \code{/}. On integers,
 \code{simd_idiv()} and \code{simd_mod()} return \code{NA} (without a
@@ -76,8 +85,9 @@ remainder, which is slow on CPUs without a fused multiply-add. On 32-bit ARM
 the double operations use the scalar \code{"none"} code.
 }
 \value{
-A vector of the length of the longer operand: integer when both operands
-are integer or logical (except for \code{simd_div()}), otherwise double.
+A vector of the length of the longer operand: complex when an operand is
+complex, integer when both operands are integer or logical (except for
+\code{simd_div()}), otherwise double.
 }
 \seealso{
 \link{Arithmetic}, \code{\link{simd_fma}}, \code{\link{simd_neg}},
@@ -90,4 +100,5 @@ simd_idiv(c(-7, 7), 2)
 simd_mod(c(-7, 5.5), 2)
 simd_add(.Machine$integer.max, 1L)    # NA with a warning
 simd_add_wrap(.Machine$integer.max, 2L)
+simd_add(c(1, 2), 1i)
 }

@@ -5,15 +5,17 @@
 
 #include "rsimd.h"
 #include "dispatch.h"
-#include "rvec.h"
+#include "api_complex.h"
 
 static void bad_type(rsimd_etype type) {
   Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[type]);
 }
 
 /* sum(x, na.rm): double for double x; integer for integer and logical x,
-   or double when the total does not fit in an integer. precision is the
-   integer code RSIMD_PREC_*. */
+   or double when the total does not fit in an integer; complex for
+   complex x, each part summed as a double vector would be (with na.rm an
+   element goes when either part is NA or NaN). precision is the integer
+   code RSIMD_PREC_*. */
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
@@ -30,6 +32,7 @@ SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   case RSIMD_LGL:
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sum_i32(px, len, &r, &o); });
     break;
+  case RSIMD_C128: return rsimd_c128_sum(&in, &o);
   default: bad_type(in.type);
   }
   return rsimd_reduce_finish(RSIMD_RED_SUM, in.type, in.n, &r, &o);

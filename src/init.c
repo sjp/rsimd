@@ -54,6 +54,7 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_ulp_dist, 2),
   CALLDEF(C_simd_softmax, 2),
   CALLDEF(C_simd_log_softmax, 2),
+  CALLDEF(C_simd_cplx, 2),
   CALLDEF(C_simd_debug_fold, 6),
   CALLDEF(C_simd_debug_lgl, 4),
   CALLDEF(C_simd_debug_arith, 4),

@@ -119,6 +119,11 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
   return svsel_f64(m, b, a);
 }
+/* Deinterleave: lanes 0, 2, 4 ... (uzp_even) or 1, 3, 5 ... (uzp_odd) of
+   the concatenation a:b, so the real and the imaginary parts of the
+   complex numbers held in a and then b. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) { return svuzp1_f64(a, b); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) { return svuzp2_f64(a, b); }
 RSIMD_INLINE double rsimd_vf64_reduce_add(rsimd_vf64 a) { return svaddv_f64(RSIMD_PT64, a); }
 RSIMD_INLINE double rsimd_vf64_reduce_min(rsimd_vf64 a) { return svminv_f64(RSIMD_PT64, a); }
 RSIMD_INLINE double rsimd_vf64_reduce_max(rsimd_vf64 a) { return svmaxv_f64(RSIMD_PT64, a); }

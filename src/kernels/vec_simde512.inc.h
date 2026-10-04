@@ -37,6 +37,7 @@
 #include "x86/avx512/roundscale.h"
 #include "x86/avx512/set.h"
 #include "x86/avx512/permutexvar.h"
+#include "x86/avx512/permutex2var.h"
 #include "x86/avx512/sll.h"
 #include "x86/avx512/srl.h"
 #include "x86/avx512/srai.h"
@@ -156,6 +157,15 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
 }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
   return simde_mm512_mask_blend_pd(m, a, b);
+}
+/* Deinterleave: lanes 0, 2, 4 ... (uzp_even) or 1, 3, 5 ... (uzp_odd) of
+   the concatenation a:b, so the real and the imaginary parts of the
+   complex numbers held in a and then b. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm512_permutex2var_pd(a, simde_mm512_set_epi64(14, 12, 10, 8, 6, 4, 2, 0), b);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm512_permutex2var_pd(a, simde_mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1), b);
 }
 RSIMD_INLINE double rsimd_vf64_reduce_add(rsimd_vf64 a) { return simde_mm512_reduce_add_pd(a); }
 RSIMD_INLINE double rsimd_vf64_reduce_min(rsimd_vf64 a) { return simde_mm512_reduce_min_pd(a); }

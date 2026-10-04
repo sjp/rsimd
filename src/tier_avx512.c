@@ -9,6 +9,7 @@
 #include "kernels/arith.inc.c"
 /* After arith.inc.c, whose operand helpers they use. */
 #include "kernels/predicates.inc.c"
+#include "kernels/complex.inc.c"
 #include "kernels/compare.inc.c"
 #include "kernels/bitwise.inc.c"
 #include "kernels/convert.inc.c"

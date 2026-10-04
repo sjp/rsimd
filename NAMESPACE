@@ -154,3 +154,8 @@ export(simd_tanpi)
 export(simd_log_softmax)
 export(simd_sigmoid)
 export(simd_softmax)
+
+# complex numbers
+export(simd_conj)
+export(simd_im)
+export(simd_re)

@@ -215,7 +215,7 @@ test_that("chunk boundaries and ALTREP inputs give the oracle's result", {
 })
 
 test_that("complex and integer64 operands are rejected", {
-  expect_error(simd_add(1i, 1), "simd_add() does not support 'x' of type complex yet",
+  expect_error(simd_div(1i, 1), "simd_div() does not support 'x' of type complex",
     fixed = TRUE
   )
   expect_error(simd_mul(1, 1i), "simd_mul() does not support 'y' of type complex",

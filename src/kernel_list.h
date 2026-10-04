@@ -227,6 +227,24 @@ RSIMD_OP(popcnt_sum_i32, void,
          (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
 RSIMD_OP(popcnt_sum_u8, void, (const Rbyte *x, R_xlen_t n, rsimd_reduce_result *r))
 
+/* Complex numbers, R's interleaved Rcomplex {r, i}. Addition,
+   subtraction and negation need no slots of their own: the entry points
+   run the f64 kernels on the 2n doubles. conj_c128 negates the imaginary
+   parts (the sign bit, so an NA keeps its payload); part_c128 writes the
+   real (im = 0) or imaginary (im = 1) parts. sum_c128 folds the real parts
+   into r[0] and the imaginary parts into r[1] exactly as sum_f64 folds a
+   double vector, block by block, so each part has its own missing-value
+   flags; with na.rm an element is removed when either part is NA or NaN,
+   and both counts drop by one. pred_c128 is pred_f64 for complex
+   elements (ops NA, NAN, FINITE, INFINITE, with base R's rules: NA or NaN
+   if either part is, finite if both parts are, infinite if either part
+   is). */
+RSIMD_OP(conj_c128, void, (const Rcomplex *x, R_xlen_t n, Rcomplex *out))
+RSIMD_OP(part_c128, void, (int im, const Rcomplex *x, R_xlen_t n, double *out))
+RSIMD_OP(sum_c128, void,
+         (const Rcomplex *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(pred_c128, int, (int op, const Rcomplex *x, R_xlen_t n, int mode, int *out))
+
 /* Type conversion `op` (RSIMD_CVT_*) of n elements of x into out, in
    `mode` for conversions to integer and raw; returns the status bits
    (RSIMD_CVT_WARN_*). */

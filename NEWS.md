@@ -114,3 +114,14 @@
   `simd_precision()` mode and no memory beyond the result. Missing and
   infinite values give what base R's formulas give, preferring `NA` over
   `NaN`, without warnings.
+* Complex numbers: `simd_add()`, `simd_sub()` and `simd_neg()` take complex
+  operands (a double, integer or logical operand is converted to complex),
+  `simd_sum()` sums complex vectors part by part in the `simd_precision()`
+  mode, and `simd_is_na()`, `simd_is_nan()`, `simd_is_finite()` and
+  `simd_is_infinite()` (with their `_any` and `_all` forms) follow base R's
+  rules for complex values. New `simd_conj()`, `simd_re()` and `simd_im()`.
+  Missing values propagate part by part, as in base R. Other functions reject
+  complex input. `simd_any_na()`, `simd_count_na()` and `simd_which_na()` now
+  use SIMD kernels for complex vectors too.
+* A getting-started vignette, so far covering complex numbers. Vignettes are
+  built with R's own Sweave engine and need no extra packages.

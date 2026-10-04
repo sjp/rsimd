@@ -72,6 +72,7 @@
 #include "x86/avx512/roundscale.h"
 #include "x86/avx512/permutexvar.h"
 #include "x86/avx512/permutex2var.h"
+#include "x86/avx512/permutex2var.h"
 #include "x86/avx512/shuffle.h"
 #include "x86/avx512/unpacklo.h"
 #include "x86/avx512/unpackhi.h"

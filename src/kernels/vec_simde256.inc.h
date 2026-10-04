@@ -76,6 +76,16 @@ RSIMD_INLINE rsimd_mf64 rsimd_vf64_is_na(rsimd_vf64 a) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 m) {
   return simde_mm256_blendv_pd(a, b, m);
 }
+/* Deinterleave: lanes 0, 2, 4 ... (uzp_even) or 1, 3, 5 ... (uzp_odd) of
+   the concatenation a:b, so the real and the imaginary parts of the
+   complex numbers held in a and then b. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) {
+  /* unpacklo gives a0 b0 a2 b2. */
+  return simde_mm256_permute4x64_pd(simde_mm256_unpacklo_pd(a, b), SIMDE_MM_SHUFFLE(3, 1, 2, 0));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm256_permute4x64_pd(simde_mm256_unpackhi_pd(a, b), SIMDE_MM_SHUFFLE(3, 1, 2, 0));
+}
 /* Lane moves for prefix scans (see the 128-bit layer); k is 1 or 2. */
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {
   if (k == 1) {

@@ -44,8 +44,8 @@ simd_is_zero_any(x)
 simd_is_zero_all(x)
 }
 \arguments{
-\item{x}{A double, integer, logical or raw vector (not raw for
-\code{simd_is_negative} and \code{simd_is_zero}).}
+\item{x}{A double, integer, logical, raw or complex vector (neither raw nor
+complex for \code{simd_is_negative} and \code{simd_is_zero}).}
 }
 \description{
 \code{is.na(x)}, \code{is.nan(x)}, \code{is.finite(x)} and
@@ -68,6 +68,12 @@ that are neither missing nor infinite. \code{simd_is_zero()} is
 is \code{TRUE} for \code{-0} and \code{-Inf}, and \code{FALSE} for
 \code{NA} and \code{NaN}, so it differs from \code{x < 0} for \code{-0}.
 
+A complex number is \code{NA} (\code{simd_is_na()}) when either part is
+\code{NA} or \code{NaN}, \code{NaN} (\code{simd_is_nan()}) when either
+part is \code{NaN} but not \code{NA}, finite when both parts are, and
+infinite when either part is, as in base R: \code{complex(real = NaN,
+imaginary = NA)} is both \code{NA} and \code{NaN}.
+
 Integers and logicals are \code{NA} where they are \code{NA} and finite
 elsewhere; they are never \code{NaN} or infinite. Raw bytes are never
 missing, and, as in base R's \code{is.finite()}, are not finite either.
@@ -81,10 +87,9 @@ reading at the first element that decides the answer.
 \rsimdAttributes
 
 All implementations have their own kernels for these functions, except that
-on 32-bit ARM the double tests use the scalar \code{"none"} code. Complex
-input is not supported yet for \code{simd_is_na} and \code{simd_is_nan},
-nor \pkg{bit64} \code{integer64} input for \code{simd_is_na}; the other
-tests do not take them.
+on 32-bit ARM the double and complex tests use the scalar \code{"none"}
+code. \pkg{bit64} \code{integer64} input is not supported yet for
+\code{simd_is_na}; the other tests do not take it.
 }
 \value{
 A logical vector of the length of \code{x}, without \code{NA}, or a single

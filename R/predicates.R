@@ -3,19 +3,15 @@
 # (complex, integer64, and raw where it is not taken) and calls the entry
 # point with the op's name.
 
-# Predicates that will take complex or integer64 input: their messages say
-# "yet".
-.pred_later_complex <- c("na", "nan")
+# Predicates that will take integer64 input: their messages say "yet".
 .pred_later_i64 <- "na"
 
-# mode: 0 elementwise, 1 any, 2 all.
+# mode: 0 elementwise, 1 any, 2 all. negative and zero take neither raw
+# nor complex input.
 .pred <- function(x, op, mode, fun) {
   .sync_impl()
-  later <- c(
-    if (op %in% .pred_later_complex) "complex",
-    if (op %in% .pred_later_i64) "integer64"
-  )
-  unsupported <- c("integer64", "complex", if (op %in% c("negative", "zero")) "raw")
+  later <- if (op %in% .pred_later_i64) "integer64"
+  unsupported <- c("integer64", if (op %in% c("negative", "zero")) c("complex", "raw"))
   .check_supported(x, fun, unsupported, later)
   .Call(C_simd_pred, x, op, mode)
 }

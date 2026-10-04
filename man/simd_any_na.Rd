@@ -27,8 +27,8 @@ value, and none of the functions reads a vector that R already knows to have
 no missing values, such as \code{1:n}.
 
 The results are exact and the same for every implementation. All
-implementations have their own kernels, except for complex vectors, and on
-32-bit ARM for double vectors, which use the scalar \code{"none"} code.
+implementations have their own kernels, except that on 32-bit ARM double
+and complex vectors use the scalar \code{"none"} code.
 }
 \value{
 \code{simd_any_na()}: \code{TRUE} or \code{FALSE}.

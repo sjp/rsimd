@@ -6,7 +6,7 @@
 #include <string.h>
 #include "rsimd.h"
 #include "dispatch.h"
-#include "rvec.h"
+#include "api_complex.h"
 
 static int is_int_like(rsimd_etype t) { return t == RSIMD_I32 || t == RSIMD_LGL; }
 
@@ -37,8 +37,10 @@ static SEXP constant_false(R_xlen_t n, int mode) {
    "zero", of a double, integer, logical or raw vector, for mode 0
    (elementwise), 1 (any) or 2 (all). Integers and logicals are never NaN
    or infinite; raw bytes are never NA, NaN, finite or infinite (as base
-   R's is.finite says), and "negative" and "zero" do not take them. Empty
-   input gives FALSE for any and TRUE for all. */
+   R's is.finite says), and "negative" and "zero" do not take them.
+   Complex elements take the first four, with base R's either-part rules
+   (finite: both parts). Empty input gives FALSE for any and TRUE for
+   all. */
 SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
   static const char *const names[] = {"na", "nan", "finite", "infinite", "negative", "zero"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
@@ -60,6 +62,11 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
       Rf_error("invalid 'type' (raw) of argument");
     }
     return constant_false(in.n, m);
+  case RSIMD_C128:
+    if (code == RSIMD_PRED_NEGATIVE || code == RSIMD_PRED_ZERO) {
+      Rf_error("invalid 'type' (complex) of argument");
+    }
+    break;
   default: Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
   }
   if (m == RSIMD_PRED_ELT) {
@@ -68,7 +75,9 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
   }
   /* any stops at the first chunk with a TRUE, all at the first with a
      FALSE; the kernels also stop inside the chunk. */
-  if (in.type == RSIMD_F64) {
+  if (in.type == RSIMD_C128) {
+    res = rsimd_c128_pred(&in, code, m, po);
+  } else if (in.type == RSIMD_F64) {
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
       int r = rsimd_active->pred_f64(code, px, len, m, m == RSIMD_PRED_ELT ? po + off : NULL);
       if (m != RSIMD_PRED_ELT && r != res) {
