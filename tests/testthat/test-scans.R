@@ -241,7 +241,7 @@ test_that("scans carry across chunk boundaries", {
   res <- with_each_tier(function() simd_cumsum(d))
   for (tier in names(res)) expect_scan_close(res[[tier]], cumsum(d), cumsum_bound(d), info = tier)
   skip_on_cran()
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   child <- function(i, d) {
     library(rsimd)
     lapply(stats::setNames(nm = simd_available()), function(tier) {

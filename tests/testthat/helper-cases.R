@@ -8,10 +8,12 @@ lane_widths <- c(2, 4, 8, 16, 32)
 # Lengths around the vector width W: empty, single, the tail cases, the
 # fast-mode block of four vectors (4 * W * 4 + 5 crosses it), the ALTREP
 # region size (4096) and a length above the interrupt stride. For several
-# W, the sorted union.
+# W, the sorted union. Reduced runs (helper-subset.R) keep the lengths up
+# to 1000, and 1000 itself.
 edge_lengths <- function(W = lane_widths) {
   one <- function(W) c(0, 1, W - 1, W, W + 1, 2 * W + 3, 4 * W * 4 + 5, 4095, 4096, 4097, 1e6)
-  sort(unique(unlist(lapply(W, one))))
+  n <- sort(unique(unlist(lapply(W, one))))
+  if (reduced_lengths()) c(n[n < 1000], 1000) else n
 }
 
 # Special doubles. Sums that mix double.xmax with other large values

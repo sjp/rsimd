@@ -358,7 +358,7 @@ test_that("finished reductions have base R's result types", {
 })
 
 test_that("RSIMD_DEBUG_STRIDE sets the chunk stride at load", {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   skip_on_cran()
   child <- function() {
     warnings <- character()

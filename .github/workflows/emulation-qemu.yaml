@@ -1,0 +1,80 @@
+# The sve and sve2 tiers under QEMU user-mode emulation (no hosted runner
+# has SVE). On an arm64 runner R's executable runs under qemu-aarch64 with
+# an SVE-capable CPU model at two vector lengths, to catch lane-count
+# assumptions in the vector-length-agnostic kernels: the tiers must be
+# detected and pass the tier_emulation test subset. On a Cortex-A72 model
+# (no SVE) the package must choose neon and pass the quick subset.
+on:
+  schedule:
+    - cron: "53 5 * * 0"
+  workflow_dispatch:
+
+name: emulation-qemu
+
+permissions: read-all
+
+jobs:
+  qemu:
+    runs-on: ubuntu-24.04-arm
+    name: qemu ${{ matrix.name }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # sve-default-vector-length is in bytes.
+          - { name: sve-256, cpu: "max,sve-default-vector-length=32", tiers: "sve sve2" }
+          - { name: sve-512, cpu: "max,sve-default-vector-length=64", tiers: "sve sve2" }
+          - { name: cortex-a72, cpu: cortex-a72, tiers: "" }
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y qemu-user
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::testthat, any::callr, any::bit64
+          needs: check
+
+      - name: Install, and confirm the sve and sve2 tiers were built
+        run: |
+          R CMD INSTALL . 2>&1 | tee install.log
+          grep -q 'tier_sve\.o' src/Makevars
+          grep -q 'tier_sve2\.o' src/Makevars
+
+      - name: Run the tests under qemu -cpu ${{ matrix.cpu }}
+        run: |
+          runner="qemu-aarch64 -cpu ${{ matrix.cpu }}"
+          status=0
+          if [ -n "${{ matrix.tiers }}" ]; then
+            for t in ${{ matrix.tiers }}; do
+              RSIMD_TEST_SUBSET=tier_emulation RSIMD_TEST_TIERS=$t \
+                sh tools/ci/run_tests.sh --label "qemu ${{ matrix.name }}: $t (tier_emulation)" \
+                  --runner "$runner" --impl "$t" --expect-impl "$t" --expect-tiers "sve sve2" \
+                  --log "qemu-$t.log" || status=1
+            done
+          else
+            RSIMD_TEST_SUBSET=quick \
+              sh tools/ci/run_tests.sh --label "qemu ${{ matrix.name }}: auto (quick)" \
+                --runner "$runner" --expect-impl neon --log qemu-auto.log || status=1
+          fi
+          exit $status
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: qemu-${{ matrix.name }}
+          path: |
+            install.log
+            qemu-*.log

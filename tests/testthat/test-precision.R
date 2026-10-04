@@ -114,7 +114,7 @@ test_that("pairwise does not depend on how the input is chunked", {
 })
 
 test_that("pairwise is identical under a small chunk stride", {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   skip_on_cran()
   child <- function() {
     set.seed(7)

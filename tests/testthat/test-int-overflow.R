@@ -14,7 +14,7 @@ base_op <- function(op, x, y) {
 }
 
 test_that("checked add, sub and mul give NA and one warning, as base R", {
-  for (tier in simd_available()) {
+  for (tier in tiers_to_test()) {
     simd_with_impl(tier, {
       expect_warning(r <- .debug_arith("add", imax, 1L), overflow_msg, fixed = TRUE)
       expect_identical(r, NA_integer_)
@@ -82,7 +82,7 @@ test_that("checked ops match base R on random operands", {
 })
 
 test_that("wrapping ops wrap, honour NA and never warn", {
-  for (tier in simd_available()) {
+  for (tier in tiers_to_test()) {
     simd_with_impl(tier, {
       info <- tier
       expect_no_warning(r <- .debug_arith("add_wrap", c(imax, imax, NA), c(2L, 1L, 1L)))

@@ -161,7 +161,7 @@ test_that("setting the rsimd.impl option directly is honoured", {
 })
 
 test_that("RSIMD_IMPL and rsimd.impl initialise a fresh session", {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   skip_on_cran()
   child <- function() {
     warnings <- character()

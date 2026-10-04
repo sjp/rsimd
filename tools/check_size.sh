@@ -3,14 +3,20 @@
 #
 # Prints the byte total of src/vendor/simde, the size of every file in
 # src/vendor/sleef, the source tarball and, when an installed rsimd is found,
-# libs/rsimd.so (as installed and stripped of debugging information). Fails
-# if the tarball exceeds 5 MB (CRAN's guidance), the SIMDe subset or the
-# SLEEF headers exceed their budgets, or the stripped library exceeds its.
+# libs/rsimd.so (as installed and stripped of debugging information), and a
+# table of the installed package's top-level entries with the library
+# counted stripped, as CRAN measures it. Fails if the tarball exceeds 5 MB
+# (CRAN's guidance), the SIMDe subset or the SLEEF headers exceed their
+# budgets, the stripped library exceeds its, the installed package exceeds
+# 5 MB, or an installed directory other than libs exceeds 1 MB (libs is
+# held to the library budget instead).
 #
 # Usage: sh tools/check_size.sh [rsimd_<version>.tar.gz]
 # Without an argument the package is built with R CMD build in a temporary
 # directory and that tarball is measured. RSIMD_SO names the shared library
-# to measure (default: the installed package's, found with Rscript).
+# to measure and RSIMD_PKG_DIR the installed package (defaults: the
+# installed package's, found with Rscript; RSIMD_PKG_DIR defaults to the
+# package containing RSIMD_SO when that is set).
 
 set -eu
 
@@ -18,6 +24,8 @@ SIMDE_BUDGET_BYTES=3500000
 SLEEF_BUDGET_BYTES=2500000
 SO_BUDGET_BYTES=3000000
 TARBALL_LIMIT_BYTES=5000000
+INSTALLED_LIMIT_BYTES=5000000
+SUBDIR_LIMIT_BYTES=1000000
 
 root=$(cd "$(dirname "$0")/.." && pwd -P)
 
@@ -77,6 +85,42 @@ if [ -n "$so" ] && [ -f "$so" ]; then
   fi
 else
   echo "shared library: rsimd is not installed (set RSIMD_SO)"
+fi
+
+pkg=${RSIMD_PKG_DIR:-}
+if [ -z "$pkg" ] && [ -n "${RSIMD_SO:-}" ]; then
+  d=$(dirname "$RSIMD_SO")
+  [ "$(basename "$d")" = libs ] || d=$(dirname "$d")
+  pkg=$(dirname "$d")
+elif [ -z "$pkg" ]; then
+  pkg=$("${R_HOME:+$R_HOME/bin/}Rscript" -e 'cat(system.file(package = "rsimd"))' 2> /dev/null) || pkg=
+fi
+if [ -n "$pkg" ] && [ -f "$pkg/DESCRIPTION" ]; then
+  echo "Installed package $pkg (libs counted without debugging information):"
+  total=0
+  for entry in "$pkg"/*; do
+    name=$(basename "$entry")
+    if [ "$name" = libs ] && [ -n "${stripped:-}" ]; then
+      bytes=$(( $(dir_bytes "$entry") - so_bytes + stripped ))
+    elif [ -d "$entry" ]; then
+      bytes=$(dir_bytes "$entry")
+    else
+      bytes=$(wc -c < "$entry" | tr -d ' ')
+    fi
+    total=$((total + bytes))
+    printf '  %-14s %10s bytes\n' "$name" "$bytes"
+    if [ -d "$entry" ] && [ "$name" != libs ] && [ "$bytes" -gt "$SUBDIR_LIMIT_BYTES" ]; then
+      echo "  FAIL: installed directory $name exceeds 1 MB"
+      status=1
+    fi
+  done
+  printf '  %-14s %10s bytes (limit %s)\n' total "$total" "$INSTALLED_LIMIT_BYTES"
+  if [ "$total" -gt "$INSTALLED_LIMIT_BYTES" ]; then
+    echo "  FAIL: the installed package exceeds 5 MB"
+    status=1
+  fi
+else
+  echo "installed package: not found (set RSIMD_PKG_DIR)"
 fi
 
 if [ $# -ge 1 ]; then

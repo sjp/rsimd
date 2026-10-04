@@ -49,6 +49,73 @@ To check that the C code compiles without warnings, add the following to
 CFLAGS = -g -O2 -Wall -Wextra -pedantic
 ```
 
+## Continuous integration
+
+The GitHub Actions workflows in `.github/workflows/` call POSIX shell scripts in
+`tools/ci/`, so each job can be run locally. Every script reports one row per run
+(label, platform, result, duration) to the job summary, or to the terminal outside
+Actions.
+
+On every push to `main` and every pull request:
+
+| Workflow | What it does |
+|----------|--------------|
+| `R-CMD-check` | `R CMD check --as-cran` (warnings fail) on Linux x86-64 (R release, devel, oldrel-1), Linux arm64, macOS arm64, macOS x86-64 and Windows x86-64, and prints each runner's CPU features and tiers; the C lint and `tools/check_build.sh` on Linux; builds without SLEEF and with a compiler that rejects AVX-512. |
+| `tiers` | The whole test suite once per available tier, with that tier as the default (`RSIMD_IMPL`); fails if `none`, or `sse2` and `avx2` on x86-64, or `neon` on arm64, is missing. |
+| `size-check` | `tools/check_size.sh`: tarball and installed package (library stripped) under 5 MB, no installed directory but `libs` over 1 MB, vendored code and library budgets. |
+| `coverage` | covr, uploaded to Codecov (needs the `CODECOV_TOKEN` secret); informational. |
+
+On a schedule, and on demand with "Run workflow":
+
+| Workflow | When | What it does |
+|----------|------|--------------|
+| `sanitizers` | nightly | R CMD check and the suite per tier on R-hub's `gcc-asan`, `clang-asan` and `clang-ubsan` R-devel containers; any sanitizer report fails. |
+| `valgrind` | weekly | `R CMD check --use-valgrind` (examples), then the quick subset on the `avx2` and `none` tiers under memcheck with leak checking. |
+| `noLD` | weekly | R CMD check and the suite per tier on R-hub's `nold` container (R without long double). |
+| `emulation-sde` | weekly | The `avx512` tier under Intel SDE (Sapphire Rapids and Ice Lake models, `tier_emulation` subset), and `auto` choosing `sse2` on a Merom model (quick subset). |
+| `emulation-qemu` | weekly | The `sve` and `sve2` tiers under `qemu-aarch64` at 256- and 512-bit vectors (`tier_emulation` subset), and `auto` choosing `neon` on a Cortex-A72 model (quick subset). |
+
+The emulated runs use the reduced test subsets described in `tests/README.md`
+(`RSIMD_TEST_SUBSET`, `RSIMD_TEST_TIERS`). To run the jobs locally, install the
+package first (`R CMD INSTALL .`), then from the package root:
+
+```sh
+# The suite once per tier, checking the tiers every machine of this architecture must have.
+sh tools/ci/test_tiers.sh --logs logs
+
+# One run, optionally under an emulator; --expect-impl and --expect-tiers fail early
+# if the session did not select or detect what it should.
+sh tools/ci/run_tests.sh --impl none
+
+# SVE at a 256-bit vector length on an arm64 Linux machine (Debian: apt install qemu-user).
+RSIMD_TEST_SUBSET=tier_emulation RSIMD_TEST_TIERS=sve \
+  sh tools/ci/run_tests.sh --impl sve --expect-impl sve --expect-tiers "sve sve2" \
+    --runner "qemu-aarch64 -cpu max,sve-default-vector-length=32"
+# No SVE: auto must choose neon.
+RSIMD_TEST_SUBSET=quick sh tools/ci/run_tests.sh --expect-impl neon --runner "qemu-aarch64 -cpu cortex-a72"
+
+# AVX-512 under Intel SDE on an x86-64 Linux machine. SDE may not be redistributed:
+# get_sde.sh downloads it from Intel (SDE_URL and SDE_SHA256 pick another release).
+sde=$(sh tools/ci/get_sde.sh .sde)
+RSIMD_TEST_SUBSET=tier_emulation RSIMD_TEST_TIERS=avx512 \
+  sh tools/ci/run_tests.sh --impl avx512 --expect-impl avx512 --runner "$sde -spr --"
+# An SSE2-class CPU: auto must choose sse2, and SDE aborts on any AVX instruction.
+RSIMD_TEST_SUBSET=quick sh tools/ci/run_tests.sh --expect-impl sse2 --runner "$sde -mrm --"
+
+# Quick subset under valgrind.
+RSIMD_TEST_SUBSET=quick sh tools/ci/run_tests.sh \
+  --runner "valgrind --tool=memcheck --leak-check=full --track-origins=yes --error-exitcode=1"
+```
+
+With `--runner`, R's own executable is started directly under the emulator, with the
+environment R's front-end script would set; tests that start a subprocess then run it
+natively. For sanitizers without a sanitizer build of R, see `tests/README.md`; in a
+sanitizer container (`docker run ghcr.io/r-hub/containers/gcc-asan`), run
+`test_tiers.sh --logs logs` and then `sh tools/ci/scan_sanitizer_logs.sh logs/*.log`.
+
+Not covered by CI: Windows on arm64 (no hosted runners), and 32-bit Linux (i686,
+armv7), which could be added as Docker jobs later.
+
 ## C language server
 
 The C code is set up for [clangd](https://clangd.llvm.org/), which Claude Code's

@@ -1,3 +1,5 @@
+# R CMD check --as-cran on every platform the package must pass on, plus
+# builds that must keep working (no SLEEF; a compiler without AVX-512).
 on:
   push:
     branches: [main]
@@ -7,38 +9,85 @@ name: R-CMD-check
 
 permissions: read-all
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   R-CMD-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: ubuntu-latest, r: release, linux-checks: true }
+          - { os: ubuntu-latest, r: devel, http-user-agent: release }
+          - { os: ubuntu-latest, r: oldrel-1 }
+          - { os: ubuntu-24.04-arm, r: release, linux-checks: true }
+          - { os: macos-14, r: release }
+          - { os: macos-15-intel, r: release }
+          - { os: windows-latest, r: release }
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
 
       - name: Check raw R vector access is confined to the access layer
+        if: matrix.config.linux-checks
         run: sh tools/lint_c.sh
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: release
+          r-version: ${{ matrix.config.r }}
+          http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
+
+      # The Sweave vignette is built into a PDF with pdflatex.
+      - uses: r-lib/actions/setup-tinytex@v2
+
+      - name: Install the LaTeX packages the vignette uses
+        run: |
+          # On Windows tlmgr is a batch file, which bash cannot run itself.
+          if [ "$RUNNER_OS" = Windows ]; then
+            cmd //c "tlmgr install lm geometry hyperref"
+          else
+            tlmgr install lm geometry hyperref
+          fi
+
+      - name: Install qpdf and Ghostscript for compacting the vignette PDF
+        run: |
+          case "$RUNNER_OS" in
+            Linux) sudo apt-get update && sudo apt-get install -y qpdf ghostscript ;;
+            macOS) brew install qpdf ghostscript ;;
+          esac
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::rcmdcheck
+          extra-packages: any::rcmdcheck, any::bit64, any::bench
           needs: check
+          cache-version: 1
 
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: 'c("--no-manual", "--as-cran")'
+          build_args: 'c("--no-manual", "--compact-vignettes=both")'
           error-on: '"warning"'
+          upload-snapshots: true
+
+      - name: Show the CPU features and tiers of this runner
+        if: always()
+        run: |
+          Rscript -e '.libPaths(c("check/rsimd.Rcheck", .libPaths())); library(rsimd)
+            str(simd_cpu_features()); print(simd_available())'
 
       - name: Check tier compile flags and exported symbols
+        if: matrix.config.linux-checks
         run: sh tools/check_build.sh check/rsimd.Rcheck/00install.out check/rsimd.Rcheck/rsimd/libs/rsimd.so
-
-      - name: Report vendored code, tarball and library sizes
-        run: RSIMD_SO=check/rsimd.Rcheck/rsimd/libs/rsimd.so sh tools/check_size.sh
 
   build-variants:
     # Builds that must still work: without SLEEF, and with a compiler that
@@ -50,6 +99,9 @@ jobs:
         variant: [no-sleef, no-avx512]
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
 
@@ -70,6 +122,7 @@ jobs:
           else
             # A compiler wrapper that rejects AVX-512 flags.
             mkdir -p "$HOME/.R"
+            # shellcheck disable=SC2016
             printf '#!/bin/sh\nfor a in "$@"; do case "$a" in -mavx512*) echo "no AVX-512" >&2; exit 1 ;; esac; done\nexec gcc "$@"\n' > "$HOME/cc-no-avx512"
             chmod +x "$HOME/cc-no-avx512"
             echo "CC=$HOME/cc-no-avx512" > "$HOME/.R/Makevars"

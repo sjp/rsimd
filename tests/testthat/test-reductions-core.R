@@ -381,7 +381,7 @@ test_that("missing-value queries cover doubles, integers, logicals, complex and 
 
 test_that("chunked results equal unchunked ones", {
   skip_on_cran()
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   n <- 2^20 + 7
   d <- rand_vec("double", n, na_frac = 0.001, nan_frac = 0.001, seed = 9)
   z <- rep(1, n)

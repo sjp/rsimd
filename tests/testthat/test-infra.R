@@ -1,9 +1,20 @@
 # Self-tests of the test helpers (helper-tiers.R, helper-expect.R,
-# helper-cases.R, helper-extended.R).
+# helper-cases.R, helper-extended.R, helper-subset.R).
+
+with_env <- function(vars, code) {
+  old <- Sys.getenv(names(vars), unset = NA, names = TRUE)
+  on.exit({
+    Sys.unsetenv(names(old)[is.na(old)])
+    if (any(!is.na(old))) do.call(Sys.setenv, as.list(old[!is.na(old)]))
+  })
+  do.call(Sys.setenv, as.list(vars))
+  code
+}
 
 test_that("tier helpers cover every available tier and end with none", {
-  tiers <- tiers_to_test()
+  tiers <- with_env(c(RSIMD_TEST_TIERS = ""), tiers_to_test())
   expect_identical(tiers, simd_available())
+  tiers <- tiers_to_test()
   expect_identical(tiers[length(tiers)], "none")
   res <- with_each_tier(function() simd_current())
   expect_identical(names(res), tiers)
@@ -53,10 +64,31 @@ test_that("edge_lengths contains the width boundaries of every tier", {
   for (W in lane_widths) {
     expect_true(all(c(W - 1, W, W + 1, 2 * W + 3, 16 * W + 5) %in% lens), info = W)
   }
-  expect_true(all(c(0, 1, 4095, 4096, 4097, 1e6) %in% lens))
   expect_false(is.unsorted(lens))
   expect_identical(lens, unique(lens))
-  expect_identical(edge_lengths(4), c(0, 1, 3, 4, 5, 11, 69, 4095, 4096, 4097, 1e6))
+  with_env(c(RSIMD_TEST_SUBSET = ""), {
+    expect_true(all(c(0, 1, 4095, 4096, 4097, 1e6) %in% edge_lengths()))
+    expect_identical(edge_lengths(4), c(0, 1, 3, 4, 5, 11, 69, 4095, 4096, 4097, 1e6))
+  })
+})
+
+test_that("RSIMD_TEST_SUBSET caps the lengths and RSIMD_TEST_TIERS narrows the tiers", {
+  with_env(c(RSIMD_TEST_SUBSET = "quick"), {
+    expect_identical(edge_lengths(4), c(0, 1, 3, 4, 5, 11, 69, 1000))
+    expect_true(reduced_lengths())
+    expect_no_condition(skip_if_no_subprocess(), class = "skip")
+  })
+  with_env(c(RSIMD_TEST_SUBSET = "tier_emulation"), {
+    expect_condition(skip_if_no_subprocess(), "tier_emulation", class = "skip")
+  })
+  with_env(c(RSIMD_TEST_SUBSET = "bogus"), expect_error(edge_lengths(), "RSIMD_TEST_SUBSET"))
+  with_env(c(RSIMD_TEST_TIERS = "none"), expect_identical(tiers_to_test(), "none"))
+  best <- simd_available()[[1L]]
+  with_env(c(RSIMD_TEST_TIERS = best), {
+    expect_identical(tiers_to_test(), unique(c(best, "none")))
+    expect_identical(names(for_each_tier(identity)), unique(c(best, "none")))
+  })
+  with_env(c(RSIMD_TEST_TIERS = "rvv"), expect_error(tiers_to_test(), "not available: rvv"))
 })
 
 test_that("edge values contain the documented specials", {

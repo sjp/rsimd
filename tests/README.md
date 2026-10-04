@@ -34,6 +34,11 @@ The `helper-*.R` files are loaded before the tests:
   `edge_lgl()`, `altrep_inputs(n)`, `rand_vec(type, n, ..., seed)` and
   `with_seed(seed, code)`.
 - `helper-extended.R`: `skip_unless_extended()`.
+- `helper-subset.R`: `test_subset()`, `reduced_lengths()` and
+  `skip_if_no_subprocess()` for the reduced runs selected by
+  `RSIMD_TEST_SUBSET` (see below). Tests that start a subprocess call
+  `skip_if_no_subprocess()`, and kernel tests loop over `tiers_to_test()`
+  (which honours `RSIMD_TEST_TIERS`), not `simd_available()`.
 - `helper-int64.R`: builds `integer64` vectors from their bit patterns
   without bit64 (`i64()`, `i64_dec()` from decimal strings, `i64_halves()`,
   `i64_from_bits()`), reads them back (`i64_str()`, `i64_parts()`,
@@ -48,6 +53,9 @@ The `helper-*.R` files are loaded before the tests:
 |----------|--------|
 | `NOT_CRAN=true` | Runs the tests marked `skip_on_cran()`, such as subprocess tests and the C lint. |
 | `RSIMD_EXTENDED_TESTS=true` | Also runs the long and randomised tests. They take a few seconds more. |
+| `RSIMD_TEST_SUBSET=quick` | Caps input lengths at 1000 for slow environments (valgrind, emulators); the cases around every vector width are kept. |
+| `RSIMD_TEST_SUBSET=tier_emulation` | As `quick`, and skips tests that start a subprocess (an emulator does not follow it). |
+| `RSIMD_TEST_TIERS=avx512,none` | The kernel tests loop over these tiers only (`none` is always added as the oracle); a tier that is not available is an error. |
 | `RSIMD_IMPL`, `RSIMD_CPU_FEATURES_MASK`, `RSIMD_DISABLE_TIERS`, `RSIMD_DEBUG_STRIDE` | Change the implementation in use, the CPU features detected, the tiers built and the chunk size (see `?rsimd_options`). |
 
 The C lint test runs `tools/lint_c.sh`, so it needs a source checkout. It is
@@ -94,6 +102,12 @@ NOT_CRAN=true R -d "valgrind --track-origins=yes" \
 
 Check the `ERROR SUMMARY` at the end. Subprocess tests (callr) run their
 child R outside valgrind.
+
+## Continuous integration
+
+`tools/ci/run_tests.sh` and `tools/ci/test_tiers.sh` wrap the commands above
+for the CI workflows, including runs under Intel SDE and QEMU; see
+`CONTRIBUTING.md`.
 
 ## Reference environment
 

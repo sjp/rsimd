@@ -1,0 +1,84 @@
+# The avx512 tier under Intel's Software Development Emulator (SDE), which
+# hosted runners cannot be relied on to have: the tier must be detected and
+# pass the tier_emulation test subset on Sapphire Rapids and Ice Lake models.
+# On a Merom model (SSE2-class, no AVX) the package must choose sse2 and pass
+# the quick subset; SDE's chip check aborts if any instruction that CPU
+# lacks is executed, which proves dispatch never leaks wider code.
+#
+# SDE may not be redistributed, so it is downloaded from Intel at run time by
+# tools/ci/get_sde.sh and cached. The repository variables SDE_URL and
+# SDE_SHA256 select a newer release without editing the workflow.
+on:
+  schedule:
+    - cron: "37 5 * * 0"
+  workflow_dispatch:
+
+name: emulation-sde
+
+permissions: read-all
+
+jobs:
+  sde:
+    runs-on: ubuntu-latest
+    name: sde -${{ matrix.knob }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { knob: spr, impl: avx512, subset: tier_emulation, test-tiers: avx512, expect-impl: avx512, expect-tiers: avx512 }
+          - { knob: icx, impl: avx512, subset: tier_emulation, test-tiers: avx512, expect-impl: avx512, expect-tiers: avx512 }
+          - { knob: mrm, impl: "", subset: quick, test-tiers: "", expect-impl: sse2, expect-tiers: sse2 }
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      SDE_URL: ${{ vars.SDE_URL }}
+      SDE_SHA256: ${{ vars.SDE_SHA256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::testthat, any::callr, any::bit64
+          needs: check
+
+      - name: Install, and confirm the avx512 tier was built
+        run: |
+          R CMD INSTALL . 2>&1 | tee install.log
+          grep -q 'tier_avx512' src/Makevars
+
+      - uses: actions/cache@v6
+        with:
+          path: .sde
+          key: sde-${{ hashFiles('tools/ci/get_sde.sh') }}-${{ vars.SDE_URL }}
+
+      - name: Fetch Intel SDE
+        run: |
+          echo "SDE=$(sh tools/ci/get_sde.sh .sde)" >> "$GITHUB_ENV"
+          # Pin attaches to the program it starts.
+          echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+
+      - name: Run the tests under SDE -${{ matrix.knob }}
+        env:
+          RSIMD_TEST_SUBSET: ${{ matrix.subset }}
+          RSIMD_TEST_TIERS: ${{ matrix.test-tiers }}
+        run: |
+          sh tools/ci/run_tests.sh --label "sde -${{ matrix.knob }} (${{ matrix.subset }})" \
+            --runner "$SDE -${{ matrix.knob }} --" --impl "${{ matrix.impl }}" \
+            --expect-impl "${{ matrix.expect-impl }}" --expect-tiers "${{ matrix.expect-tiers }}" \
+            --log sde.log
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sde-${{ matrix.knob }}
+          path: |
+            install.log
+            sde.log

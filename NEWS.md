@@ -159,3 +159,8 @@
   function given a `simd_vec` returns a `simd_vec` for vector-valued results;
   reductions, predicates and comparisons return plain values. `integer64`
   data keeps class `c("simd_vec", "integer64")`. See `?simd_vec`.
+* Continuous integration checks the package on Linux (x86-64 and arm64),
+  macOS (arm64 and x86-64) and Windows, runs the tests once per
+  implementation tier, and on a schedule under the address and undefined
+  behaviour sanitizers, valgrind, an R without long double, Intel SDE
+  (AVX-512) and QEMU (SVE and SVE2).

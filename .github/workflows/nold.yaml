@@ -1,0 +1,54 @@
+# R CMD check and the full test suite once per tier on R-devel built
+# without long double (R-hub's nold container, as CRAN's noLD check). Base
+# R's sum() and friends then accumulate in double, which exercises the
+# tolerances of the comparisons with base R.
+on:
+  schedule:
+    - cron: "11 5 * * 0"
+  workflow_dispatch:
+
+name: noLD
+
+permissions: read-all
+
+jobs:
+  nold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/r-hub/containers/nold:latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      _R_CHECK_CRAN_INCOMING_REMOTE_: false
+      _R_CHECK_TESTS_NLINES_: 0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: R -q -e 'pak::pkg_install("deps::.", dependencies = TRUE)'
+
+      - name: Confirm R has no long double
+        run: Rscript -e 'print(capabilities("long.double")); stopifnot(!capabilities("long.double"))'
+
+      - name: R CMD check
+        run: |
+          R CMD build --no-build-vignettes --no-manual .
+          R CMD check --as-cran --no-manual --ignore-vignettes rsimd_*.tar.gz
+
+      - name: Run the tests once per tier
+        if: always()
+        run: |
+          R CMD INSTALL rsimd_*.tar.gz
+          sh tools/ci/test_tiers.sh --out tiers.txt --logs logs
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nold
+          path: |
+            rsimd.Rcheck/00*.out
+            rsimd.Rcheck/tests
+            logs

@@ -78,7 +78,7 @@ test_that("clamp errors when lo > hi anywhere", {
   expect_error(simd_clamp(1:3, 3L, 1L), msg, fixed = TRUE)
   expect_error(simd_clamp(1:3, c(0, 0, 5), 4), msg, fixed = TRUE)
   expect_error(simd_clamp(c(1, 2), 0L, c(1L, -1L)), msg, fixed = TRUE)
-  for (tier in simd_available()) {
+  for (tier in tiers_to_test()) {
     expect_error(simd_with_impl(tier, simd_clamp(seq_len(37), c(rep(0, 36), 2), 1)), msg,
       fixed = TRUE, info = tier
     )

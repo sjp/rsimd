@@ -191,7 +191,7 @@ test_that("compensated sum of 1e6 random doubles is within 1 ULP of the exact su
 
 test_that("the result does not depend on the chunking for pairwise", {
   skip_on_cran()
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   x <- rand_vec("double", 2^20 + 7, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = 5)
   child <- function(x, modes) {
     library(rsimd)

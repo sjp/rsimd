@@ -321,7 +321,7 @@ test_that("compact sequences give the same results as expanded vectors", {
 
 test_that("var and sd span chunks: forced small chunks match base R", {
   skip_on_cran()
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   n <- 2^20 + 7
   d <- 1e6 + rand_vec("double", n, na_frac = 0.001, nan_frac = 0, inf_frac = 0, seed = 4)
   i <- rand_vec("integer", n, na_frac = 0.001, seed = 4)

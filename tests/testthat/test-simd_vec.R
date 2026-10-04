@@ -106,9 +106,9 @@ test_that("accessors", {
 # ---- Implementation pins ---------------------------------------------------
 
 test_that("a pinned operand selects its tier over the global selection", {
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     x <- simd_vec(1, impl = t)
-    for (g in simd_available()) {
+    for (g in tiers_to_test()) {
       expect_identical(simd_with_impl(g, .debug_active(x)), t)
       expect_identical(simd_with_impl(g, .debug_active(x, 2)), t)
       expect_identical(simd_with_impl(g, .debug_active(3, x)), t)
@@ -227,7 +227,7 @@ test_that("arithmetic operators equal the simd_ functions on every tier", {
     `+` = simd_add, `-` = simd_sub, `*` = simd_mul, `/` = simd_div,
     `^` = simd_pow, `%%` = simd_mod, `%/%` = simd_idiv
   )
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     for (op in names(ops)) {
       f <- get(op)
       for (a in list(x, xi, xl)) {
@@ -271,7 +271,7 @@ test_that("comparisons return plain logical vectors", {
     `==` = simd_eq, `!=` = simd_ne, `<` = simd_lt, `>` = simd_gt,
     `<=` = simd_le, `>=` = simd_ge
   )
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     for (op in names(ops)) {
       f <- get(op)
       want <- simd_with_impl(t, ops[[op]](x, 1.5))
@@ -288,7 +288,7 @@ test_that("comparisons return plain logical vectors", {
 test_that("logical operators use three-valued logic, and bitwise ops on raw", {
   a <- c(TRUE, FALSE, NA, TRUE)
   b <- c(NA, TRUE, FALSE, TRUE)
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     expect_identical(simd_vec(a, impl = t) & b, a & b)
     expect_identical(simd_vec(a, impl = t) | b, a | b)
     expect_identical(!simd_vec(a, impl = t), !a)
@@ -336,7 +336,7 @@ test_that("Math functions with a kernel equal the simd_ functions", {
   on_pos <- c("sqrt", "log2", "log10", "log1p", "acosh")
   on_unit <- c("acos", "asin", "atanh")
   ns <- asNamespace("rsimd")
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     for (f in c(fns, on_pos, on_unit)) {
       arg <- if (f %in% on_pos) pos else if (f %in% on_unit) c(-0.5, 0, 0.75, NA) else x
       if (f == "acosh") arg <- arg + 1
@@ -382,7 +382,7 @@ test_that("Summary functions equal the simd_ functions", {
     sum = simd_sum, prod = simd_prod, min = simd_min, max = simd_max,
     range = simd_range
   )
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     for (f in names(fns)) {
       for (na.rm in c(FALSE, TRUE)) {
         want <- simd_with_impl(t, fns[[f]](x, na.rm = na.rm))
@@ -408,7 +408,7 @@ test_that("Summary functions equal the simd_ functions", {
 
 test_that("mean() uses simd_mean, with base R for trim", {
   x <- c(1, 2, 4, NA, 100)
-  for (t in simd_available()) {
+  for (t in tiers_to_test()) {
     expect_identical(mean(simd_vec(x, impl = t)), simd_with_impl(t, simd_mean(x)))
     expect_identical(
       mean(simd_vec(x, impl = t), na.rm = TRUE),

@@ -272,7 +272,7 @@ test_that("chunk boundaries give the unchunked result", {
 
 test_that("a small interrupt stride gives the same results", {
   skip_on_cran()
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   z <- rand_cplx(5000, seed = 41L)
   w <- rand_cplx(5000, seed = 42L)
   child <- function(z, w) {

@@ -13,3 +13,4 @@
 ^\.clangd$
 ^compile_commands\.json$
 ^\.cache$
+^\.sde$

@@ -10,9 +10,14 @@ tier_ids <- c("none", "sse2", "avx2", "avx512", "neon", "sve", "sve2", "rvv", "w
 # Runs `f` in a fresh R process with RSIMD_CPU_FEATURES_MASK set, since the
 # mask is only read when the package is loaded.
 with_cpu_mask <- function(mask, f) {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   callr::r(f, env = c(callr::rcmd_safe_env(), RSIMD_CPU_FEATURES_MASK = mask))
 }
+
+# The unmasked features as a fresh R process sees them. Under an emulator the
+# subprocess may run natively and see other features than this session, so
+# masked results are compared with this, not with simd_cpu_features().
+child_features <- function() with_cpu_mask("", function() rsimd::simd_cpu_features())
 
 implies <- function(f, from, to) {
   if (f[[from]]) expect_true(f[[to]], label = paste(from, "->", to))
@@ -102,7 +107,7 @@ test_that("CPU tier support follows the feature bits", {
 })
 
 test_that("RSIMD_CPU_FEATURES_MASK switches features off, with their dependents", {
-  before <- simd_cpu_features()
+  before <- child_features()
   res <- with_cpu_mask("AVX2 , neon", function() {
     list(cf = rsimd::simd_cpu_features(), tiers = rsimd:::simd_cpu_tiers())
   })
@@ -119,7 +124,7 @@ test_that("RSIMD_CPU_FEATURES_MASK switches features off, with their dependents"
 })
 
 test_that("RSIMD_CPU_FEATURES_MASK is a no-op for unsupported features", {
-  before <- simd_cpu_features()
+  before <- child_features()
   absent <- names(before$features)[!before$features]
   skip_if(length(absent) == 0L, "every feature is supported")
   res <- with_cpu_mask(paste(absent, collapse = ","), function() rsimd::simd_cpu_features())

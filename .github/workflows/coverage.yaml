@@ -1,0 +1,61 @@
+# Test coverage with covr, uploaded to Codecov (needs the CODECOV_TOKEN
+# secret). Informational: an upload failure does not fail the job. Only the
+# tiers of the runner's CPU execute, so tier kernels of other architectures
+# show as uncovered.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+name: coverage
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::covr, any::xml2, any::testthat, any::callr, any::bit64
+          needs: coverage
+
+      - name: Test coverage
+        shell: Rscript {0}
+        run: |
+          cov <- covr::package_coverage(
+            quiet = FALSE,
+            clean = FALSE,
+            install_path = file.path(normalizePath(Sys.getenv("RUNNER_TEMP"), winslash = "/"), "package")
+          )
+          print(cov)
+          covr::to_cobertura(cov)
+          pct <- sprintf("%.1f%%", covr::percent_coverage(cov))
+          cat("Test coverage:", pct, "\n", file = Sys.getenv("GITHUB_STEP_SUMMARY"), append = TRUE)
+
+      - uses: codecov/codecov-action@v7
+        with:
+          fail_ci_if_error: false
+          files: ./cobertura.xml
+          plugins: noop
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: cobertura.xml

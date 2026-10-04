@@ -1,0 +1,64 @@
+# R CMD check and the test suite once per tier on R-devel builds with
+# AddressSanitizer and UndefinedBehaviorSanitizer (R-hub's containers, as
+# used for CRAN's additional checks). Tail loads and stores differ between
+# tiers, so every available tier is run. Any sanitizer report fails the job.
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+name: sanitizers
+
+permissions: read-all
+
+jobs:
+  sanitizers:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.container }}
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/r-hub/containers/${{ matrix.container }}:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        container: [gcc-asan, clang-asan, clang-ubsan]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      ASAN_OPTIONS: detect_leaks=0:abort_on_error=0:alloc_dealloc_mismatch=0
+      UBSAN_OPTIONS: print_stacktrace=1
+      _R_CHECK_CRAN_INCOMING_REMOTE_: false
+      _R_CHECK_TESTS_NLINES_: 0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: R -q -e 'pak::pkg_install("deps::.", dependencies = TRUE)'
+
+      - name: R CMD check
+        run: |
+          R CMD build --no-build-vignettes --no-manual .
+          R CMD check --as-cran --no-manual --ignore-vignettes rsimd_*.tar.gz
+
+      - name: Run the tests once per tier
+        if: always()
+        run: |
+          R CMD INSTALL rsimd_*.tar.gz
+          sh tools/ci/test_tiers.sh --out tiers.txt --logs logs
+
+      - name: Look for sanitizer reports
+        if: always()
+        run: |
+          sh tools/ci/scan_sanitizer_logs.sh rsimd.Rcheck/00install.out \
+            rsimd.Rcheck/tests/*.Rout* rsimd.Rcheck/rsimd-Ex.Rout logs/*.log
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sanitizers-${{ matrix.container }}
+          path: |
+            rsimd.Rcheck/00*.out
+            rsimd.Rcheck/tests
+            logs

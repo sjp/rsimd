@@ -156,7 +156,7 @@ test_that("missing and infinite values give base R's NA and NaN patterns without
 })
 
 test_that("results have every length, chunked and ALTREP inputs included, and are bare", {
-  for (n in c(edge_lengths(), 2^20 + 7)) {
+  for (n in c(edge_lengths(), if (!reduced_lengths()) 2^20 + 7)) {
     x <- math_random(n, -30, 30, seed = n %% 1000)
     expect_length(simd_softmax(x), n)
     expect_length(simd_log_softmax(x), n)
@@ -210,7 +210,7 @@ test_that("the softmax sums to 1 within the precision mode's bound", {
 })
 
 test_that("pairwise softmax does not depend on the chunk stride", {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   skip_on_cran()
   child <- function() {
     set.seed(11)
