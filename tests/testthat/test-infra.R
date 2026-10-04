@@ -12,7 +12,7 @@ with_env <- function(vars, code) {
 }
 
 test_that("tier helpers cover every available tier and end with none", {
-  tiers <- with_env(c(RSIMD_TEST_TIERS = ""), tiers_to_test())
+  tiers <- with_env(c(RSIMD_TEST_TIERS = "", NOT_CRAN = "true"), tiers_to_test())
   expect_identical(tiers, simd_available())
   tiers <- tiers_to_test()
   expect_identical(tiers[length(tiers)], "none")
@@ -89,6 +89,19 @@ test_that("RSIMD_TEST_SUBSET caps the lengths and RSIMD_TEST_TIERS narrows the t
     expect_identical(names(for_each_tier(identity)), unique(c(best, "none")))
   })
   with_env(c(RSIMD_TEST_TIERS = "rvv"), expect_error(tiers_to_test(), "not available: rvv"))
+})
+
+test_that("on CRAN only the best tier and none are tested", {
+  skip_if(interactive(), "tests run interactively count as not on CRAN")
+  best <- simd_available()[[1L]]
+  with_env(c(RSIMD_TEST_TIERS = "", NOT_CRAN = "false"), {
+    expect_true(on_cran())
+    expect_identical(tiers_to_test(), unique(c(best, "none")))
+  })
+  with_env(c(RSIMD_TEST_TIERS = "none", NOT_CRAN = "false"), {
+    expect_identical(tiers_to_test(), "none")
+  })
+  with_env(c(NOT_CRAN = "true"), expect_false(on_cran()))
 })
 
 test_that("edge values contain the documented specials", {

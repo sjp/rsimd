@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - { os: ubuntu-latest, r: release, linux-checks: true }
+          - { os: ubuntu-latest, r: release, linux-checks: true, manual: true }
           - { os: ubuntu-latest, r: devel, http-user-agent: release }
           - { os: ubuntu-latest, r: oldrel-1 }
           - { os: ubuntu-24.04-arm, r: release, linux-checks: true }
@@ -68,6 +68,14 @@ jobs:
             tlmgr install $pkgs
           fi
 
+      - name: Install the LaTeX packages the PDF reference manual uses
+        if: matrix.config.manual
+        run: |
+          # On top of the vignettes' packages: Rd.sty's fonts (inconsolata,
+          # times, rsfs) and the packages it loads, and makeindex.
+          tlmgr install amsfonts amsmath inconsolata jknapltx rsfs psnfss times \
+            xkeyval makeindex
+
       - name: Install qpdf and Ghostscript for compacting the vignette PDF
         run: |
           case "$RUNNER_OS" in
@@ -81,9 +89,17 @@ jobs:
           needs: check
           cache-version: 1
 
+      - name: Check the Makevars templates and the generated Makevars
+        if: matrix.config.linux-checks
+        run: |
+          sh ./configure > /dev/null
+          sh tools/check_makevars.sh
+          sh ./cleanup
+
+      # One job also builds the PDF reference manual, as CRAN does.
       - uses: r-lib/actions/check-r-package@v2
         with:
-          args: 'c("--no-manual", "--as-cran")'
+          args: ${{ matrix.config.manual && 'c("--as-cran")' || 'c("--no-manual", "--as-cran")' }}
           build_args: 'c("--no-manual", "--compact-vignettes=both")'
           error-on: '"warning"'
           upload-snapshots: true

@@ -1,0 +1,94 @@
+# Pre-submission checks, run on release branches and tags: R CMD check
+# --as-cran with CRAN's incoming checks, including the remote ones (URLs,
+# the CRAN package database, the maintainer), the PDF manual and a spelling
+# check; and a check without the suggested packages bit64 and bench, as
+# CRAN's no-suggests check does. testthat (which imports callr) stays
+# installed so that the tests run.
+on:
+  push:
+    branches: ['release/**']
+    tags: ['v*']
+  workflow_dispatch:
+
+name: cran-incoming
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cran-incoming:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.check }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [incoming, no-suggests]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-tinytex@v2
+
+      - name: Install the LaTeX packages the vignettes and the manual use
+        run: |
+          # The vignettes' packages (as in R-CMD-check.yaml), then Rd.sty's.
+          tlmgr install lm ec fontname geometry hyperref tools url fancyvrb etoolbox \
+            graphics graphics-cfg graphics-def epstopdf-pkg grfext \
+            bigintcalc bitset gettitlestring hycolor iftex infwarerr intcalc \
+            kvdefinekeys kvoptions kvsetkeys ltxcmds pdfescape pdftexcmds \
+            refcount rerunfilecheck stringenc uniquecounter \
+            amsfonts amsmath inconsolata jknapltx rsfs psnfss times xkeyval makeindex
+
+      - name: Install qpdf, Ghostscript, pandoc and HTML Tidy
+        run: sudo apt-get update && sudo apt-get install -y qpdf ghostscript pandoc tidy
+
+      - name: Install the packages the check uses
+        run: |
+          if [ "${{ matrix.check }}" = incoming ]; then
+            pkgs='c("testthat", "callr", "bit64", "bench", "spelling")'
+          else
+            pkgs='c("testthat", "callr")'
+          fi
+          Rscript -e "install.packages($pkgs, repos = 'https://cloud.r-project.org')"
+          Rscript -e 'stopifnot(!"${{ matrix.check }}" == "no-suggests" ||
+            !any(c("bit64", "bench") %in% rownames(installed.packages())))'
+
+      - name: Check spelling
+        if: matrix.check == 'incoming'
+        run: Rscript tools/check_spelling.R
+
+      - name: Build
+        run: R CMD build --compact-vignettes=both .
+
+      - name: Check
+        env:
+          _R_CHECK_CRAN_INCOMING_: true
+          _R_CHECK_CRAN_INCOMING_REMOTE_: ${{ matrix.check == 'incoming' }}
+          _R_CHECK_FORCE_SUGGESTS_: false
+          _R_CHECK_S3_METHODS_SHOW_POSSIBLE_ISSUES_: true
+        run: |
+          R CMD check --as-cran rsimd_*.tar.gz
+          # R CMD check exits 0 on WARNINGs; fail on them too.
+          if grep -E '^Status: .*(ERROR|WARNING)' rsimd.Rcheck/00check.log; then
+            exit 1
+          fi
+
+      - name: Upload the check directory
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.check }}-rsimd.Rcheck
+          path: rsimd.Rcheck
+          if-no-files-found: ignore

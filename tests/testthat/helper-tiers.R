@@ -1,11 +1,13 @@
 # Implementation tiers to test: every available one, best first, always
 # ending with the "none" oracle. RSIMD_TEST_TIERS narrows the list (see
-# helper-subset.R).
+# helper-subset.R). On CRAN (NOT_CRAN not "true", not interactive) only the
+# best tier and "none" are tested, which keeps the run time the same
+# whatever the number of tiers the machine has.
 tiers_to_test <- function() {
   avail <- simd_available()
   only <- Sys.getenv("RSIMD_TEST_TIERS", "")
   if (!nzchar(only)) {
-    return(avail)
+    return(if (on_cran()) unique(c(avail[[1L]], "none")) else avail)
   }
   only <- trimws(strsplit(only, ",", fixed = TRUE)[[1]])
   missing <- setdiff(only, avail)
@@ -13,6 +15,11 @@ tiers_to_test <- function() {
     stop("RSIMD_TEST_TIERS names tiers that are not available: ", paste(missing, collapse = ", "))
   }
   avail[avail %in% c(only, "none")]
+}
+
+# As testthat::skip_on_cran() decides it.
+on_cran <- function() {
+  !interactive() && !isTRUE(as.logical(Sys.getenv("NOT_CRAN", "false")))
 }
 
 skip_if_no_tier <- function(tier) {

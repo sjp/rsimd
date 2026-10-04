@@ -40,13 +40,29 @@ _R_CHECK_CRAN_INCOMING_REMOTE_=false R CMD check --as-cran rsimd_*.tar.gz
 `--as-cran` warns that they could be made much smaller.
 
 The check must finish without errors or warnings, and with no notes other than those
-CRAN raises for every new submission.
+explained in `cran-comments.md`.
 
 To check that the C code compiles without warnings, add the following to
-`~/.R/Makevars` before installing:
+`~/.R/Makevars` before installing (or put it in a scratch file named by
+`R_MAKEVARS_USER`):
 
 ```make
-CFLAGS = -g -O2 -Wall -Wextra -pedantic
+CFLAGS = -g -O2 -Wall -Wextra -pedantic -Wstrict-prototypes -Wconversion
+```
+
+The package's own files must compile without warnings with GCC and clang. The
+vendored SIMDe and SLEEF headers are kept identical to upstream: they warn under
+`-Wextra` and `-Wconversion`, though not under CRAN's `-Wall -pedantic`. R's own
+`R_ext/Boolean.h` also warns under `-pedantic` before C23.
+
+Other checks to run before a release:
+
+```sh
+sh ./configure && sh tools/check_makevars.sh   # no forbidden flags or variable overrides
+Rscript tools/check_spelling.R                 # spelling, against inst/WORDLIST
+sh tools/check_size.sh                         # tarball, installed and library sizes
+shellcheck -s sh configure configure.win cleanup cleanup.win
+checkbashisms configure configure.win cleanup cleanup.win
 ```
 
 ## Continuous integration
@@ -60,7 +76,7 @@ On every push to `main` and every pull request:
 
 | Workflow | What it does |
 |----------|--------------|
-| `R-CMD-check` | `R CMD check --as-cran` (warnings fail) on Linux x86-64 (R release, devel, oldrel-1), Linux arm64, macOS arm64, macOS x86-64 and Windows x86-64, and prints each runner's CPU features and tiers; the C lint and `tools/check_build.sh` on Linux; builds without SLEEF and with a compiler that rejects AVX-512. |
+| `R-CMD-check` | `R CMD check --as-cran` (warnings fail) on Linux x86-64 (R release, devel, oldrel-1), Linux arm64, macOS arm64, macOS x86-64 and Windows x86-64, and prints each runner's CPU features and tiers; the PDF manual on Linux x86-64 R release; the C lint, `tools/check_makevars.sh` and `tools/check_build.sh` on Linux; builds without SLEEF and with a compiler that rejects AVX-512. |
 | `tiers` | The whole test suite once per available tier, with that tier as the default (`RSIMD_IMPL`); fails if `none`, or `sse2` and `avx2` on x86-64, or `neon` on arm64, is missing. |
 | `size-check` | `tools/check_size.sh`: tarball and installed package (library stripped) under 5 MB, no installed directory but `libs` over 1 MB, vendored code and library budgets. |
 | `coverage` | covr, uploaded to Codecov (needs the `CODECOV_TOKEN` secret); informational. |
@@ -74,6 +90,7 @@ On a schedule, and on demand with "Run workflow":
 | `noLD` | weekly | R CMD check and the suite per tier on R-hub's `nold` container (R without long double). |
 | `emulation-sde` | weekly | The `avx512` tier under Intel SDE (Sapphire Rapids and Ice Lake models, `tier_emulation` subset), and `auto` choosing `sse2` on a Merom model (quick subset). |
 | `emulation-qemu` | weekly | The `sve` and `sve2` tiers under `qemu-aarch64` at 256- and 512-bit vectors (`tier_emulation` subset), and `auto` choosing `neon` on a Cortex-A72 model (quick subset). |
+| `cran-incoming` | release branches (`release/**`), `v*` tags | `R CMD check --as-cran` with CRAN's remote incoming checks (URLs, maintainer), the PDF manual and the spelling check; and a check without the suggested packages bit64 and bench. Errors and warnings fail. |
 | `benchmarks` | weekly | `bench/run.R` on Linux x86-64, Linux arm64 and macOS arm64; results uploaded as an artifact and shown in the job summary (see `bench/README.md`). Informational; never fails on timings. |
 
 The emulated runs use the reduced test subsets described in `tests/README.md`

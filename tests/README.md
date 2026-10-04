@@ -38,7 +38,7 @@ The `helper-*.R` files are loaded before the tests:
   `skip_if_no_subprocess()` for the reduced runs selected by
   `RSIMD_TEST_SUBSET` (see below). Tests that start a subprocess call
   `skip_if_no_subprocess()`, and kernel tests loop over `tiers_to_test()`
-  (which honours `RSIMD_TEST_TIERS`), not `simd_available()`.
+  (which honours `RSIMD_TEST_TIERS` and `NOT_CRAN`), not `simd_available()`.
 - `helper-int64.R`: builds `integer64` vectors from their bit patterns
   without bit64 (`i64()`, `i64_dec()` from decimal strings, `i64_halves()`,
   `i64_from_bits()`), reads them back (`i64_str()`, `i64_parts()`,
@@ -51,7 +51,7 @@ The `helper-*.R` files are loaded before the tests:
 
 | Variable | Effect |
 |----------|--------|
-| `NOT_CRAN=true` | Runs the tests marked `skip_on_cran()`, such as subprocess tests and the C lint. |
+| `NOT_CRAN=true` | Runs the tests marked `skip_on_cran()`, such as subprocess tests and the C lint, and makes the kernel tests loop over every available tier. Without it (as on CRAN, outside an interactive session) they test only the best tier and `none`. |
 | `RSIMD_EXTENDED_TESTS=true` | Also runs the long and randomised tests. They take a few seconds more. |
 | `RSIMD_TEST_SUBSET=quick` | Caps input lengths at 1000 for slow environments (valgrind, emulators); the cases around every vector width are kept. |
 | `RSIMD_TEST_SUBSET=tier_emulation` | As `quick`, and skips tests that start a subprocess (an emulator does not follow it). |

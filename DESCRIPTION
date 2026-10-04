@@ -1,6 +1,6 @@
 Package: rsimd
 Title: SIMD-Accelerated Vector Primitives
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person("Simon", "Potter", email = "simon@sjp.co.nz", role = c("aut", "cre")),
     person("Evan", "Nemerson", role = "cph", comment = "SIMDe"),
@@ -14,12 +14,13 @@ Description: Fast vectorised primitives for R atomic vectors, including
     conversions and transcendental functions, implemented with single
     instruction, multiple data (SIMD) instructions on x86-64 and arm64.
     Kernels are written once using the portable 'SIMDe' intrinsics library
-    (bundled), and vectorised elementary functions come from the bundled
-    'SLEEF' library (<https://sleef.org/>). CPU features are
-    detected at run time and the best supported implementation is chosen
-    automatically, while users can select a specific implementation, or a
-    plain scalar one, by name.
+    (<https://github.com/simd-everywhere/simde>), and vectorised elementary
+    functions come from the 'SLEEF' library (<https://sleef.org/>); both
+    are bundled. CPU features are detected at run time and the best
+    supported implementation is chosen automatically, while users can
+    select a specific implementation, or a plain scalar one, by name.
 License: MIT + file LICENSE
+Copyright: see file inst/COPYRIGHTS
 URL: https://github.com/sjp/rsimd
 BugReports: https://github.com/sjp/rsimd/issues
 Depends:

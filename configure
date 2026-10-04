@@ -345,6 +345,7 @@ fi
 enabled=" "
 reported=" "
 sleef_tiers=" "
+rejected=
 config_rules=
 objects=
 
@@ -407,7 +408,7 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled row_sleef; 
         try_compile "$tmp/conftest_sleef.c" "$flags $fpflag $extra"; then
         echo yes
         sleef_tiers="$sleef_tiers$tier "
-        extra="$extra -DRSIMD_HAVE_SLEEF_$(echo "$tier" | tr 'a-z' 'A-Z')=1"
+        extra="$extra -DRSIMD_HAVE_SLEEF_$(echo "$tier" | tr '[:lower:]' '[:upper:]')=1"
       else
         echo "no (built without SLEEF)"
         show_log
@@ -427,6 +428,8 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled row_sleef; 
   else
     echo "no (dropped)"
     show_log
+    rejected="$rejected$tier|${flags:-default flags}
+"
   fi
 done < "$tiers_file"
 
@@ -462,8 +465,15 @@ if [ "${RSIMD_DISABLE_SLEEF:-0}" = 1 ]; then
   echo "rsimd: RSIMD_DISABLE_SLEEF is set: SLEEF elementary functions are not used"
 fi
 
+# The tier lists are space-separated words with leading and trailing spaces;
+# the unquoted expansions below split them so that echo joins the words with
+# single spaces.
+# shellcheck disable=SC2086
 tier_list=$(echo $enabled | tr ' ' ',')
+# shellcheck disable=SC2086
 sleef_list=$(echo $sleef_tiers | tr ' ' ',')
+# shellcheck disable=SC2086
+disabled_list=$(echo $disabled | tr ' ' ',')
 
 # src/rsimd_config.h
 {
@@ -471,7 +481,7 @@ sleef_list=$(echo $sleef_tiers | tr ' ' ',')
   echo "#ifndef RSIMD_CONFIG_H"
   echo "#define RSIMD_CONFIG_H"
   for t in $known; do
-    macro=$(echo "$t" | tr 'a-z' 'A-Z')
+    macro=$(echo "$t" | tr '[:lower:]' '[:upper:]')
     case "$enabled" in
       *" $t "*) echo "#define RSIMD_HAVE_$macro 1" ;;
       *) echo "/* #undef RSIMD_HAVE_$macro */" ;;
@@ -481,7 +491,7 @@ sleef_list=$(echo $sleef_tiers | tr ' ' ',')
   echo "#define RSIMD_CONFIG_OS \"$os\""
   echo "#define RSIMD_CONFIG_TIERS \"$tier_list\""
   echo "#define RSIMD_CONFIG_SLEEF \"$sleef_list\""
-  echo "#define RSIMD_CONFIG_DISABLED \"$(echo $disabled | tr ' ' ',')\""
+  echo "#define RSIMD_CONFIG_DISABLED \"$disabled_list\""
   echo "#define RSIMD_CONFIG_TEST_HOLE \"$test_hole\""
   if [ -n "$test_hole" ]; then
     echo "#define RSIMD_TEST_HOLE_$test_hole 1"
@@ -496,12 +506,14 @@ sleef_list=$(echo $sleef_tiers | tr ' ' ',')
   echo "$config_rules" | while IFS='|' read -r t f; do
     [ -n "$t" ] || continue
     echo "tier_$t.o: tier_$t.c \$(RSIMD_TIER_DEPS)"
+    # shellcheck disable=SC2016 # make variables, expanded by make
     printf '\t$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) %s -c tier_%s.c -o tier_%s.o\n' \
       "$(echo "$f $fpflag" | sed 's/  */ /g; s/^ *//; s/ *$//')" "$t" "$t"
     echo
   done
 } > "$tmp/rules"
 
+# shellcheck disable=SC2086,SC2116 # joins the object names with single spaces
 sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@|$pkg_cppflags|" "$makevars.in" |
   awk -v rules="$tmp/rules" '
     $0 == "@RSIMD_TIER_RULES@" { while ((getline l < rules) > 0) print l; next }
@@ -509,4 +521,19 @@ sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@|$pkg_cppflag
 
 echo "rsimd: building tiers $tier_list"
 echo "rsimd: tiers with SLEEF elementary functions: ${sleef_list:-(no tier)}"
+# One entry per tier of this platform that is not built, with the reason.
+not_built=
+for t in $known; do
+  case "$enabled" in *" $t "*) continue ;; esac
+  case "$reported" in
+    *" $t "*) why="disabled by RSIMD_DISABLE_TIERS" ;;
+    *)
+      why=$(printf '%s' "$rejected" | sed -n "s/^$t|//p" | awk '{ printf "%s%s", (NR > 1 ? " and " : ""), $0 }')
+      [ -n "$why" ] || continue
+      why="compiler rejects $why"
+      ;;
+  esac
+  not_built="${not_built:+$not_built; }$t ($why)"
+done
+echo "rsimd: tiers not built: ${not_built:-(none)}"
 exit 0

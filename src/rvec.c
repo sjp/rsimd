@@ -34,7 +34,7 @@ rsimd_etype rsimd_check_atomic(SEXP x, const char *arg) {
     SEXP cls = Rf_getAttrib(x, R_ClassSymbol);
     const char *name = TYPEOF(cls) == STRSXP && XLENGTH(cls) > 0
                            ? Rf_translateChar(STRING_ELT(cls, 0))
-                           : (TYPEOF(x) == VECSXP ? "list" : Rf_type2char(TYPEOF(x)));
+                           : (TYPEOF(x) == VECSXP ? "list" : Rf_type2char((SEXPTYPE) TYPEOF(x)));
     Rf_error("'%s' must be an atomic vector (double, integer, logical, raw, complex or "
              "integer64), not %s",
              arg, name);
@@ -501,7 +501,8 @@ void *rsimd_out_ptr(SEXP out) {
   case LGLSXP: return LOGICAL(out);
   case RAWSXP: return RAW(out);
   case CPLXSXP: return COMPLEX(out);
-  default: Rf_error("internal error: no data pointer for type %s", Rf_type2char(TYPEOF(out)));
+  default:
+    Rf_error("internal error: no data pointer for type %s", Rf_type2char((SEXPTYPE) TYPEOF(out)));
   }
   return NULL; /* not reached */
 }
