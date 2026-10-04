@@ -35,7 +35,8 @@ static SEXP finished(SEXP value, const rsimd_reduce_result *r) {
    list(value, count, saw_na, saw_nan, any_true, any_false). term is "x"
    (sum), "sq" (sum_sq), "abs" (sum_abs) or "xy" (dot) for doubles; integer
    and logical x take "x" only. precision is the integer code. */
-SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_debug_fold_impl(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check,
+                                 SEXP precision) {
   static const char *const terms[] = {"x", "sq", "abs", "xy"};
   static const int ops[] = {RSIMD_RED_SUM, RSIMD_RED_SUM_SQ, RSIMD_RED_SUM_ABS, RSIMD_RED_DOT};
   int t = lookup_name(rsimd_arg_str(term, "term"), terms, 4, "term");
@@ -77,10 +78,15 @@ SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEX
   return value;
 }
 
+SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_debug_fold_impl(x, y, term, na_rm, na_check, precision);
+}
+
 /* any(x) (op "any", stopping at the first TRUE), all(x) (op "all",
    stopping at the first FALSE) or the flags of a full scan finished as any
    (op "scan"), for logical or integer x. */
-SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
+static SEXP simd_debug_lgl_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   static const char *const ops[] = {"any", "all", "scan"};
   int k = lookup_name(rsimd_arg_str(op, "op"), ops, 3, "op");
   int stop = k == 0 ? RSIMD_STOP_TRUE : k == 1 ? RSIMD_STOP_FALSE : RSIMD_STOP_NONE;
@@ -108,11 +114,16 @@ SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   return value;
 }
 
+SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
+  rsimd_entry();
+  return simd_debug_lgl_impl(x, op, na_rm, na_check);
+}
+
 /* Elementwise op on x and y (same type, equal lengths or one of length 1):
    integer ops "add", "sub", "mul", "neg", "abs", their "_wrap" forms,
    "idiv" and "mod"; double ops "add", "sub", "mul", "div", "pmin",
    "pmax". Unary ops ignore y. Warns once on integer overflow. */
-SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check) {
+static SEXP simd_debug_arith_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   static const char *const i32_ops[RSIMD_ST_I32_COUNT] = {
     "add", "sub", "mul", "neg", "abs", "add_wrap", "sub_wrap", "mul_wrap", "neg_wrap", "abs_wrap",
     "idiv", "mod"};
@@ -152,4 +163,9 @@ SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   if (overflow) rsimd_warn_int_overflow();
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check) {
+  rsimd_entry();
+  return simd_debug_arith_impl(x, y, op, na_check);
 }

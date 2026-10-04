@@ -119,7 +119,7 @@ int rsimd_c128_pred(const rsimd_in *in, int code, int mode, int *po) {
    and double parts; double, integer and logical z give double, as in base
    R: Conj and Re are the values (a bare copy), Im is zeros. Raw is an
    error with base R's message; integer64 is rejected on the R side. */
-SEXP C_simd_cplx(SEXP z, SEXP op) {
+static SEXP simd_cplx_impl(SEXP z, SEXP op) {
   static const char *const names[] = {"conj", "re", "im"};
   int code = lookup_op(op, names, 3);
   SEXP out;
@@ -165,4 +165,9 @@ SEXP C_simd_cplx(SEXP z, SEXP op) {
   }
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_cplx(SEXP z, SEXP op) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_cplx_impl(z, op), 1);
 }

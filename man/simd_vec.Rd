@@ -1,0 +1,201 @@
+\name{simd_vec}
+\alias{simd_vec}
+\alias{as_simd_vec}
+\alias{is_simd_vec}
+\alias{simd_impl}
+\alias{simd_impl<-}
+\alias{simd_na_free}
+\title{SIMD Vectors with a Pinned Implementation}
+\usage{
+simd_vec(x, impl = NULL, check_na = FALSE)
+
+as_simd_vec(x, ...)
+
+is_simd_vec(x)
+
+simd_impl(x)
+simd_impl(x) <- value
+
+simd_na_free(x)
+}
+\arguments{
+\item{x}{For \code{simd_vec()} and \code{as_simd_vec()}, a double,
+  integer, logical, raw or complex vector, or a \pkg{bit64}
+  \code{integer64} vector. For the accessors, a \code{simd_vec}.}
+\item{impl, value}{\code{NULL} (follow the global setting of
+  \code{\link{simd_use}}) or the name of an implementation in
+  \code{\link{simd_available}()} to pin the object to. \code{"auto"} is
+  not allowed: a pin names a concrete implementation.}
+\item{check_na}{If \code{TRUE}, scan \code{x} once for \code{NA} and
+  \code{NaN} and record the answer in the object's NA-free flag.}
+\item{...}{Passed to \code{simd_vec()}.}
+}
+\description{
+A \code{simd_vec} is an ordinary atomic vector with class
+\code{"simd_vec"} on which R's arithmetic, comparison and logical
+operators, the \code{Math} and \code{Summary} group generics and
+\code{mean()} run the \pkg{rsimd} kernels. It can be pinned to one SIMD
+implementation and remembers when it is known to contain no missing
+values. The wrapper is optional: every \code{simd_} function takes and
+returns plain vectors.
+}
+\details{
+\strong{Structure.} A \code{simd_vec} is the data vector with attributes
+\describe{
+\item{\code{class}}{\code{"simd_vec"}, or \code{c("simd_vec",
+  "integer64")} for \code{integer64} data, so that \pkg{bit64}'s methods
+  are reached for what \pkg{rsimd} does not implement.}
+\item{\code{rsimd_impl}}{The pinned implementation, absent when the
+  object is not pinned.}
+\item{\code{rsimd_na_free}}{\code{TRUE} if the data is known to contain no
+  \code{NA} or \code{NaN}, \code{FALSE} if it is known to contain one,
+  absent when unknown.}
+}
+\code{simd_vec()} drops every other attribute of \code{x} (names,
+dimensions, dimnames). Given a \code{simd_vec}, it replaces the pin only
+when \code{impl} is supplied and the flag only when \code{check_na} is
+\code{TRUE}. Character vectors, factors, lists and data frames are errors.
+\code{simd_na_free()} returns the flag (\code{TRUE}, \code{FALSE} or
+\code{NULL}); there is no setter, so the flag can only come from a check or
+from the rules below. Raw data has no missing values, so a raw
+\code{simd_vec} is always flagged \code{TRUE}.
+
+\strong{Implementation pins.} Any \pkg{rsimd} function, called directly
+or through an operator, runs on the implementation its \code{simd_vec}
+operands are pinned to, whatever \code{\link{simd_use}()} or
+\code{\link{simd_with_impl}()} selected:
+\itemize{
+\item one pinned operand, or several pinned to the same implementation:
+  that implementation, and the result is pinned to it too;
+\item operands pinned to different implementations: an error,
+  \dQuote{operands pinned to different implementations ('avx2' vs 'sse2');
+  unpin one with simd_impl(x) <- NULL};
+\item no pinned operand: the global selection, and the result is not
+  pinned.
+}
+A pin to an implementation that is not available on this machine (an
+object saved on another one) is an error when the object is used; it
+never falls back silently. Unpin it with \code{simd_impl(x) <- NULL}.
+
+\strong{Results.} When any operand of an \pkg{rsimd} function is a
+\code{simd_vec}, a result that is a vector of values (arithmetic,
+elementary functions, rounding, bitwise operations, conversions,
+cumulative functions, \code{simd_softmax()}, \code{simd_conj()} and so on)
+is a \code{simd_vec}. Reductions (\code{sum}, \code{range},
+\code{simd_which_max} \dots), predicates, comparisons and the logical
+operators \code{&}, \code{|} and \code{!} return plain values.
+
+\strong{The NA-free flag.} When every operand is flagged NA-free, the
+functions skip their missing-value checks (as with \code{na_check =
+FALSE}), for reductions and elementwise operations alike. The flag is only
+set on objects a function returns, since R cannot change an argument in
+place. It is \code{TRUE} only when a missing value is impossible:
+\tabular{ll}{
+\code{simd_vec(x, check_na = TRUE)} \tab \code{!simd_any_na(x)} \cr
+\code{abs}, \code{sign}, \code{floor}, \code{ceiling}, \code{trunc}, \code{round}, unary \code{-} \tab kept when \code{TRUE} \cr
+\code{simd_pmin}, \code{simd_pmax} (and \code{_num}), \code{simd_clamp}, \code{cummax}, \code{cummin} \tab kept when every operand is \code{TRUE} \cr
+\code{simd_conj}, \code{simd_re}, \code{simd_im}, \code{simd_popcount}, \code{simd_lzcnt}, \code{simd_tzcnt} \tab kept \cr
+conversions that cannot overflow (to double, logical or raw; widening; saturating) \tab kept \cr
+other arithmetic (\code{+}, \code{*}, \code{/}, \code{^}, the \code{_wrap} forms), elementary functions, other bitwise operations, \code{cumsum}, \code{cumprod}, base fallbacks \tab unknown \cr
+\code{x[i]} \tab \code{TRUE} kept unless \code{i} selects a missing element; otherwise unknown \cr
+\code{x[i] <- value} \tab unknown \cr
+\code{length(x) <- n} \tab \code{TRUE} kept when shortening; otherwise unknown \cr
+\code{c(...)} \tab \code{FALSE} if any part is \code{FALSE}; \code{TRUE} if every \code{simd_vec} part is \code{TRUE} and the plain parts have no missing value; otherwise unknown \cr
+}
+Double arithmetic can make \code{NaN} from non-missing values
+(\code{Inf - Inf}, \code{0 / 0}), and integer arithmetic \code{NA} on
+overflow; a wrapped integer result of \code{-2^31} also reads as \code{NA},
+so the \code{_wrap} forms do not keep the flag either. An operand of
+length 1, plain or not, is checked directly: \code{x + 1} can still skip
+the checks, and \code{abs(simd_vec(2))} is flagged \code{TRUE}.
+
+\code{anyNA(x)} answers from the flag when it is known, without reading
+the data.
+
+\strong{Operators.} \code{+}, \code{-}, \code{*}, \code{/}, \code{^},
+\code{\%\%} and \code{\%/\%} call \code{\link{simd_add}},
+\code{\link{simd_sub}}, \code{\link{simd_mul}}, \code{\link{simd_div}},
+\code{\link{simd_pow}}, \code{\link{simd_mod}} and
+\code{\link{simd_idiv}}; unary \code{-} calls \code{\link{simd_neg}}.
+Type promotion follows base R (logical and integer give integer,
+\code{/} and \code{^} give double), and operands must have equal lengths
+or length 1. \code{==}, \code{!=}, \code{<}, \code{>}, \code{<=} and
+\code{>=} call \code{\link{simd_eq}} and friends and return plain logical
+vectors. \code{&}, \code{|} and \code{!} call \code{\link{simd_and}},
+\code{\link{simd_or}} and \code{\link{simd_not}}, or for raw data
+\code{\link{simd_bit_and}}, \code{\link{simd_bit_or}} and
+\code{\link{simd_bit_not}}. A plain operand may be on either side; if it
+has a class with its own operator methods, the \code{simd_vec} method is
+chosen (\code{\link{chooseOpsMethod}}), except that \pkg{bit64} always
+claims operations whose left operand is a plain \code{integer64}, which
+then give a plain \code{integer64}.
+
+\strong{Group generics.} The \code{Math} functions with a kernel
+(\code{abs}, \code{sign}, \code{sqrt}, \code{floor}, \code{ceiling},
+\code{trunc}, \code{round} with any \code{digits}, \code{exp},
+\code{expm1}, \code{log} with any \code{base}, \code{log2}, \code{log10},
+\code{log1p}, the trigonometric, \code{pi}-scaled and hyperbolic
+functions and their inverses, \code{cumsum}, \code{cumprod},
+\code{cummax}, \code{cummin}) call the \code{simd_} functions. The
+\code{Summary} functions (\code{sum}, \code{prod}, \code{min},
+\code{max}, \code{range}, \code{any}, \code{all}) and \code{mean} call
+theirs with \code{na.rm} passed on; several arguments are combined with
+\code{c()} first. \code{stats::var()} and \code{stats::sd()} are not
+generic: use \code{\link{simd_var}} and \code{\link{simd_sd}}, or
+\code{var(x)}, which works on the data as on any numeric vector.
+
+\strong{Base fallbacks.} What has no kernel runs base R on the data and,
+for a vector result, wraps it again with the operands' pin and an unknown
+NA-free flag: \code{signif}, \code{gamma}, \code{lgamma},
+\code{digamma}, \code{trigamma}; for complex data \code{*}, \code{/},
+\code{^}, \code{\%\%}, \code{\%/\%}, the comparisons (plain logical
+results), the \code{Math} functions, and \code{prod}, \code{min},
+\code{max}, \code{range}, \code{any}, \code{all} and \code{mean}; for
+\code{integer64} data \code{^}, \code{prod}, \code{mean} and the
+\code{Math} functions other than \code{abs}, \code{sign}, \code{cumsum},
+\code{cummax} and \code{cummin}, which need \pkg{bit64}; and
+\code{mean(x, trim)} with \code{trim} other than 0.
+
+\strong{Other methods.} \code{x[i]} keeps the class and the pin;
+\code{x[i] <- value} too (an \code{integer64} object converts
+\code{value} to \code{integer64}); \code{x[[i]]} returns a plain element.
+\code{c()} combines with base R's type promotion, except that
+\code{integer64} absorbs the other parts, as in \pkg{bit64}, and the
+parts' pins must agree. \code{length(x) <- n} pads with \code{NA}.
+\code{rev()}, \code{sort()}, \code{head()} and \code{tail()} work through
+\code{[} and so keep the class; \code{rep()} and \code{unique()} return
+plain vectors. \code{as.vector()}, \code{as.double()},
+\code{as.numeric()}, \code{as.integer()}, \code{as.logical()} and
+\code{as.data.frame()} (so \code{data.frame(v = x)}) unwrap to plain
+vectors; \code{unclass(x)} removes only the class and keeps the
+\code{rsimd_impl} and \code{rsimd_na_free} attributes. \code{print()}
+shows a header line before the data, \code{format()} formats the data and
+\code{str()} gives a one-line summary.
+}
+\value{
+\code{simd_vec()}, \code{as_simd_vec()} and \code{simd_impl<-}: a
+\code{simd_vec}. \code{is_simd_vec()}: \code{TRUE} or \code{FALSE}.
+\code{simd_impl()}: the pinned implementation or \code{NULL}.
+\code{simd_na_free()}: \code{TRUE}, \code{FALSE} or \code{NULL}.
+}
+\seealso{
+\code{\link{simd_use}}, \code{\link{simd_with_impl}},
+\code{\link{simd_any_na}}, \link{rsimd_options}, \link{rsimd-integer64}.
+}
+\examples{
+x <- simd_vec(c(1.5, -2, 4), check_na = TRUE)
+x
+x * 2 + 1
+sum(abs(x))
+exp(x)
+x > 0
+simd_na_free(abs(x))
+simd_na_free(x + 1)
+
+# Pin to an implementation; results carry the pin.
+y <- simd_vec(1:4, impl = simd_available()[1])
+simd_impl(y + 1L)
+simd_impl(y) <- NULL
+
+str(x)
+}

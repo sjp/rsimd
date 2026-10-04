@@ -86,6 +86,7 @@ static int available[RSIMD_TIER_COUNT];
 static int initialised = 0;
 
 const struct rsimd_kernels *rsimd_active = &rsimd_kernels_none;
+const struct rsimd_kernels *rsimd_selected = &rsimd_kernels_none;
 rsimd_tier rsimd_active_tier = RSIMD_TIER_NONE;
 int rsimd_active_is_auto = 1;
 
@@ -164,6 +165,10 @@ rsimd_tier rsimd_slot_source(rsimd_tier t, int slot) {
   return (rsimd_tier) slot_source[t][slot];
 }
 
+const struct rsimd_kernels *rsimd_tier_resolved(rsimd_tier t) {
+  return rsimd_tier_available(t) ? &resolved[t].k : NULL;
+}
+
 rsimd_tier rsimd_best_tier(void) {
   int p;
   for (p = 0; p < rsimd_tier_preference_count; p++) {
@@ -177,7 +182,7 @@ int rsimd_select(const char *name) {
   rsimd_tier t = is_auto ? rsimd_best_tier() : rsimd_tier_from_name(name);
   if (t == RSIMD_TIER_COUNT) return -1;
   if (!rsimd_tier_available(t)) return -2;
-  rsimd_active = &resolved[t].k;
+  rsimd_selected = rsimd_active = &resolved[t].k;
   rsimd_active_tier = t;
   rsimd_active_is_auto = is_auto;
   return 0;

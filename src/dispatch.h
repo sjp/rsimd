@@ -58,15 +58,22 @@ const struct rsimd_kernels *rsimd_tier_table(rsimd_tier t);
    RSIMD_TIER_COUNT if t is not available. */
 rsimd_tier rsimd_slot_source(rsimd_tier t, int slot);
 
-/* Active table and its tier: never NULL once the library is loaded. */
+/* The selected table, its tier and whether it was selected as "auto":
+   never NULL once the library is loaded. rsimd_active is the table kernels
+   are called through: the selected one, except during a .Call whose
+   simd_vec operands are pinned to a tier (rsimd_entry() and
+   rsimd_in_init() in rvec.h switch it). */
 extern const struct rsimd_kernels *rsimd_active;
+extern const struct rsimd_kernels *rsimd_selected;
 extern rsimd_tier rsimd_active_tier;
 extern int rsimd_active_is_auto; /* 1 if selected as "auto" */
 
 /* Selects "auto" or a tier id. Returns 0 on success, -1 for an unknown
    name and -2 for a tier that is not available; the selection is unchanged
-   on failure. Only sets the three globals above. */
+   on failure. Only sets the globals above (rsimd_active too). */
 int rsimd_select(const char *name);
+/* Tier t's resolved table, or NULL if t is not available. */
+const struct rsimd_kernels *rsimd_tier_resolved(rsimd_tier t);
 /* First available tier in preference order. */
 rsimd_tier rsimd_best_tier(void);
 

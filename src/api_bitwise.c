@@ -51,7 +51,7 @@ static int init_operands(rsimd_ew *e, SEXP x, SEXP y) {
 /* Three-valued logic by name: "and", "or", "xor" or "not" (y NULL).
    Double, integer and logical operands are read as logical values and
    give a logical result; two raw operands give raw (bytewise). */
-SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
+static SEXP simd_logic_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"and", "or", "xor", "not"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   SEXP out;
@@ -93,6 +93,11 @@ SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
   return out;
 }
 
+SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
+  rsimd_entry();
+  return simd_logic_impl(x, y, op);
+}
+
 /* Bitwise op by name: "and", "or", "xor" (x and y), "not", "shl", "shr",
    "sar", "rotl", "rotr" (x and the count k), "popcount", "lzcnt", "tzcnt"
    (x). Integer and logical operands give integer results; raw operands
@@ -101,7 +106,7 @@ SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
    checked k: a shift by NA_integer_ (a count outside 0..31, or 0..63 for
    integer64) gives NA everywhere; raw counts are in range, and rotate
    counts are reduced modulo the width. */
-SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
+static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   static const char *const names[] = {"and", "or",   "xor",      "not",   "shl",  "shr",
                                       "sar", "rotl", "rotr", "popcount", "lzcnt", "tzcnt"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
@@ -176,10 +181,16 @@ SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   return out;
 }
 
+SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
+  static const char *const keeps[] = {"popcount", "lzcnt", "tzcnt", NULL};
+  rsimd_entry();
+  return rsimd_sv_result(simd_bit_impl(x, y, op, k, na_check), rsimd_str_in(op, keeps));
+}
+
 /* The total number of set bits of an integer, logical, integer64 or raw
    vector, as a double: NA if an element is NA (unless na.rm = TRUE, which
    skips it). */
-SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check) {
+static SEXP simd_popcount_total_impl(SEXP x, SEXP na_rm, SEXP na_check) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -203,4 +214,9 @@ SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check) {
     Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
   }
   return Rf_ScalarReal(r.saw_na && !o.na_rm ? NA_REAL : (double) r.i64);
+}
+
+SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check) {
+  rsimd_entry();
+  return simd_popcount_total_impl(x, na_rm, na_check);
 }

@@ -74,7 +74,7 @@ static SEXP run_math1(SEXP x, int code, double p, int mode) {
 
 /* Unary functions by name (the RSIMD_MATH_* order of kernel_types.h,
    without LOGB). */
-SEXP C_simd_math1(SEXP x, SEXP op) {
+static SEXP simd_math1_impl(SEXP x, SEXP op) {
   static const char *const names[] = {
     "exp",  "exp2", "exp10", "expm1", "log",   "log2",  "log10", "log1p", "",
     "cbrt", "sin",  "cos",   "tan",   "asin",  "acos",  "atan",  "sinpi", "cospi",
@@ -84,12 +84,17 @@ SEXP C_simd_math1(SEXP x, SEXP op) {
   return run_math1(x, code, 1.0, MATH1_WARN);
 }
 
+SEXP C_simd_math1(SEXP x, SEXP op) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_math1_impl(x, op), 0);
+}
+
 /* log(x, base) for a single double, integer or logical base, as base R's
    logbase(): log10 for base
    10, log2 for base 2, otherwise log(x) / log(base) with log(base) NaN for
    a negative base; with base NA every result is NA, with base NaN every
    result is NaN except NA where x is NA, and neither warns. */
-SEXP C_simd_log(SEXP x, SEXP base) {
+static SEXP simd_log_impl(SEXP x, SEXP base) {
   double b;
   switch (TYPEOF(base)) {
   case REALSXP:
@@ -107,8 +112,13 @@ SEXP C_simd_log(SEXP x, SEXP base) {
   return run_math1(x, RSIMD_MATH_LOGB, b > 0 ? log(b) : b == 0 ? R_NegInf : R_NaN, MATH1_WARN);
 }
 
+SEXP C_simd_log(SEXP x, SEXP base) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_log_impl(x, base), 0);
+}
+
 /* Binary functions by name: pow(x, y), atan2(y, x), hypot(x, y). */
-SEXP C_simd_math2(SEXP x, SEXP y, SEXP op) {
+static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"pow", "atan2", "hypot"};
   static const char *const xy[] = {"x", "y"}, *const yx[] = {"y", "x"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), flags, st = 0;
@@ -132,8 +142,13 @@ SEXP C_simd_math2(SEXP x, SEXP y, SEXP op) {
   return out;
 }
 
+SEXP C_simd_math2(SEXP x, SEXP y, SEXP op) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_math2_impl(x, y, op), 0);
+}
+
 /* list(sin = sin(x), cos = cos(x)), one warning for both. */
-SEXP C_simd_sincos(SEXP x) {
+static SEXP simd_sincos_impl(SEXP x) {
   int flags, st = 0;
   SEXP s, c, out, names;
   double *ps, *pc;
@@ -160,6 +175,16 @@ SEXP C_simd_sincos(SEXP x) {
   return out;
 }
 
+SEXP C_simd_sincos(SEXP x) {
+  SEXP out;
+  rsimd_entry();
+  out = PROTECT(simd_sincos_impl(x));
+  SET_VECTOR_ELT(out, 0, rsimd_sv_result(VECTOR_ELT(out, 0), 0));
+  SET_VECTOR_ELT(out, 1, rsimd_sv_result(VECTOR_ELT(out, 1), 0));
+  UNPROTECT(1);
+  return out;
+}
+
 /* The bits of x as an integer ordered like the doubles: -0 and +0 both
    map to 0, and adjacent doubles differ by 1. */
 static int64_t ordered_bits(double x) {
@@ -172,7 +197,7 @@ static int64_t ordered_bits(double x) {
    doubles: 0 for two NAs, two other NaNs or the same infinity, Inf when
    only one is missing or one is NA and the other NaN; +0 and -0 are 0
    apart. Used by the accuracy tests. */
-SEXP C_simd_ulp_dist(SEXP a, SEXP b) {
+static SEXP simd_ulp_dist_impl(SEXP a, SEXP b) {
   static const char *const names[] = {"a", "b"};
   SEXP sargs[2], out;
   double *po;
@@ -205,4 +230,9 @@ SEXP C_simd_ulp_dist(SEXP a, SEXP b) {
   });
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_ulp_dist(SEXP a, SEXP b) {
+  rsimd_entry();
+  return simd_ulp_dist_impl(a, b);
 }

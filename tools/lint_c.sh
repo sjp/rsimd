@@ -13,6 +13,10 @@
 # never read user data:
 allowed="rvec.c api_control.c cpu_features.c dispatch.c version.c init.c"
 #
+# Also checks that every .Call entry point (SEXP C_...) in src/api_*.c other
+# than api_control.c calls rsimd_entry(), which resets the kernel table a
+# pinned simd_vec operand of an earlier call may have switched (rvec.h).
+#
 # Usage: sh tools/lint_c.sh
 # Prints each offending line as file:line: text; exit status 1 if any.
 
@@ -60,7 +64,25 @@ for f in src/*.c src/*.h src/kernels/*; do
   fi
 done
 
+entry_status=0
+for f in src/api_*.c; do
+  [ "$(basename "$f")" = api_control.c ] && continue
+  missing=$(awk '
+    /^SEXP C_[A-Za-z0-9_]*\(/ { name = $2; sub(/\(.*/, "", name); seen = 0; line = NR; inside = 1; next }
+    inside && /rsimd_entry\(\);/ { seen = 1 }
+    inside && /^}/ { if (!seen) print line ": " name " does not call rsimd_entry()"; inside = 0 }
+  ' "$f")
+  if [ -n "$missing" ]; then
+    echo "$missing" | sed "s|^|$f:|"
+    entry_status=1
+  fi
+done
+
 if [ "$status" -ne 0 ]; then
   echo "lint_c.sh: use the access layer (src/rvec.h) instead of the calls above" >&2
+fi
+if [ "$entry_status" -ne 0 ]; then
+  echo "lint_c.sh: call rsimd_entry() first in the entry points above" >&2
+  status=1
 fi
 exit "$status"

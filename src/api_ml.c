@@ -89,10 +89,20 @@ static SEXP softmax(SEXP x, SEXP precision, int log_out) {
   return out;
 }
 
-SEXP C_simd_softmax(SEXP x, SEXP precision) {
+static SEXP simd_softmax_impl(SEXP x, SEXP precision) {
   return softmax(x, precision, 0);
 }
 
-SEXP C_simd_log_softmax(SEXP x, SEXP precision) {
+SEXP C_simd_softmax(SEXP x, SEXP precision) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_softmax_impl(x, precision), 0);
+}
+
+static SEXP simd_log_softmax_impl(SEXP x, SEXP precision) {
   return softmax(x, precision, 1);
+}
+
+SEXP C_simd_log_softmax(SEXP x, SEXP precision) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_log_softmax_impl(x, precision), 0);
 }

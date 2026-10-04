@@ -45,7 +45,7 @@ simd_is_zero_all <- function(x) .pred(x, "zero", 2L, "simd_is_zero_all")
   .check_supported(y, fun, "complex", character(0), "y")
   if (is.raw(x) != is.raw(y)) {
     to <- if (is.logical(x) || is.logical(y)) as.logical else as.integer
-    if (is.raw(x)) x <- to(x) else y <- to(y)
+    if (is.raw(x)) x <- .sv_like(to(x), x) else y <- .sv_like(to(y), y)
   }
   p <- .i64_to_double(list(x, y), sys.call(-1L))
   .Call(C_simd_cmp, p[[1L]], p[[2L]], op)

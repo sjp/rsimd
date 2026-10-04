@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rvec.h"
+#include "dispatch.h"
 #include <R_ext/Utils.h>
 
 _Static_assert(sizeof(Rcomplex) == 2 * sizeof(double), "Rcomplex must be two doubles");
@@ -70,6 +71,110 @@ int rsimd_promote_warns(rsimd_etype a, rsimd_etype b) {
   return (a == RSIMD_I64 && b == RSIMD_F64) || (a == RSIMD_F64 && b == RSIMD_I64);
 }
 
+/* ---- simd_vec operands ---------------------------------------------- */
+
+/* What the current .Call has seen of its simd_vec operands. */
+static struct {
+  int seen;        /* an operand is a simd_vec */
+  rsimd_tier pin;  /* their common pinned tier, or RSIMD_TIER_COUNT */
+  int na_free;     /* every operand is known NA-free */
+} sv_call = {0, RSIMD_TIER_COUNT, 1};
+
+void rsimd_entry(void) {
+  rsimd_active = rsimd_selected;
+  sv_call.seen = 0;
+  sv_call.pin = RSIMD_TIER_COUNT;
+  sv_call.na_free = 1;
+}
+
+/* 1 if the single element of v (contiguous, n == 1) is missing. */
+static int scalar_is_na(const rsimd_in *v) {
+  switch (v->type) {
+  case RSIMD_F64: return ISNAN(*(const double *) v->ptr);
+  case RSIMD_I32:
+  case RSIMD_LGL: return *(const int *) v->ptr == NA_INTEGER;
+  case RSIMD_I64: {
+    int64_t b;
+    memcpy(&b, v->ptr, sizeof b);
+    return b == INT64_MIN;
+  }
+  case RSIMD_C128: {
+    const Rcomplex *z = (const Rcomplex *) v->ptr;
+    return ISNAN(z->r) || ISNAN(z->i);
+  }
+  default: return 0;
+  }
+}
+
+/* Records operand v (named arg) in sv_call: a simd_vec's rsimd_na_free
+   flag sets v->no_na_hint, and its rsimd_impl pin switches rsimd_active to
+   the pinned tier's table, erroring if the tier is not available or two
+   operands are pinned to different tiers. */
+static void sv_note(rsimd_in *v, const char *arg) {
+  SEXP x = v->sx, flag, impl;
+  if (Rf_inherits(x, "simd_vec")) {
+    sv_call.seen = 1;
+    flag = Rf_getAttrib(x, Rf_install("rsimd_na_free"));
+    if (TYPEOF(flag) == LGLSXP && XLENGTH(flag) == 1 && LOGICAL_ELT(flag, 0) == TRUE) {
+      v->no_na_hint = 1;
+    }
+    impl = Rf_getAttrib(x, Rf_install("rsimd_impl"));
+    if (impl != R_NilValue) {
+      rsimd_tier t = RSIMD_TIER_COUNT;
+      if (TYPEOF(impl) == STRSXP && XLENGTH(impl) == 1 && STRING_ELT(impl, 0) != NA_STRING) {
+        t = rsimd_tier_from_name(CHAR(STRING_ELT(impl, 0)));
+      }
+      if (t == RSIMD_TIER_COUNT) {
+        Rf_errorcall(R_NilValue,
+                     "'%s' has an invalid 'rsimd_impl' attribute; reset it with "
+                     "simd_impl(%s) <- NULL",
+                     arg, arg);
+      }
+      if (sv_call.pin != RSIMD_TIER_COUNT && sv_call.pin != t) {
+        Rf_errorcall(R_NilValue,
+                     "operands pinned to different implementations ('%s' vs '%s'); "
+                     "unpin one with simd_impl(x) <- NULL",
+                     rsimd_tier_names[sv_call.pin], rsimd_tier_names[t]);
+      }
+      if (rsimd_tier_resolved(t) == NULL) {
+        Rf_errorcall(R_NilValue,
+                     "'%s' is pinned to implementation '%s', which is not available on "
+                     "this machine; unpin it with simd_impl(%s) <- NULL",
+                     arg, rsimd_tier_names[t], arg);
+      }
+      sv_call.pin = t;
+      rsimd_active = rsimd_tier_resolved(t);
+    }
+  }
+  sv_call.na_free = sv_call.na_free && v->no_na_hint;
+}
+
+SEXP rsimd_sv_result(SEXP out, int keeps_na_free) {
+  SEXP cls, impl, flag, impl_sym, flag_sym;
+  int na_free;
+  if (!sv_call.seen) return out;
+  if (MAYBE_REFERENCED(out)) out = Rf_shallow_duplicate(out);
+  PROTECT(out);
+  if (Rf_inherits(out, "integer64")) {
+    cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    SET_STRING_ELT(cls, 0, Rf_mkChar("simd_vec"));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("integer64"));
+  } else {
+    cls = PROTECT(Rf_mkString("simd_vec"));
+  }
+  Rf_setAttrib(out, R_ClassSymbol, cls);
+  impl_sym = Rf_install("rsimd_impl");
+  flag_sym = Rf_install("rsimd_na_free");
+  impl = PROTECT(sv_call.pin == RSIMD_TIER_COUNT ? R_NilValue
+                                                 : Rf_mkString(rsimd_tier_names[sv_call.pin]));
+  Rf_setAttrib(out, impl_sym, impl);
+  na_free = TYPEOF(out) == RAWSXP || (keeps_na_free && sv_call.na_free);
+  flag = PROTECT(na_free ? Rf_ScalarLogical(TRUE) : R_NilValue);
+  Rf_setAttrib(out, flag_sym, flag);
+  UNPROTECT(4);
+  return out;
+}
+
 /* ---- Chunked read access ------------------------------------------------ */
 
 int rsimd_in_init(rsimd_in *v, SEXP x, const char *arg) {
@@ -85,6 +190,8 @@ int rsimd_in_init(rsimd_in *v, SEXP x, const char *arg) {
   case RSIMD_U8: v->no_na_hint = 1; break; /* raw has no NA */
   default: v->no_na_hint = 0; break;       /* REAL_NO_NA says nothing about int64 NA */
   }
+  if (!v->no_na_hint && v->n == 1 && v->ptr != NULL) v->no_na_hint = !scalar_is_na(v);
+  sv_note(v, arg);
   return 0;
 }
 
@@ -399,21 +506,11 @@ void *rsimd_out_ptr(SEXP out) {
   return NULL; /* not reached */
 }
 
-void rsimd_copy_class(SEXP x, SEXP out, int no_na) {
+void rsimd_copy_class(SEXP x, SEXP out) {
   SEXP cls = Rf_getAttrib(x, R_ClassSymbol);
-  const char *name;
   if (TYPEOF(cls) != STRSXP || XLENGTH(cls) != 1) return;
-  name = CHAR(STRING_ELT(cls, 0));
-  if (strcmp(name, "integer64") == 0) {
-    if (TYPEOF(out) == REALSXP) Rf_setAttrib(out, R_ClassSymbol, cls);
-  } else if (strcmp(name, "simd_vec") == 0) {
-    SEXP impl = Rf_install("rsimd_impl");
+  if (strcmp(CHAR(STRING_ELT(cls, 0)), "integer64") == 0 && TYPEOF(out) == REALSXP) {
     Rf_setAttrib(out, R_ClassSymbol, cls);
-    Rf_setAttrib(out, impl, Rf_getAttrib(x, impl));
-    if (no_na) {
-      SEXP sym = Rf_install("rsimd_no_na");
-      Rf_setAttrib(out, sym, Rf_getAttrib(x, sym));
-    }
   }
 }
 
@@ -464,6 +561,16 @@ double rsimd_arg_num1(SEXP x, const char *name) {
   }
   Rf_error("'%s' must be a single number", name);
   return 0; /* not reached */
+}
+
+int rsimd_str_in(SEXP x, const char *const *names) {
+  const char *s;
+  if (TYPEOF(x) != STRSXP || XLENGTH(x) != 1 || STRING_ELT(x, 0) == NA_STRING) return 0;
+  s = CHAR(STRING_ELT(x, 0));
+  for (; *names != NULL; names++) {
+    if (strcmp(s, *names) == 0) return 1;
+  }
+  return 0;
 }
 
 const char *rsimd_arg_str(SEXP x, const char *name) {

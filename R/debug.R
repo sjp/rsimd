@@ -9,6 +9,13 @@
 # applied; no_na: the op guarantees an NA-free result.
 .debug_copy <- function(x, no_na = FALSE) .Call(C_simd_debug_copy, x, no_na)
 
+# The tier a call with operands x and y runs its kernels on (the selected
+# one, or the simd_vec operands' pin).
+.debug_active <- function(x, y = NULL) {
+  .sync_impl()
+  .Call(C_simd_debug_active, x, y)
+}
+
 # x + y as double through the binary chunk loop and broadcast rule:
 # list(value, n, x_scalar, y_scalar, regions).
 .debug_bin <- function(x, y) .Call(C_simd_debug_bin, x, y)

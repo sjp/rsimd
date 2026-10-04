@@ -41,7 +41,7 @@ static SEXP constant_false(R_xlen_t n, int mode) {
    Complex elements take the first four, with base R's either-part rules
    (finite: both parts). integer64 elements are like integers (NA is
    INT64_MIN). Empty input gives FALSE for any and TRUE for all. */
-SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
+static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
   static const char *const names[] = {"na", "nan", "finite", "infinite", "negative", "zero"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   int m = rsimd_arg_int1(mode, "mode"), res = m == RSIMD_PRED_ALL;
@@ -109,6 +109,11 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
   return out;
 }
 
+SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
+  rsimd_entry();
+  return simd_pred_impl(x, op, mode);
+}
+
 /* Comparison `op` by name ("eq", "ne", "lt", "le", "gt", "ge") of two
    operands under the length-1 broadcast rule, as base R's ==, != ...:
    integer and logical operands compare as integers, anything with a
@@ -117,7 +122,7 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
    A missing operand gives NA. The R side converts a raw operand compared
    with a non-raw one to integer first, and an integer64 operand compared
    with a double to double. */
-SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
+static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"eq", "ne", "lt", "le", "gt", "ge"};
   static const char *const args[] = {"x", "y"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
@@ -161,4 +166,9 @@ SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
   }
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
+  rsimd_entry();
+  return simd_cmp_impl(x, y, op);
 }

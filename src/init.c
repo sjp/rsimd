@@ -23,6 +23,7 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_promote, 2),
   CALLDEF(C_simd_debug_regions, 1),
   CALLDEF(C_simd_debug_copy, 2),
+  CALLDEF(C_simd_debug_active, 2),
   CALLDEF(C_simd_debug_bin, 2),
   CALLDEF(C_simd_debug_finish, 6),
   CALLDEF(C_simd_debug_opts, 4),

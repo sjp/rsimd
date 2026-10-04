@@ -77,7 +77,8 @@ typedef struct {
 } rsimd_in;
 
 /* Classifies x (erroring as rsimd_check_atomic() with name `arg`) and finds
-   its data pointer without materialising ALTREP objects. Returns 0. */
+   its data pointer without materialising ALTREP objects; records a simd_vec
+   operand (see rsimd_entry()). Returns 0. */
 int rsimd_in_init(rsimd_in *v, SEXP x, const char *arg);
 
 /* A pointer to elements [i, i + *len). On the contiguous path that is the
@@ -354,11 +355,40 @@ SEXP rsimd_scalar_i64(int64_t v);
    overflow". */
 void rsimd_warn_i64_overflow(void);
 /* The attribute policy: results are bare, except that a class attribute of
-   exactly "integer64" (copied only to a double result) or "simd_vec" is
-   copied from x to out. For "simd_vec" the "rsimd_impl" attribute is copied
-   too, and "rsimd_no_na" only when no_na is non-zero (the op guarantees an
-   NA-free result); otherwise it is left unset. */
-void rsimd_copy_class(SEXP x, SEXP out, int no_na);
+   exactly "integer64" is copied from x to a double result out. (simd_vec
+   results are made by rsimd_sv_result().) */
+void rsimd_copy_class(SEXP x, SEXP out);
+
+/* ---- simd_vec operands -------------------------------------------------- */
+
+/* Every .Call entry point that runs kernels calls rsimd_entry() first. It
+   resets rsimd_active to the selected table and forgets the simd_vec
+   operands of the previous call (which may have ended in an error with a
+   pinned table active).
+
+   rsimd_in_init() (and so rsimd_bin_init() and rsimd_ew_init()) then
+   records each simd_vec operand (one whose class contains "simd_vec"):
+     - attribute rsimd_na_free = TRUE sets the operand's no_na_hint, so
+       na_check is skipped as for an ALTREP that promises no NA;
+     - attribute rsimd_impl (a tier name) pins the call: rsimd_active
+       becomes that tier's resolved table. It errors for an invalid value,
+       for a tier that is not available on this machine and for operands
+       pinned to different tiers.
+   A plain operand of length 1 is checked for NA directly, so that a scalar
+   does not stop an NA-free call from skipping its checks. */
+void rsimd_entry(void);
+
+/* For entry points whose result is a value vector (not a reduction, mask or
+   index): when an operand of the call was a simd_vec, out (a fresh result,
+   or an input, which is then shallow-copied) becomes a simd_vec with class
+   "simd_vec", or c("simd_vec", "integer64") for an integer64 result,
+   attribute rsimd_impl set to the call's pin (absent when unpinned) and
+   rsimd_na_free = TRUE when the op cannot make a missing value from
+   non-missing input (keeps_na_free) and every operand was known NA-free,
+   or when out is raw; otherwise rsimd_na_free is absent. Other results are
+   returned unchanged. out need not be PROTECTed; the value returned is not
+   PROTECTed. */
+SEXP rsimd_sv_result(SEXP out, int keeps_na_free);
 
 /* ---- Options and arguments ---------------------------------------------- */
 
@@ -379,6 +409,8 @@ double rsimd_arg_dbl1(SEXP x, const char *name);
    allowed and returned as NA_real_ or NaN. */
 double rsimd_arg_num1(SEXP x, const char *name);
 const char *rsimd_arg_str(SEXP x, const char *name);
+/* 1 if x is a single string equal to one of names (NULL-terminated). */
+int rsimd_str_in(SEXP x, const char *const *names);
 
 /* ---- Complex ------------------------------------------------------------ */
 

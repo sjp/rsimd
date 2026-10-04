@@ -17,7 +17,22 @@
    target type is copied. `quiet` (TRUE when the R side converts an
    integer64 operand mixed with a double, having warned itself) drops the
    integer64 precision warning. */
-SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
+/* 1 if converting x to `to` in `mode` cannot make a missing value from a
+   non-missing one: conversions to double, logical and raw, saturating ones,
+   and widening ones (logical, raw and integer to integer or integer64;
+   integer64 to integer64). */
+static int convert_keeps_na_free(SEXP x, SEXP to, SEXP mode) {
+  const char *name = rsimd_arg_str(to, "to");
+  rsimd_etype from = rsimd_etype_of(x);
+  if (strcmp(name, "double") == 0 || strcmp(name, "logical") == 0 || strcmp(name, "raw") == 0) {
+    return 1;
+  }
+  if (rsimd_arg_int1(mode, "mode") == RSIMD_CVT_SATURATING) return 1;
+  return from == RSIMD_LGL || from == RSIMD_U8 || from == RSIMD_I32 ||
+         (from == RSIMD_I64 && strcmp(name, "integer64") == 0);
+}
+
+static SEXP simd_convert_impl(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
   static const char *const targets[] = {"integer", "double", "logical", "raw", "integer64"};
   static const rsimd_etype target_type[] = {RSIMD_I32, RSIMD_F64, RSIMD_LGL, RSIMD_U8, RSIMD_I64};
   const char *name = rsimd_arg_str(to, "to");
@@ -111,4 +126,9 @@ SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
   }
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_convert_impl(x, to, mode, quiet), convert_keeps_na_free(x, to, mode));
 }

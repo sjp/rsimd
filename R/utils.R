@@ -17,9 +17,10 @@
 
 # x converted to the element type named by `to` (a type name from
 # C_simd_promote). integer64 is converted natively (bit64 is not needed),
-# without the precision warning: the caller warns about the coercion.
+# without the precision warning: the caller warns about the coercion. A
+# simd_vec stays one (with its pin and NA-free flag).
 .as_etype <- function(x, to) {
-  switch(to,
+  out <- switch(to,
     double = {
       if (inherits(x, "integer64")) .Call(C_simd_convert, x, "double", 0L, TRUE) else as.double(x)
     },
@@ -28,6 +29,7 @@
     integer64 = .Call(C_simd_convert, x, "integer64", 0L, FALSE),
     stop("internal error: cannot convert to ", to, call. = FALSE)
   )
+  .sv_like(out, x)
 }
 
 # The operands in `args` (a list) with every integer64 one converted to

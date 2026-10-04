@@ -106,7 +106,7 @@ test_that("every element type is read and copied exactly", {
   expect_identical(.debug_regions(bits)[c("sum", "na")], list(sum = 3, na = 1))
 })
 
-test_that("the known-NA-free hint comes from ALTREP and raw", {
+test_that("the known-NA-free hint comes from ALTREP, raw and scalars", {
   expect_true(.debug_regions(1:10)$no_na_hint)
   expect_true(.debug_regions(as.double(1:10))$no_na_hint)
   # sort() returns a wrapper ALTREP that records it has no NA.
@@ -117,7 +117,15 @@ test_that("the known-NA-free hint comes from ALTREP and raw", {
   expect_true(.debug_regions(as.raw(1))$no_na_hint)
   expect_false(.debug_regions(c(1, 2))$no_na_hint)
   expect_false(.debug_regions(c(1L, 2L))$no_na_hint)
-  expect_false(.debug_regions(integer64(0))$no_na_hint)
+  expect_false(.debug_regions(integer64(c(0, 1)))$no_na_hint)
+  # A length-1 operand is checked directly.
+  expect_true(.debug_regions(2)$no_na_hint)
+  expect_true(.debug_regions(integer64(0))$no_na_hint)
+  expect_false(.debug_regions(NA_real_)$no_na_hint)
+  expect_false(.debug_regions(NaN)$no_na_hint)
+  expect_false(.debug_regions(NA_integer_)$no_na_hint)
+  expect_false(.debug_regions(NA)$no_na_hint)
+  expect_false(.debug_regions(complex(real = 1, imaginary = NaN))$no_na_hint)
 })
 
 test_that("na_check is cleared for inputs known to be NA-free", {
@@ -211,7 +219,7 @@ test_that("results are bare except for the integer64 and simd_vec classes", {
   # Only a class of exactly "integer64".
   expect_identical(.debug_copy(structure(0, class = c("integer64", "foo"))), 0)
 
-  sv <- structure(c(1, 2), class = "simd_vec", rsimd_impl = "none", rsimd_no_na = TRUE)
+  sv <- structure(c(1, 2), class = "simd_vec", rsimd_impl = "none", rsimd_na_free = TRUE)
   expect_identical(
     .debug_copy(sv),
     structure(c(1, 2), class = "simd_vec", rsimd_impl = "none")

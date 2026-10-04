@@ -96,7 +96,7 @@ static const char *const binop_msg = "non-numeric argument to binary operator";
    integer64, overflow giving NA with bit64's warning, as does a zero
    divisor of %/% and %%; the R side has converted integer64 operands of
    / and those mixed with doubles to double. */
-SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
+static SEXP simd_ew2_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   static const char *const names[] = {"add",      "sub",      "mul",      "div",     "idiv",
                                       "mod",      "pmin",     "pmax",     "pmin_num", "pmax_num",
                                       "copysign", "add_wrap", "sub_wrap", "mul_wrap"};
@@ -151,12 +151,19 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   return out;
 }
 
+SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
+  /* These return one of their operands. */
+  static const char *const keeps[] = {"pmin", "pmax", "pmin_num", "pmax_num", NULL};
+  rsimd_entry();
+  return rsimd_sv_result(simd_ew2_impl(x, y, op, na_check), rsimd_str_in(op, keeps));
+}
+
 /* Ternary ops by name: fma(x, y, z), mul_add, add_mul, lerp(x, y, t) and
    clamp(x, lo, hi). mul_add, add_mul and clamp of integer and logical
    operands give an integer result, and with an integer64 operand an
    integer64 one; everything else is double. clamp errors when lo > hi
    anywhere. */
-SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
+static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   static const char *const names[] = {"fma", "mul_add", "add_mul", "lerp", "clamp"};
   static const char *const xyz[] = {"x", "y", "z"}, *const xyt[] = {"x", "y", "t"},
                            *const xlohi[] = {"x", "lo", "hi"};
@@ -209,13 +216,19 @@ SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   return out;
 }
 
+SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
+  static const char *const keeps[] = {"clamp", NULL};
+  rsimd_entry();
+  return rsimd_sv_result(simd_ew3_impl(x, y, z, op, na_check), rsimd_str_in(op, keeps));
+}
+
 /* Unary ops by name: neg and abs keep integer and logical input integer
    (they wrap, so NA stays NA); sign, recip, sqrt, floor, ceiling, trunc
    and round (half to even) are double for every input, as in base R.
    sqrt warns "NaNs produced" for a negative number. neg also takes
    complex input; neg, abs and sign take integer64 input and give integer64
    (NA stays NA). */
-SEXP C_simd_ew1(SEXP x, SEXP op) {
+static SEXP simd_ew1_impl(SEXP x, SEXP op) {
   static const char *const names[] = {"neg",   "abs",     "sign",  "recip", "sqrt",
                                       "floor", "ceiling", "trunc", "round"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
@@ -263,11 +276,19 @@ SEXP C_simd_ew1(SEXP x, SEXP op) {
   return out;
 }
 
+SEXP C_simd_ew1(SEXP x, SEXP op) {
+  /* These cannot make a missing value from a non-missing one. */
+  static const char *const keeps[] = {"neg", "abs", "sign", "floor",
+                                      "ceiling", "trunc", "round", NULL};
+  rsimd_entry();
+  return rsimd_sv_result(simd_ew1_impl(x, op), rsimd_str_in(op, keeps));
+}
+
 /* round(x, digits) for digits other than 0, through R's own fround() one
    element at a time (not vectorised), with base R's missing-value rule
    for two-argument math functions: NA if x or digits is NA, else NaN if
    either is NaN. */
-SEXP C_simd_round_digits(SEXP x, SEXP digits) {
+static SEXP simd_round_digits_impl(SEXP x, SEXP digits) {
   double d = rsimd_arg_num1(digits, "digits");
   SEXP out;
   double *po;
@@ -294,4 +315,9 @@ SEXP C_simd_round_digits(SEXP x, SEXP digits) {
   });
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_round_digits(SEXP x, SEXP digits) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_round_digits_impl(x, digits), 1);
 }

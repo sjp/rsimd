@@ -18,7 +18,7 @@ static void bad_type(rsimd_etype type) {
    fit; complex for complex x, each part summed as a double vector would be
    (with na.rm an element goes when either part is NA or NaN). precision is
    the integer code RSIMD_PREC_*. */
-SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_sum_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -44,8 +44,13 @@ SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return rsimd_reduce_finish(RSIMD_RED_SUM, in.type, in.n, &r, &o);
 }
 
+SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_sum_impl(x, na_rm, na_check, precision);
+}
+
 /* prod(x, na.rm): always double. The precision mode does not apply. */
-SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check) {
+static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -64,6 +69,11 @@ SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check) {
   default: bad_type(in.type);
   }
   return rsimd_reduce_finish(RSIMD_RED_PROD, in.type, in.n, &r, &o);
+}
+
+SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check) {
+  rsimd_entry();
+  return simd_prod_impl(x, na_rm, na_check);
 }
 
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
@@ -92,7 +102,7 @@ static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_re
    pairwise and compensated modes refined, as base R does, by adding the
    mean of the deviations from it (a second pass) when it is finite.
    Integers and logicals: the exact sum divided in long double. */
-SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -119,12 +129,17 @@ SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return Rf_ScalarReal(m);
 }
 
+SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_mean_impl(x, na_rm, na_check, precision);
+}
+
 /* min (op 0), max (op 1) or range (op 2) of x: both extrema come from one
    pass. Integer and logical results are integer, except for empty input
    (after na.rm), which gives Inf and -Inf with base R's warnings.
    integer64 results are integer64; empty input gives +INT64_MAX and
    -INT64_MAX with bit64's warnings (one for range). */
-SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
+static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   rsimd_reduce_result r, rmax;
   rsimd_opts o;
   rsimd_in in;
@@ -179,11 +194,16 @@ SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   return out;
 }
 
+SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
+  rsimd_entry();
+  return simd_minmax_impl(x, op, na_rm, na_check);
+}
+
 /* which.min (max = FALSE) or which.max (max = TRUE): missing values are
    ignored. The extremum comes from the min/max kernels, then the first
    element equal to it is looked up (so 0 and -0 tie, as in base R). Raw
    vectors use a one-pass kernel. */
-SEXP C_simd_which(SEXP x, SEXP max) {
+static SEXP simd_which_impl(SEXP x, SEXP max) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -248,11 +268,16 @@ SEXP C_simd_which(SEXP x, SEXP max) {
   return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
 }
 
+SEXP C_simd_which(SEXP x, SEXP max) {
+  rsimd_entry();
+  return simd_which_impl(x, max);
+}
+
 /* any (all = FALSE) or all (all = TRUE) with three-valued logic. Double and
    raw inputs are read as logical values without being converted, with
    base R's warning; integer64 inputs (non-zero TRUE) without one, as in
    bit64; reading stops once the answer is known. */
-SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm) {
+static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -302,6 +327,11 @@ SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm) {
   return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
 }
 
+SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm) {
+  rsimd_entry();
+  return simd_anyall_impl(x, all, na_rm);
+}
+
 /* Runs the missing-value kernel of x's type over every chunk in `mode`
    (RSIMD_NAMODE_*), stopping after the first missing value for ANY. */
 static void na_scan(rsimd_in *in, int mode, void *out, rsimd_reduce_result *r) {
@@ -339,7 +369,7 @@ static void na_scan(rsimd_in *in, int mode, void *out, rsimd_reduce_result *r) {
    the 1-based indices of the missing elements: integer, or double when one
    of them exceeds INT_MAX). NaN counts as missing, and so does an integer64
    NA. Raw vectors and inputs R knows to be NA-free are not read. */
-SEXP C_simd_na(SEXP x, SEXP mode) {
+static SEXP simd_na_impl(SEXP x, SEXP mode) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -376,6 +406,11 @@ SEXP C_simd_na(SEXP x, SEXP mode) {
   return out;
 }
 
+SEXP C_simd_na(SEXP x, SEXP mode) {
+  rsimd_entry();
+  return simd_na_impl(x, mode);
+}
+
 /* ---- Sums of squares, norms, distances, variance -------------------------- */
 
 static int is_numeric(rsimd_etype t) {
@@ -385,7 +420,7 @@ static int is_numeric(rsimd_etype t) {
 /* sum_sq (op 0), norm (op 1) or sum_abs (op 2) of x. sum_abs is a sum of
    |x| with simd_sum's result types (integer for integer and logical x,
    double when the total does not fit); the others are double. */
-SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_sum_sq_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
@@ -422,12 +457,17 @@ SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
   return rsimd_reduce_finish(RSIMD_RED_SUM_SQ, in.type, in.n, &r, &o);
 }
 
+SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_sum_sq_impl(x, op, na_rm, na_check, precision);
+}
+
 /* dot (op 0), dist (op 1) or cosine (op 2) of x and y, which must have the
    same length (no broadcast). Double, integer and logical operands mix
    without conversion: the kernels read int32 elements as doubles. A pair
    with a missing element is missing (removed under na.rm). cosine is
    dot / (norm(x) * norm(y)), NaN for a zero vector or any Inf. */
-SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r[3];
   rsimd_opts o;
   rsimd_bin b;
@@ -492,11 +532,16 @@ SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precisi
   return rsimd_reduce_finish(RSIMD_RED_COSINE, RSIMD_F64, b.n, &r[0], &o);
 }
 
+SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_dot_impl(x, y, op, na_rm, na_check, precision);
+}
+
 /* var (sd = FALSE) or sd (sd = TRUE) of x: two passes as base R, the mean
    (as simd_mean, in the same precision mode) and then the sum of squared
    deviations from it, divided by n - 1. Fewer than two elements (after
    na.rm), or any missing value without na.rm, give NA. */
-SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r, d;
   rsimd_opts o;
   rsimd_in in;
@@ -533,6 +578,11 @@ SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
   return Rf_ScalarReal(is_sd ? sqrt(v) : v);
 }
 
+SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_var_impl(x, sd, na_rm, na_check, precision);
+}
+
 /* ---- Scans ---------------------------------------------------------------- */
 
 /* Fills out[i], out[i + 1] ... of a double scan whose input x has its
@@ -564,7 +614,7 @@ static void fill_after_nan(const rsimd_in *in, R_xlen_t i, double *out) {
    missing; an integer cumsum that leaves the int32 range is NA from there
    on, with base R's warning, and an integer64 one that leaves int64 with
    bit64's. */
-SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision) {
+static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
   rsimd_scan_state s;
   rsimd_opts o;
   rsimd_in in;
@@ -633,4 +683,9 @@ SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision) {
 #undef RSIMD_SCAN_LOOP_
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_scan_impl(x, op, precision), rsimd_arg_int1(op, "op") >= 2);
 }

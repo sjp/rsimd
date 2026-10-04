@@ -5,9 +5,10 @@
 #include <string.h>
 #include "rsimd.h"
 #include "rvec.h"
+#include "dispatch.h"
 
 /* c(<common type>, <type of x>, <type of y>) as rsimd_etype_names. */
-SEXP C_simd_promote(SEXP x, SEXP y) {
+static SEXP simd_promote_impl(SEXP x, SEXP y) {
   rsimd_etype tx = rsimd_check_atomic(x, "x"), ty = rsimd_check_atomic(y, "y");
   rsimd_etype to = rsimd_promote(tx, ty);
   SEXP out;
@@ -23,13 +24,18 @@ SEXP C_simd_promote(SEXP x, SEXP y) {
   return out;
 }
 
+SEXP C_simd_promote(SEXP x, SEXP y) {
+  rsimd_entry();
+  return simd_promote_impl(x, y);
+}
+
 /* Reads x chunk by chunk and reports list(path, regions, sum, na,
    no_na_hint, stride, type): "contiguous" or "regions", the number of
    chunks, a sum of the elements in index order (NA skipped and counted for
    integer, logical and integer64; real plus imaginary parts for complex),
    so every path gives the identical value. Allocates nothing proportional
    to the input. */
-SEXP C_simd_debug_regions(SEXP x) {
+static SEXP simd_debug_regions_impl(SEXP x) {
   const char *names[] = {"path", "regions", "sum", "na", "no_na_hint", "stride", "type", ""};
   rsimd_in in;
   double regions = 0, sum = 0, na = 0;
@@ -92,6 +98,11 @@ SEXP C_simd_debug_regions(SEXP x) {
   return out;
 }
 
+SEXP C_simd_debug_regions(SEXP x) {
+  rsimd_entry();
+  return simd_debug_regions_impl(x);
+}
+
 #define COPY_CHUNKS(T)                                                                    \
   RSIMD_FOREACH_CHUNK(&in, T, px, len, off, {                                             \
     memcpy((T *) dst + off, px, (size_t) len * sizeof(T));                                \
@@ -99,7 +110,7 @@ SEXP C_simd_debug_regions(SEXP x) {
 
 /* A copy of x read through the chunk loop, allocated and given attributes
    as a result would be (no_na: the op guarantees an NA-free result). */
-SEXP C_simd_debug_copy(SEXP x, SEXP no_na) {
+static SEXP simd_debug_copy_impl(SEXP x, SEXP no_na) {
   rsimd_in in;
   SEXP out;
   void *dst;
@@ -115,15 +126,21 @@ SEXP C_simd_debug_copy(SEXP x, SEXP no_na) {
   case RSIMD_C128: COPY_CHUNKS(Rcomplex); break;
   default: break;
   }
-  rsimd_copy_class(x, out, rsimd_arg_lgl1(no_na, "no_na"));
+  rsimd_copy_class(x, out);
+  out = rsimd_sv_result(out, rsimd_arg_lgl1(no_na, "no_na"));
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_debug_copy(SEXP x, SEXP no_na) {
+  rsimd_entry();
+  return simd_debug_copy_impl(x, no_na);
 }
 
 /* x + y as double through the binary chunk loop, for double or
    integer/logical operands of one type (integer NA gives NA). Returns
    list(value, n, x_scalar, y_scalar, regions). */
-SEXP C_simd_debug_bin(SEXP x, SEXP y) {
+static SEXP simd_debug_bin_impl(SEXP x, SEXP y) {
   const char *names[] = {"value", "n", "x_scalar", "y_scalar", "regions", ""};
   rsimd_bin b;
   double regions = 0, *dst;
@@ -162,6 +179,11 @@ SEXP C_simd_debug_bin(SEXP x, SEXP y) {
   return out;
 }
 
+SEXP C_simd_debug_bin(SEXP x, SEXP y) {
+  rsimd_entry();
+  return simd_debug_bin_impl(x, y);
+}
+
 static int lookup(const char *name, const char *const *table, int count, const char *what) {
   int i;
   for (i = 0; i < count; i++) {
@@ -194,7 +216,8 @@ static SEXP result_fields(const rsimd_reduce_result *r) {
    any_true, any_false) and finishes it as a reduction over n elements of
    `type` with precision code `precision` and na.rm `na_rm`. Returns
    list(init, value): the identity's fields and the finished R value. */
-SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision, SEXP na_rm) {
+static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision,
+                                   SEXP na_rm) {
   const char *names[] = {"init", "value", ""};
   int o_idx = lookup(rsimd_arg_str(op, "op"), rsimd_reduce_op_names, RSIMD_RED_OP_COUNT,
                      "reduction");
@@ -234,9 +257,14 @@ SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision
   return out;
 }
 
+SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision, SEXP na_rm) {
+  rsimd_entry();
+  return simd_debug_finish_impl(op, type, n, fields, precision, na_rm);
+}
+
 /* The rsimd_opts an entry point taking x and these arguments would use
    (NULL arguments take their defaults): list(na_rm, na_check, precision). */
-SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
+static SEXP simd_debug_opts_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   const char *names[] = {"na_rm", "na_check", "precision", ""};
   rsimd_in in;
   rsimd_opts o;
@@ -249,4 +277,26 @@ SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   SET_VECTOR_ELT(out, 2, Rf_ScalarInteger(o.precision));
   UNPROTECT(1);
   return out;
+}
+
+SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return simd_debug_opts_impl(x, na_rm, na_check, precision);
+}
+
+/* The tier whose resolved table a call with operands x and y (y may be
+   NULL) runs on: the selected tier, or the operands' pinned one. */
+SEXP C_simd_debug_active(SEXP x, SEXP y) {
+  rsimd_in in;
+  int t;
+  rsimd_entry();
+  rsimd_in_init(&in, x, "x");
+  if (!Rf_isNull(y)) rsimd_in_init(&in, y, "y");
+  for (t = 0; t < RSIMD_TIER_COUNT; t++) {
+    if (rsimd_tier_resolved((rsimd_tier) t) == rsimd_active) {
+      return Rf_mkString(rsimd_tier_names[t]);
+    }
+  }
+  Rf_error("internal error: the active table belongs to no tier");
+  return R_NilValue; /* not reached */
 }

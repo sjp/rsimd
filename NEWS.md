@@ -147,3 +147,15 @@
   The elementwise functions also skip their R-level type checks when no
   operand has a class or is complex, which cuts the fixed cost of a call
   from about 9 to about 3 microseconds.
+* `simd_vec()` wraps a vector in the optional `simd_vec` class, on which the
+  arithmetic, comparison and logical operators, the `Math` and `Summary` group
+  generics, `mean()` and `anyNA()` run the SIMD kernels. An object can be
+  pinned to one implementation (`simd_impl(x) <- "neon"`), which every
+  function given it then uses whatever `simd_use()` selected; operands pinned
+  to different implementations are an error. Objects also carry a known
+  NA-free flag (`simd_vec(x, check_na = TRUE)`, `simd_na_free()`) that lets
+  reductions and elementwise operations skip their missing-value checks and
+  is kept only by operations that cannot create a missing value. Any `simd_`
+  function given a `simd_vec` returns a `simd_vec` for vector-valued results;
+  reductions, predicates and comparisons return plain values. `integer64`
+  data keeps class `c("simd_vec", "integer64")`. See `?simd_vec`.
