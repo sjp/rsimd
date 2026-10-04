@@ -109,10 +109,11 @@ test_that("every element type is read and copied exactly", {
 test_that("the known-NA-free hint comes from ALTREP, raw and scalars", {
   expect_true(.debug_regions(1:10)$no_na_hint)
   expect_true(.debug_regions(as.double(1:10))$no_na_hint)
-  # sort() returns a wrapper ALTREP that records it has no NA.
-  wrapped <- sort(c(3, 1, 2))
-  expect_identical(.debug_regions(wrapped)$path, "contiguous")
-  expect_true(.debug_regions(wrapped)$no_na_hint)
+  # sort() returns a wrapper ALTREP that records it has no NA. Recent R clears
+  # that record once a data pointer is taken, so each check gets a fresh one.
+  wrapped <- .debug_regions(sort(c(3, 1, 2)))
+  expect_identical(wrapped$path, "contiguous")
+  expect_true(wrapped$no_na_hint)
   expect_true(.debug_regions(sort(c(3L, 1L)))$no_na_hint)
   expect_true(.debug_regions(as.raw(1))$no_na_hint)
   expect_false(.debug_regions(c(1, 2))$no_na_hint)

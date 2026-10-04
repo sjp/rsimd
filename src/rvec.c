@@ -181,8 +181,9 @@ int rsimd_in_init(rsimd_in *v, SEXP x, const char *arg) {
   v->sx = x;
   v->type = rsimd_check_atomic(x, arg);
   v->n = XLENGTH(x);
-  /* Never DATAPTR(): it would materialise a compact sequence. */
-  v->ptr = DATAPTR_OR_NULL(x);
+  /* The hint is read before any data pointer: from R 4.6.1-patched on, a
+     wrapper clears its sortedness and no-NA metadata when a pointer to its
+     data is taken. */
   switch (v->type) {
   case RSIMD_F64: v->no_na_hint = REAL_NO_NA(x); break;
   case RSIMD_I32: v->no_na_hint = INTEGER_NO_NA(x); break;
@@ -190,6 +191,8 @@ int rsimd_in_init(rsimd_in *v, SEXP x, const char *arg) {
   case RSIMD_U8: v->no_na_hint = 1; break; /* raw has no NA */
   default: v->no_na_hint = 0; break;       /* REAL_NO_NA says nothing about int64 NA */
   }
+  /* Never DATAPTR(): it would materialise a compact sequence. */
+  v->ptr = DATAPTR_OR_NULL(x);
   if (!v->no_na_hint && v->n == 1 && v->ptr != NULL) v->no_na_hint = !scalar_is_na(v);
   sv_note(v, arg);
   return 0;

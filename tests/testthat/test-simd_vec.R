@@ -500,7 +500,7 @@ test_that("subsetting keeps TRUE unless a missing element is selected", {
   x <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
   expect_sv(x[2:3], c(2, 3), "none", TRUE)
   expect_sv(x[-1], c(2, 3), "none", TRUE)
-  expect_sv(x[c(TRUE, FALSE)], c(1, 3), "none", TRUE)
+  expect_sv(x[c(TRUE, FALSE, TRUE)], c(1, 3), "none", TRUE)
   expect_sv(x[0], numeric(), "none", TRUE)
   expect_sv(x[c(1, NA)], c(1, NA), "none")
   expect_sv(x[5], NA_real_, "none")

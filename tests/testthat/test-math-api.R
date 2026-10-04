@@ -60,8 +60,9 @@ test_that("an integer NA becomes NA_real_, and integer or logical input equals t
       info = name
     )
   }
-  expect_identical(simd_exp(1L), exp(1))
-  expect_identical(simd_exp(TRUE), exp(1))
+  # The double path, not base exp(): a tier's exp() may be 1 ulp from libm's.
+  expect_identical(simd_exp(1L), simd_exp(1))
+  expect_identical(simd_exp(TRUE), simd_exp(1))
   expect_identical(simd_exp(NA_integer_), NA_real_)
   expect_identical(simd_atan2(1L, c(2, NA)), simd_atan2(1, c(2, NA)))
   expect_identical(simd_hypot(3L, 4L), 5)

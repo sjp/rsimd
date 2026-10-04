@@ -11,7 +11,9 @@ tier_ids <- c("none", "sse2", "avx2", "avx512", "neon", "sve", "sve2", "rvv", "w
 # mask is only read when the package is loaded.
 with_cpu_mask <- function(mask, f) {
   skip_if_no_subprocess()
-  callr::r(f, env = c(callr::rcmd_safe_env(), RSIMD_CPU_FEATURES_MASK = mask))
+  # RSIMD_IMPL is cleared so that a tier pinned for this session (as in the
+  # per-tier CI runs) cannot add its own warning when the mask removes it.
+  callr::r(f, env = c(callr::rcmd_safe_env(), RSIMD_CPU_FEATURES_MASK = mask, RSIMD_IMPL = ""))
 }
 
 # The unmasked features as a fresh R process sees them. Under an emulator the
