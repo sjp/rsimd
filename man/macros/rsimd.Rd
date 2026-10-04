@@ -81,11 +81,13 @@ differ from base R's sequential running sum in the last bits. In
 identical on every implementation. \code{norm} and \code{dist} are not
 protected against overflow of the sum of squares.}
 
-\newcommand{\rsimdBroadcast}{\strong{Lengths.} The operands must have the same
+\newcommand{\rsimdLengths}{\strong{Lengths.} The operands must have the same
 length, or length one: a length-one operand is used for every element
 (broadcast). Any other combination is an error; there is no general
 recycling. A zero-length operand with length-one operands gives a
-zero-length result.
+zero-length result.}
+
+\newcommand{\rsimdBroadcast}{\rsimdLengths
 
 \strong{Types.} Logical operands count as integers. Integer and logical
 operands give an integer result where base R's operator does; any double

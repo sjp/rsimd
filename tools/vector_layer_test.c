@@ -12,8 +12,11 @@
  * of ties, signed zeros and missing values, whole and split into two
  * chunks, and compared with plain C references too, and so are the
  * elementwise kernels (src/kernels/arith.inc.c) with every combination of
- * broadcast and int32 operands. Prints a summary and exits non-zero on any
- * mismatch.
+ * broadcast and int32 operands, and so are the predicate, comparison,
+ * logical, bitwise and conversion kernels (src/kernels/predicates.inc.c,
+ * compare.inc.c, bitwise.inc.c, convert.inc.c), against the scalar forms
+ * those files define for the none tier. Prints a summary and exits
+ * non-zero on any mismatch.
  */
 
 #include <float.h>
@@ -22,6 +25,10 @@
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
 #include "kernels/arith.inc.c"
+#include "kernels/predicates.inc.c"
+#include "kernels/compare.inc.c"
+#include "kernels/bitwise.inc.c"
+#include "kernels/convert.inc.c"
 
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
 #define SENTINEL_F64 -12345.678
@@ -1653,9 +1660,330 @@ static void test_arith(ptrdiff_t n) {
 #endif
 }
 
+/* ---- Predicates, comparisons, logic, bitwise ops and conversions ---------- */
+
+#define SENTINEL_U8 0xA5
+static double fcv[N + 1];                /* boundaries of the conversions */
+static int32_t icv[N + 1];               /* around 0..255, with NA */
+static uint8_t ua[N + 1], ub[N + 1], uout[N + 1], uref[N + 1];
+static int32_t pa[N + 1];                /* any/all decided by the last element */
+#ifndef RSIMD_NO_F64_SIMD
+static double pf[N + 1];
+#endif
+
+static void init_logical_inputs(void) {
+  const double cvals[] = {
+    2147483647.9, 2147483648.0, -2147483648.0, -2147483648.5, -2147483647.5, 2147483647.0,
+    -2147483647.0, 255.9, 256.0, 255.0, -0.5, -1.0, -0.0, 0.0, 0.999, 4294967301.0,
+    -4294967301.0, 1e19, -1e19, 9007199254740993.0, 1e300, HUGE_VAL, -HUGE_VAL,
+    from_bits(UINT64_C(0x7FF8000000000000)), from_bits(UINT64_C(0x7FF00000000007A2)),
+    4.9e-324, -4.9e-324, 65535.5, -255.5, 2.5, 3e9, 2147483904.0, -2147483904.0, 6442450944.0};
+  const int nc = (int) (sizeof cvals / sizeof cvals[0]);
+  int i;
+  for (i = 0; i < N; i++) {
+    if (i < 2 * nc) {
+      fcv[i] = cvals[(i * 7) % nc];
+    } else {
+      double m = (double) (int64_t) (next_rand() >> 11) / 9007199254740992.0 - 0.5;
+      fcv[i] = ldexp(m, (int) (next_rand() % 72));
+    }
+    icv[i] = i % 11 == 5 ? RSIMD_NA_I32 : (int32_t) (next_rand() % 400) - 70;
+    ua[i] = (uint8_t) (i * 37 + 11);
+    ub[i] = i % 9 == 0 ? 0 : (uint8_t) next_rand();
+  }
+  fcv[N] = 0;
+}
+
+static void check_u8(const char *what, ptrdiff_t n, const uint8_t *got, const uint8_t *want) {
+  ptrdiff_t i;
+  char buf[96];
+  for (i = 0; i < n; i++) {
+    n_checks++;
+    if (got[i] != want[i]) {
+      snprintf(buf, sizeof buf, "got %d want %d", got[i], want[i]);
+      fail(what, n, i, buf);
+    }
+  }
+  n_checks++;
+  if (got[n] != SENTINEL_U8) fail(what, n, n, "wrote past the end");
+}
+
+static void reset_out_u8(void) {
+  int i;
+  reset_out();
+  for (i = 0; i <= N; i++) uout[i] = SENTINEL_U8;
+}
+
+/* The answer of a predicate in `mode` from the elementwise results. */
+static int pred_fold(const int32_t *v, ptrdiff_t n, int mode) {
+  ptrdiff_t j;
+  for (j = 0; j < n; j++) {
+    if (mode == RSIMD_PRED_ANY && v[j]) return 1;
+    if (mode == RSIMD_PRED_ALL && !v[j]) return 0;
+  }
+  return mode == RSIMD_PRED_ALL;
+}
+
+static void test_logical(ptrdiff_t n) {
+  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST}, onc = {0, 0, RSIMD_PREC_FAST},
+                   orm = {1, 1, RSIMD_PREC_FAST};
+  const rsimd_opts *opts[3] = {&o, &onc, &orm};
+  int op, f, mode, k, check, got, st, want_st;
+  ptrdiff_t j;
+  char what[96];
+  if (n == 0) return; /* kernels are never called for no elements */
+
+  /* Predicates, on inputs whose any/all is decided by the last element
+     too (one NA or zero at the end of non-missing, non-zero values). */
+  for (j = 0; j < n; j++) pa[j] = j + 1 == n ? (n % 2 ? RSIMD_NA_I32 : 0) : 3;
+  for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_ZERO; op++) {
+    if (op == RSIMD_PRED_NAN || op == RSIMD_PRED_INFINITE) continue;
+    for (f = 0; f < 2; f++) {
+      const int32_t *x = f ? pa : ia;
+      for (j = 0; j < n; j++) iref[j] = rsimd_pred_i32_1(op, x[j]);
+      for (mode = RSIMD_PRED_ELT; mode <= RSIMD_PRED_ALL; mode++) {
+        reset_out();
+        got = RSIMD_KERNEL(pred_i32)(op, x, n, mode, iout);
+        snprintf(what, sizeof what, "pred_i32 op %d mode %d input %d", op, mode, f);
+        if (mode == RSIMD_PRED_ELT) check_i32(what, n, iout, iref);
+        else check_int(what, n, 0, got, pred_fold(iref, n, mode));
+      }
+    }
+  }
+#ifndef RSIMD_SKIP_pred_f64
+  for (j = 0; j < n; j++) {
+    pf[j] = j + 1 == n ? (n % 3 == 0 ? rsimd_na_real() : n % 3 == 1 ? -0.0 : HUGE_VAL) : 2.5;
+  }
+  for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_ZERO; op++) {
+    for (f = 0; f < 3; f++) {
+      const double *x = f == 0 ? fa : f == 1 ? fcv : pf;
+      for (j = 0; j < n; j++) iref[j] = rsimd_pred_f64_1(op, x[j]);
+      for (mode = RSIMD_PRED_ELT; mode <= RSIMD_PRED_ALL; mode++) {
+        reset_out();
+        got = RSIMD_KERNEL(pred_f64)(op, x, n, mode, iout);
+        snprintf(what, sizeof what, "pred_f64 op %d mode %d input %d", op, mode, f);
+        if (mode == RSIMD_PRED_ELT) check_i32(what, n, iout, iref);
+        else check_int(what, n, 0, got, pred_fold(iref, n, mode));
+      }
+    }
+  }
+#endif
+
+  /* Comparisons and three-valued logic, every operand broadcast or not;
+     cmp_f64 and logic_f64 also with int32 operands (flags bits 3-4). */
+  for (op = RSIMD_CMP_EQ; op <= RSIMD_CMP_GE; op++) {
+    for (f = 0; f < 3; f++) {
+      reset_out();
+      RSIMD_KERNEL(cmp_i32)(op, ia, ib, n, f, iout);
+      for (j = 0; j < n; j++) {
+        int32_t a = ia[f & 1 ? 0 : j], b = ib[f & 2 ? 0 : j];
+        iref[j] = a == RSIMD_NA_I32 || b == RSIMD_NA_I32 ? RSIMD_NA_I32 : rsimd_cmp_1(op, a, b);
+      }
+      snprintf(what, sizeof what, "cmp_i32 op %d flags %d", op, f);
+      check_i32(what, n, iout, iref);
+      reset_out();
+      RSIMD_KERNEL(cmp_u8)(op, ua, ub, n, f, iout);
+      for (j = 0; j < n; j++) iref[j] = rsimd_cmp_1(op, ua[f & 1 ? 0 : j], ub[f & 2 ? 0 : j]);
+      snprintf(what, sizeof what, "cmp_u8 op %d flags %d", op, f);
+      check_i32(what, n, iout, iref);
+    }
+#ifndef RSIMD_SKIP_cmp_f64
+    for (f = 0; f < 32; f++) {
+      int sc = f & 3, ti = f >> 3;
+      const void *x = ti & 1 ? (const void *) ia : (const void *) fa;
+      const void *y = ti & 2 ? (const void *) ib : (const void *) fb;
+      if (sc == 3 || (f & 4)) continue;
+      reset_out();
+      RSIMD_KERNEL(cmp_f64)(op, x, y, n, f, iout);
+      for (j = 0; j < n; j++) {
+        double a = ew_get(x, ti & 1, sc & 1, j), b = ew_get(y, ti & 2, sc & 2, j);
+        iref[j] = isnan(a) || isnan(b) ? RSIMD_NA_I32 : rsimd_cmp_1(op, a, b);
+      }
+      snprintf(what, sizeof what, "cmp_f64 op %d flags %d", op, f);
+      check_i32(what, n, iout, iref);
+    }
+#endif
+  }
+  for (op = RSIMD_LOGIC_AND; op <= RSIMD_LOGIC_NOT; op++) {
+    for (f = 0; f < 3; f++) {
+      const int32_t *y = op == RSIMD_LOGIC_NOT ? NULL : ib;
+      if (op == RSIMD_LOGIC_NOT && f & 2) continue;
+      reset_out();
+      RSIMD_KERNEL(logic_i32)(op, ia, y, n, f, iout);
+      for (j = 0; j < n; j++) {
+        int a = rsimd_lgl_of_i32(ia[f & 1 ? 0 : j]);
+        int b = y == NULL ? 0 : rsimd_lgl_of_i32(ib[f & 2 ? 0 : j]);
+        iref[j] = rsimd_logic_1(op, a, b);
+      }
+      snprintf(what, sizeof what, "logic_i32 op %d flags %d", op, f);
+      check_i32(what, n, iout, iref);
+    }
+#ifndef RSIMD_SKIP_logic_f64
+    for (f = 0; f < 32; f++) {
+      int sc = f & 3, ti = f >> 3;
+      const void *x = ti & 1 ? (const void *) ia : (const void *) fa;
+      const void *y = op == RSIMD_LOGIC_NOT ? NULL : ti & 2 ? (const void *) ib : (const void *) fb;
+      if (sc == 3 || (f & 4) || (op == RSIMD_LOGIC_NOT && (sc & 2 || ti & 2))) continue;
+      reset_out();
+      RSIMD_KERNEL(logic_f64)(op, x, y, n, f, iout);
+      for (j = 0; j < n; j++) {
+        int a = rsimd_lgl_of_f64(ew_get(x, ti & 1, sc & 1, j));
+        int b = y == NULL ? 0 : rsimd_lgl_of_f64(ew_get(y, ti & 2, sc & 2, j));
+        iref[j] = rsimd_logic_1(op, a, b);
+      }
+      snprintf(what, sizeof what, "logic_f64 op %d flags %d", op, f);
+      check_i32(what, n, iout, iref);
+    }
+#endif
+  }
+
+  /* Bitwise ops: binary ops with every broadcast, the others with every
+     count, with and without NA checks. */
+  for (check = 0; check < 2; check++) {
+    for (op = RSIMD_BIT_AND; op <= RSIMD_BIT_TZCNT; op++) {
+      const int binary = op <= RSIMD_BIT_XOR;
+      const int kmax = op >= RSIMD_BIT_SHL && op <= RSIMD_BIT_ROTR ? 31 : 0;
+      for (f = 0; f < (binary ? 3 : 1); f++) {
+        for (k = 0; k <= kmax; k++) {
+          reset_out();
+          RSIMD_KERNEL(bit_i32)(op, ia, binary ? ib : NULL, n, f, k, iout, check ? &o : &onc);
+          for (j = 0; j < n; j++) {
+            int32_t a = ia[f & 1 ? 0 : j], b = binary ? ib[f & 2 ? 0 : j] : 0;
+            int na = check && (a == RSIMD_NA_I32 || b == RSIMD_NA_I32);
+            iref[j] = na ? RSIMD_NA_I32 : rsimd_bit_i32_1(op, a, b, k);
+          }
+          snprintf(what, sizeof what, "bit_i32 op %d flags %d k %d check %d", op, f, k, check);
+          check_i32(what, n, iout, iref);
+        }
+      }
+    }
+  }
+  for (op = RSIMD_BIT_AND; op <= RSIMD_BIT_TZCNT; op++) {
+    const int binary = op <= RSIMD_BIT_XOR, counts = rsimd_bit_counts(op);
+    const int kmax = op == RSIMD_BIT_SHL || op == RSIMD_BIT_SHR ? 8
+                   : op == RSIMD_BIT_ROTL || op == RSIMD_BIT_ROTR ? 7 : 0;
+    if (op == RSIMD_BIT_SAR) continue;
+    for (f = 0; f < (binary ? 3 : 1); f++) {
+      for (k = 0; k <= kmax; k++) {
+        reset_out_u8();
+        RSIMD_KERNEL(bit_u8)(op, ua, binary ? ub : NULL, n, f, k,
+                             counts ? (void *) iout : (void *) uout);
+        for (j = 0; j < n; j++) {
+          int32_t r = rsimd_bit_u8_1(op, ua[f & 1 ? 0 : j], binary ? ub[f & 2 ? 0 : j] : 0, k);
+          if (counts) iref[j] = r;
+          else uref[j] = (uint8_t) r;
+        }
+        snprintf(what, sizeof what, "bit_u8 op %d flags %d k %d", op, f, k);
+        if (counts) check_i32(what, n, iout, iref);
+        else check_u8(what, n, uout, uref);
+      }
+    }
+  }
+  for (f = 0; f < 3; f++) {
+    rsimd_reduce_result r, want;
+    memset(&r, 0, sizeof r);
+    memset(&want, 0, sizeof want);
+    RSIMD_KERNEL(popcnt_sum_i32)(ia, n, &r, opts[f]);
+    for (j = 0; j < n; j++) {
+      if (opts[f]->na_check && ia[j] == RSIMD_NA_I32) {
+        want.saw_na = 1;
+        if (!opts[f]->na_rm) break;
+      } else {
+        want.i64 += rsimd_popcnt_1((uint32_t) ia[j]);
+      }
+    }
+    snprintf(what, sizeof what, "popcnt_sum_i32 opts %d", f);
+    check_int(what, n, 0, r.saw_na, want.saw_na);
+    /* Without na.rm the total is discarded once an NA is seen. */
+    if (!want.saw_na || opts[f]->na_rm) check_int(what, n, 0, (long) r.i64, (long) want.i64);
+  }
+  {
+    rsimd_reduce_result r;
+    long want = 0;
+    memset(&r, 0, sizeof r);
+    RSIMD_KERNEL(popcnt_sum_u8)(ua, n, &r);
+    for (j = 0; j < n; j++) want += rsimd_popcnt_1(ua[j]);
+    check_int("popcnt_sum_u8", n, 0, (long) r.i64, want);
+  }
+
+  /* Conversions, every op and mode, with their status bits. */
+#ifndef RSIMD_SKIP_convert
+  for (op = RSIMD_CVT_F64_I32; op <= RSIMD_CVT_U8_LGL; op++) {
+    for (mode = RSIMD_CVT_CHECKED; mode <= RSIMD_CVT_TRUNCATING; mode++) {
+      for (f = 0; f < 2; f++) {
+        const int from_f64 = op <= RSIMD_CVT_F64_LGL;
+        const int from_i32 = op >= RSIMD_CVT_I32_F64 && op <= RSIMD_CVT_I32_LGL;
+        const void *x = from_f64 ? (const void *) (f ? fa : fcv)
+                      : from_i32 ? (const void *) (f ? ia : icv) : (const void *) (f ? ub : ua);
+        void *out = op == RSIMD_CVT_I32_F64 || op == RSIMD_CVT_U8_F64  ? (void *) fout
+                    : op == RSIMD_CVT_F64_U8 || op == RSIMD_CVT_I32_U8 ? (void *) uout
+                                                                       : (void *) iout;
+        static double fwant[N + 1];
+        reset_out_u8();
+        st = RSIMD_KERNEL(convert)(op, mode, x, n, out);
+        want_st = 0;
+        for (j = 0; j < n; j++) {
+          void *w = out == (void *) fout   ? (void *) fwant
+                    : out == (void *) uout ? (void *) uref
+                                           : (void *) iref;
+          want_st |= rsimd_cvt_1(op, mode, x, j, w);
+        }
+        snprintf(what, sizeof what, "convert op %d mode %d input %d", op, mode, f);
+        if (out == (void *) fout) {
+          fwant[n] = SENTINEL_F64;
+          check_f64_kind(what, n, fout, fwant);
+          check_int(what, n, n, bits(fout[n]) == bits(SENTINEL_F64), 1);
+        } else if (out == (void *) uout) {
+          check_u8(what, n, uout, uref);
+        } else {
+          check_i32(what, n, iout, iref);
+        }
+        check_int(what, n, 0, st, want_st);
+      }
+    }
+  }
+#else
+  (void) st;
+  (void) want_st;
+#endif
+}
+
+/* Every byte value through every byte op and count. */
+static void test_bytes_exhaustive(void) {
+  static uint8_t x[257], y[257], out8[257];
+  static int32_t out32[257];
+  int op, k, f;
+  ptrdiff_t j;
+  char what[96];
+  for (j = 0; j < 256; j++) {
+    x[j] = (uint8_t) j;
+    y[j] = (uint8_t) (255 - j);
+  }
+  for (op = RSIMD_BIT_AND; op <= RSIMD_BIT_TZCNT; op++) {
+    const int binary = op <= RSIMD_BIT_XOR, counts = rsimd_bit_counts(op);
+    const int kmax = op == RSIMD_BIT_SHL || op == RSIMD_BIT_SHR ? 8
+                   : op == RSIMD_BIT_ROTL || op == RSIMD_BIT_ROTR ? 7 : 0;
+    if (op == RSIMD_BIT_SAR) continue;
+    for (f = 0; f < (binary ? 2 : 1); f++) {
+      for (k = 0; k <= kmax; k++) {
+        out8[256] = SENTINEL_U8;
+        out32[256] = SENTINEL_I32;
+        RSIMD_KERNEL(bit_u8)(op, x, binary ? y : NULL, 256, f ? RSIMD_EW_SCALAR(1) : 0, k,
+                             counts ? (void *) out32 : (void *) out8);
+        for (j = 0; j < 256; j++) {
+          int32_t r = rsimd_bit_u8_1(op, x[j], binary ? y[f ? 0 : j] : 0, k);
+          snprintf(what, sizeof what, "bit_u8 exhaustive op %d flags %d k %d", op, f, k);
+          check_int(what, 256, j, counts ? out32[j] : out8[j], r);
+        }
+      }
+    }
+  }
+}
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
+  init_logical_inputs();
 #ifndef RSIMD_NO_F64_SIMD
   init_mod_inputs();
 #endif
@@ -1674,7 +2002,9 @@ int main(void) {
     test_linalg(n);
     test_scan(n);
     test_arith(n);
+    test_logical(n);
   }
+  test_bytes_exhaustive();
 #ifndef RSIMD_NO_F64_SIMD
   test_na_cancel();
 #endif

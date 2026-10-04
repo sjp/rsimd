@@ -31,7 +31,8 @@
  *   rsimd_vf64 also   div fma abs neg sqrt floor ceil trunc rint cmp_ne cmp_le cmp_ge
  *                     is_nan as_vi64 loadu_i32 loadu_i32_p storeu_i32
  *                     storeu_i32_p
- *   rsimd_vi32 also   mulhi
+ *   rsimd_vi32 also   mulhi sll srl sra loadu_u8 loadu_u8_p storeu_u8
+ *                     storeu_u8_p
  *   rsimd_vi64 also   as_vf64 loadu_i32 loadu_i32_p storeu_i32 storeu_i32_p
  *   mask types        and or not andnot any all count; rsimd_mf64_to_mi64
  *                     and rsimd_mi64_to_mf64 convert between the f64 and
@@ -61,6 +62,12 @@
  *     (the result for other lanes differs between tiers).
  *     rsimd_vi32_reduce_add returns the exact sum as int64_t;
  *     rsimd_vi64_reduce_add wraps.
+ *   - rsimd_vi32_sll, _srl and _sra shift every lane left, right
+ *     logically and right arithmetically by the same count k, a run-time
+ *     value in [0, 31].
+ *   - rsimd_vi32_loadu_u8 reads RSIMD_LANES_32 bytes into the 32-bit lanes,
+ *     zero-extended; rsimd_vi32_storeu_u8 writes the low 8 bits of every
+ *     lane as bytes (the _p forms take a 32-bit predicate).
  *   - reduce_add of f64 lanes uses a tier-specific order; reduce_min and
  *     reduce_max are unspecified when a lane is NaN.
  *   - Mask any/all/count look at every lane, so the lanes a predicated load
@@ -270,6 +277,13 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VI32_SUB rsimd_vi32_sub
 #define RSIMD_VI32_MUL rsimd_vi32_mul
 #define RSIMD_VI32_MULHI rsimd_vi32_mulhi
+#define RSIMD_VI32_SLL rsimd_vi32_sll
+#define RSIMD_VI32_SRL rsimd_vi32_srl
+#define RSIMD_VI32_SRA rsimd_vi32_sra
+#define RSIMD_VI32_LOADU_U8 rsimd_vi32_loadu_u8
+#define RSIMD_VI32_LOADU_U8_P rsimd_vi32_loadu_u8_p
+#define RSIMD_VI32_STOREU_U8 rsimd_vi32_storeu_u8
+#define RSIMD_VI32_STOREU_U8_P rsimd_vi32_storeu_u8_p
 #define RSIMD_VI32_MIN rsimd_vi32_min
 #define RSIMD_VI32_MAX rsimd_vi32_max
 #define RSIMD_VI32_AND rsimd_vi32_and

@@ -131,4 +131,68 @@ enum {
    saw lo > hi. */
 enum { RSIMD_EW_OVERFLOW = 1, RSIMD_EW_NAN_PRODUCED = 2, RSIMD_EW_LO_GT_HI = 4 };
 
+/* Predicates (kernels/predicates.inc.c): is.na (NA or NaN), is.nan (NaN
+   but not NA), is.finite, is.infinite, negative (sign bit set and not
+   NaN; for integers x < 0 and not NA) and zero (x == 0, so also -0).
+   pred_i32 takes NA, FINITE (not NA), NEGATIVE and ZERO. */
+enum {
+  RSIMD_PRED_NA = 0,
+  RSIMD_PRED_NAN,
+  RSIMD_PRED_FINITE,
+  RSIMD_PRED_INFINITE,
+  RSIMD_PRED_NEGATIVE,
+  RSIMD_PRED_ZERO
+};
+/* What a predicate kernel computes: the logical vector, or whether any or
+   all elements satisfy it. */
+enum { RSIMD_PRED_ELT = 0, RSIMD_PRED_ANY, RSIMD_PRED_ALL };
+
+/* Comparisons (kernels/compare.inc.c), x op y. */
+enum { RSIMD_CMP_EQ = 0, RSIMD_CMP_NE, RSIMD_CMP_LT, RSIMD_CMP_LE, RSIMD_CMP_GT, RSIMD_CMP_GE };
+
+/* Three-valued logic (kernels/bitwise.inc.c): x & y, x | y, xor(x, y), !x. */
+enum { RSIMD_LOGIC_AND = 0, RSIMD_LOGIC_OR, RSIMD_LOGIC_XOR, RSIMD_LOGIC_NOT };
+
+/* Bitwise ops (kernels/bitwise.inc.c). AND, OR and XOR are binary; the
+   others take x and a count k: SHL, SHR (logical) and SAR (arithmetic)
+   shift by k, ROTL and ROTR rotate by k, POPCNT, LZCNT and TZCNT count
+   bits (k unused). */
+enum {
+  RSIMD_BIT_AND = 0,
+  RSIMD_BIT_OR,
+  RSIMD_BIT_XOR,
+  RSIMD_BIT_NOT,
+  RSIMD_BIT_SHL,
+  RSIMD_BIT_SHR,
+  RSIMD_BIT_SAR,
+  RSIMD_BIT_ROTL,
+  RSIMD_BIT_ROTR,
+  RSIMD_BIT_POPCNT,
+  RSIMD_BIT_LZCNT,
+  RSIMD_BIT_TZCNT
+};
+
+/* Type conversions (kernels/convert.inc.c): source and destination
+   element types (I32 is integer or logical storage, LGL the logical result
+   0/1/NA), and the mode of the conversions to integer and raw: CHECKED
+   (out of range gives NA or 00, and a warning), SATURATING (clamped) or
+   TRUNCATING (two's complement wrap of the truncated value). */
+enum {
+  RSIMD_CVT_F64_I32 = 0,
+  RSIMD_CVT_F64_U8,
+  RSIMD_CVT_F64_LGL,
+  RSIMD_CVT_I32_F64,
+  RSIMD_CVT_I32_U8,
+  RSIMD_CVT_I32_LGL,
+  RSIMD_CVT_U8_F64,
+  RSIMD_CVT_U8_I32,
+  RSIMD_CVT_U8_LGL
+};
+enum { RSIMD_CVT_CHECKED = 0, RSIMD_CVT_SATURATING, RSIMD_CVT_TRUNCATING };
+/* Status bits of the conversion kernels, for base R's coercion warnings
+   (in checked mode only): a double outside the integer range ("NAs
+   introduced by coercion to integer range"), a value not in 0..255 or
+   missing ("out-of-range values treated as 0 in coercion to raw"). */
+enum { RSIMD_CVT_WARN_INT = 1, RSIMD_CVT_WARN_RAW = 2 };
+
 #endif /* RSIMD_KERNEL_TYPES_H */

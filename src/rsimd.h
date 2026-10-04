@@ -43,6 +43,18 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check);
 SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check);
 SEXP C_simd_round_digits(SEXP x, SEXP digits);
 
+/* predicates and comparisons */
+SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode);
+SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op);
+
+/* logical and bitwise ops */
+SEXP C_simd_logic(SEXP x, SEXP y, SEXP op);
+SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check);
+SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check);
+
+/* conversions */
+SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode);
+
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);

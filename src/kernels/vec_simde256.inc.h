@@ -214,6 +214,25 @@ RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
     simde_mm256_mul_epi32(simde_mm256_srli_epi64(a, 32), simde_mm256_srli_epi64(b, 32));
   return simde_mm256_blend_epi32(simde_mm256_srli_epi64(even, 32), odd, 0xAA);
 }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sll(rsimd_vi32 a, int k) {
+  return simde_mm256_sll_epi32(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_srl(rsimd_vi32 a, int k) {
+  return simde_mm256_srl_epi32(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sra(rsimd_vi32 a, int k) {
+  return simde_mm256_sra_epi32(a, simde_mm_cvtsi32_si128(k));
+}
+/* Eight bytes zero-extended to 32-bit lanes, and back (low 8 bits). */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8(const uint8_t *p) {
+  return simde_mm256_cvtepu8_epi32(simde_mm_loadl_epi64((const simde__m128i *) (const void *) p));
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) {
+  simde__m256i m = simde_mm256_and_si256(v, simde_mm256_set1_epi32(0xFF));
+  simde__m128i b = simde_mm_packs_epi32(simde_mm256_castsi256_si128(m),
+                                        simde_mm256_extracti128_si256(m, 1));
+  simde_mm_storel_epi64((simde__m128i *) (void *) p, simde_mm_packus_epi16(b, b));
+}
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
   return simde_mm256_cvtepi32_epi64(simde_mm_loadu_si128((const simde__m128i *) (const void *) p));
 }

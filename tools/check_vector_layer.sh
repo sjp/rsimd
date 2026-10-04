@@ -1,8 +1,10 @@
 #!/bin/sh
 # Behavioural check of the vector layer (src/kernels/common.inc.h), the
-# vector forms of src/na.h and the reduction, scan and elementwise kernels
-# (src/kernels/reduce.inc.c, scan.inc.c, arith.inc.c) on every tier, against
-# plain C references (tools/vector_layer_test.c).
+# vector forms of src/na.h and the reduction, scan, elementwise, predicate,
+# comparison, bitwise and conversion kernels (src/kernels/reduce.inc.c,
+# scan.inc.c, arith.inc.c, predicates.inc.c, compare.inc.c, bitwise.inc.c,
+# convert.inc.c) on every tier, against plain C references
+# (tools/vector_layer_test.c).
 #
 # Each tier is compiled with its flags from tools/tiers.txt plus
 # -ffp-contract=off and -Wall -Wextra -pedantic -Werror (R's headers, which

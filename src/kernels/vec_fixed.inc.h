@@ -128,6 +128,25 @@ RSIMD_INLINE rsimd_vi64 rsimd_vi64_mul(rsimd_vi64 a, rsimd_vi64 b) {
     for (j = 0; j < pg; j++) ptr[j] = buf[j];                                    \
   }
 
+/* Predicated forms of the byte <-> 32-bit-lane conversions. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8_p(rsimd_p32 pg, const uint8_t *p, uint8_t fill) {
+  uint8_t buf[RSIMD_WIDTH_I32];
+  int j;
+  if (pg >= RSIMD_WIDTH_I32) return rsimd_vi32_loadu_u8(p);
+  for (j = 0; j < RSIMD_WIDTH_I32; j++) buf[j] = j < pg ? p[j] : fill;
+  return rsimd_vi32_loadu_u8(buf);
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v) {
+  uint8_t buf[RSIMD_WIDTH_I32];
+  int j;
+  if (pg >= RSIMD_WIDTH_I32) {
+    rsimd_vi32_storeu_u8(p, v);
+    return;
+  }
+  rsimd_vi32_storeu_u8(buf, v);
+  for (j = 0; j < pg; j++) p[j] = buf[j];
+}
+
 RSIMD_FIXED_I32_PARTIAL(vi64)
 #ifndef RSIMD_NO_F64_SIMD
 RSIMD_FIXED_I32_PARTIAL(vf64)

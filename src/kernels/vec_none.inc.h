@@ -190,6 +190,25 @@ RSIMD_INLINE int64_t rsimd_vi64_reduce_max(rsimd_vi64 a) { return a; }
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
   return (int32_t) (((int64_t) a * b) >> 32);
 }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sll(rsimd_vi32 a, int k) {
+  return (int32_t) ((uint32_t) a << k);
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_srl(rsimd_vi32 a, int k) {
+  return (int32_t) ((uint32_t) a >> k);
+}
+/* Shifts the complement of a negative value, as >> of a negative signed
+   value is implementation-defined in C. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sra(rsimd_vi32 a, int k) {
+  return a < 0 ? (int32_t) ~(~(uint32_t) a >> k) : (int32_t) ((uint32_t) a >> k);
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8(const uint8_t *p) { return *p; }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8_p(rsimd_p32 pg, const uint8_t *p, uint8_t fill) {
+  return pg ? *p : fill;
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) { *p = (uint8_t) v; }
+RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v) {
+  if (pg) *p = (uint8_t) v;
+}
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) { return *p; }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
   return pg ? *p : fill;

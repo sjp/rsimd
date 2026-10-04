@@ -156,3 +156,54 @@ RSIMD_OP(ew2_i32, int,
 RSIMD_OP(ew3_i32, int,
          (int op, const int *x, const int *y, const int *z, R_xlen_t n, int flags, int *out,
           const rsimd_opts *o))
+
+/* Predicates: for mode RSIMD_PRED_ELT, out[i] = 1 or 0 for each element
+   (never NA) and the return value is 0; for ANY and ALL nothing is
+   written and the result for the chunk (1 or 0) is returned, possibly
+   after reading only part of it. Op codes in kernel_types.h. */
+RSIMD_OP(pred_f64, int, (int op, const double *x, R_xlen_t n, int mode, int *out))
+RSIMD_OP(pred_i32, int, (int op, const int *x, R_xlen_t n, int mode, int *out))
+
+/* Comparisons out[i] = x[i] op y[i] as logical values, NA where an
+   operand is missing (NA or NaN; integer NA). cmp_f64 reads each operand
+   as doubles or int32 elements (RSIMD_EW_I32(k)), cmp_i32 int32 elements
+   and cmp_u8 bytes; RSIMD_EW_SCALAR(k) broadcasts element 0. */
+RSIMD_OP(cmp_f64, void,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, int *out))
+RSIMD_OP(cmp_i32, void,
+         (int op, const int *x, const int *y, R_xlen_t n, int flags, int *out))
+RSIMD_OP(cmp_u8, void,
+         (int op, const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, int *out))
+
+/* Three-valued logic on operands read as logical values (non-zero TRUE,
+   0 FALSE, NA or NaN NA): logic_f64 with operand flags as cmp_f64,
+   logic_i32 on int32 elements. RSIMD_LOGIC_NOT reads only x. */
+RSIMD_OP(logic_f64, void,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, int *out))
+RSIMD_OP(logic_i32, void,
+         (int op, const int *x, const int *y, R_xlen_t n, int flags, int *out))
+
+/* Bitwise ops on int32 elements (the uint32 bit pattern; SAR is
+   sign-propagating) and on bytes. Binary ops read x and y with the
+   RSIMD_EW_SCALAR flags; the others read x and take the count k, which
+   the entry point has checked: 0..31 for int32 shifts and rotates, 0..8
+   for byte shifts, 0..7 for byte rotates. bit_i32 gives NA for an NA
+   operand when o->na_check is set; a result whose bit pattern is
+   0x80000000 reads as NA anyway. bit_u8 writes bytes, or int32 counts for
+   POPCNT, LZCNT and TZCNT. */
+RSIMD_OP(bit_i32, void,
+         (int op, const int *x, const int *y, R_xlen_t n, int flags, int k, int *out,
+          const rsimd_opts *o))
+RSIMD_OP(bit_u8, void,
+         (int op, const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, int k, void *out))
+/* The number of set bits over the chunk, added to r->i64. With
+   o->na_check (or o->na_rm), an NA element sets r->saw_na and counts
+   nothing; without o->na_rm the kernel may stop at the first one. */
+RSIMD_OP(popcnt_sum_i32, void,
+         (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(popcnt_sum_u8, void, (const Rbyte *x, R_xlen_t n, rsimd_reduce_result *r))
+
+/* Type conversion `op` (RSIMD_CVT_*) of n elements of x into out, in
+   `mode` for conversions to integer and raw; returns the status bits
+   (RSIMD_CVT_WARN_*). */
+RSIMD_OP(convert, int, (int op, int mode, const void *x, R_xlen_t n, void *out))

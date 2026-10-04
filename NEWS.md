@@ -68,3 +68,25 @@
   including `NA` positions, the sign of zero and the single overflow warning;
   double `%/%` and `%%` are exact. `simd_fma()` and `simd_lerp()` round once
   on every implementation, and `simd_lerp()` is exact at `t = 0` and `t = 1`.
+* Added the predicates `simd_is_na()`, `simd_is_nan()`, `simd_is_finite()`,
+  `simd_is_infinite()`, `simd_is_negative()` and `simd_is_zero()`, each with
+  `_any` and `_all` forms that stop at the first deciding element. They never
+  return `NA`, tell `NA` from `NaN` for every payload, and follow base R for
+  every type (raw is not finite, as in `is.finite()`); `simd_is_negative()`
+  tests the sign bit, so `-0` is negative.
+* Added the comparisons `simd_eq()`, `simd_ne()`, `simd_lt()`, `simd_le()`,
+  `simd_gt()` and `simd_ge()`, identical to base R's operators for every pair
+  of double, integer, logical and raw operands, `NA` positions included.
+* Added three-valued logic `simd_and()`, `simd_or()`, `simd_xor()` and
+  `simd_not()` (bytewise on raw vectors), and the bitwise operations
+  `simd_bit_and()`, `simd_bit_or()`, `simd_bit_xor()`, `simd_bit_not()`,
+  `simd_shl()`, `simd_shr()`, `simd_sar()` (arithmetic shift),
+  `simd_rotl()`, `simd_rotr()` and the bit counts `simd_popcount()`,
+  `simd_popcount_total()`, `simd_lzcnt()` and `simd_tzcnt()` on integer,
+  logical and raw vectors. Integer results follow base R's `bitwAnd()`
+  family, so a result with the bit pattern of `NA_integer_` is `NA`; raw
+  shifts follow `rawShift()`.
+* Added the conversions `simd_as_integer()`, `simd_as_double()`,
+  `simd_as_logical()` and `simd_as_raw()`. The default `"checked"` mode
+  matches `as.integer()` and `as.raw()` including their warnings;
+  `"saturating"` clamps and `"truncating"` wraps around, without warnings.

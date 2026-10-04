@@ -7,5 +7,10 @@
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
 #include "kernels/arith.inc.c"
+/* After arith.inc.c, whose operand helpers they use. */
+#include "kernels/predicates.inc.c"
+#include "kernels/compare.inc.c"
+#include "kernels/bitwise.inc.c"
+#include "kernels/convert.inc.c"
 #include "kernels/selftest.inc.c"
 #include "kernels/table.inc.c"

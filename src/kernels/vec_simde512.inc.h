@@ -37,6 +37,10 @@
 #include "x86/avx512/roundscale.h"
 #include "x86/avx512/set.h"
 #include "x86/avx512/permutexvar.h"
+#include "x86/avx512/sll.h"
+#include "x86/avx512/srl.h"
+#include "x86/avx512/srai.h"
+#include "x86/avx512/shuffle.h"
 
 #define RSIMD_WIDTH_F64 8
 #define RSIMD_WIDTH_I64 8
@@ -283,6 +287,46 @@ RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
     simde_mm512_mul_epi32(simde_mm512_srli_epi64(a, 32), simde_mm512_srli_epi64(b, 32));
   return simde_mm512_mask_blend_epi32((simde__mmask16) 0xAAAA, simde_mm512_srli_epi64(even, 32),
                                       odd);
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sll(rsimd_vi32 a, int k) {
+  return simde_mm512_sll_epi32(a, simde_mm_cvtsi32_si128(k));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_srl(rsimd_vi32 a, int k) {
+  return simde_mm512_srl_epi32(a, simde_mm_cvtsi32_si128(k));
+}
+/* The vendored SIMDe subset has no 512-bit arithmetic shift by a count
+   register: shift the complement of negative lanes logically, which is
+   the same, and complement back. */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sra(rsimd_vi32 a, int k) {
+  simde__m512i s = simde_mm512_srai_epi32(a, 31);
+  return simde_mm512_xor_si512(rsimd_vi32_srl(simde_mm512_xor_si512(a, s), k), s);
+}
+/* Sixteen bytes zero-extended to 32-bit lanes, and back (low 8 bits:
+   byte 0 of each lane gathered into the low 128 bits). */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8(const uint8_t *p) {
+  return simde_mm512_cvtepu8_epi32(simde_mm_loadu_si128((const simde__m128i *) (const void *) p));
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) {
+  const int32_t z = (int32_t) 0x80808080u, b = 0x0C080400;
+  simde__m512i g = simde_mm512_shuffle_epi8(
+    v, simde_mm512_set_epi32(z, z, z, b, z, z, z, b, z, z, z, b, z, z, z, b));
+  g = simde_mm512_permutexvar_epi32(
+    simde_mm512_set_epi32(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 8, 4, 0), g);
+  simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm512_castsi512_si128(g));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8_p(rsimd_p32 pg, const uint8_t *p, uint8_t fill) {
+  uint8_t buf[16];
+  int j;
+  for (j = 0; j < 16; j++) buf[j] = (pg >> j) & 1 ? p[j] : fill;
+  return rsimd_vi32_loadu_u8(buf);
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v) {
+  uint8_t buf[16];
+  int j;
+  rsimd_vi32_storeu_u8(buf, v);
+  for (j = 0; j < 16; j++) {
+    if ((pg >> j) & 1) p[j] = buf[j];
+  }
 }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
   return simde_mm512_cvtepi32_epi64(simde_mm256_loadu_si256((const simde__m256i *) (const void *) p));

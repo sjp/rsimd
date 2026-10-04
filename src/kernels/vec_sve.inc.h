@@ -198,6 +198,28 @@ RSIMD_INLINE int64_t rsimd_vi64_reduce_add(rsimd_vi64 a) { return svaddv_s64(RSI
 RSIMD_INLINE rsimd_vi32 rsimd_vi32_mulhi(rsimd_vi32 a, rsimd_vi32 b) {
   return svmulh_s32_x(RSIMD_PT32, a, b);
 }
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sll(rsimd_vi32 a, int k) {
+  return svlsl_n_s32_x(RSIMD_PT32, a, (uint32_t) k);
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_srl(rsimd_vi32 a, int k) {
+  return svreinterpret_s32_u32(svlsr_n_u32_x(RSIMD_PT32, svreinterpret_u32_s32(a), (uint32_t) k));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_sra(rsimd_vi32 a, int k) {
+  return svasr_n_s32_x(RSIMD_PT32, a, (uint32_t) k);
+}
+/* svcntw() bytes zero-extended to 32-bit lanes, and back (low 8 bits). */
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8(const uint8_t *p) {
+  return svreinterpret_s32_u32(svld1ub_u32(RSIMD_PT32, p));
+}
+RSIMD_INLINE rsimd_vi32 rsimd_vi32_loadu_u8_p(rsimd_p32 pg, const uint8_t *p, uint8_t fill) {
+  return svsel_s32(pg, svreinterpret_s32_u32(svld1ub_u32(pg, p)), svdup_n_s32(fill));
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8(uint8_t *p, rsimd_vi32 v) {
+  svst1b_u32(RSIMD_PT32, p, svreinterpret_u32_s32(v));
+}
+RSIMD_INLINE void rsimd_vi32_storeu_u8_p(rsimd_p32 pg, uint8_t *p, rsimd_vi32 v) {
+  svst1b_u32(pg, p, svreinterpret_u32_s32(v));
+}
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) { return svld1sw_s64(RSIMD_PT64, p); }
 RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32_p(rsimd_p64 pg, const int32_t *p, int32_t fill) {
   return svsel_s64(pg, svld1sw_s64(pg, p), svdup_n_s64(fill));
