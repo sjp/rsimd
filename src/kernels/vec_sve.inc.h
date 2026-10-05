@@ -90,6 +90,18 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_max(rsimd_vf64 a, rsimd_vf64 b) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_abs(rsimd_vf64 a) { return svabs_f64_x(RSIMD_PT64, a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_neg(rsimd_vf64 a) { return svneg_f64_x(RSIMD_PT64, a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_sqrt(rsimd_vf64 a) { return svsqrt_f64_x(RSIMD_PT64, a); }
+/* The 8-bit estimates refined by two Newton steps (FRECPS, FRSQRTS):
+   within about 2^-31 (measured with the same instructions in NEON). */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
+  svfloat64_t r = svrecpe_f64(a);
+  r = svmul_f64_x(RSIMD_PT64, r, svrecps_f64(a, r));
+  return svmul_f64_x(RSIMD_PT64, r, svrecps_f64(a, r));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) {
+  svfloat64_t r = svrsqrte_f64(a);
+  r = svmul_f64_x(RSIMD_PT64, r, svrsqrts_f64(svmul_f64_x(RSIMD_PT64, a, r), r));
+  return svmul_f64_x(RSIMD_PT64, r, svrsqrts_f64(svmul_f64_x(RSIMD_PT64, a, r), r));
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_and(rsimd_vf64 a, rsimd_vf64 b) {
   return rsimd_sve_f64(svand_u64_x(RSIMD_PT64, rsimd_sve_bits(a), rsimd_sve_bits(b)));
 }

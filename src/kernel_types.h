@@ -106,9 +106,18 @@ enum {
 /* Ternary op codes (ew3_f64, ew3_i32): fma(x, y, z) rounds once; mul_add
    is (x * y) + z and add_mul (x + y) * z, each step rounded (checked for
    integers, as base R's composition); lerp(x, y, t) is
-   fma(t, y, (1 - t) * x); clamp(x, lo, hi) is pmin(pmax(x, lo), hi).
+   fma(t, y, (1 - t) * x); clamp(x, lo, hi) is pmin(pmax(x, lo), hi);
+   mul_add_approx is x * y + z fused on the tiers with a native fused
+   multiply-add (RSIMD_NATIVE_FMA) and rounded twice elsewhere.
    ew3_i32 takes MUL_ADD, ADD_MUL and CLAMP. */
-enum { RSIMD_EW_FMA = 0, RSIMD_EW_MUL_ADD, RSIMD_EW_ADD_MUL, RSIMD_EW_LERP, RSIMD_EW_CLAMP };
+enum {
+  RSIMD_EW_FMA = 0,
+  RSIMD_EW_MUL_ADD,
+  RSIMD_EW_ADD_MUL,
+  RSIMD_EW_LERP,
+  RSIMD_EW_CLAMP,
+  RSIMD_EW_MUL_ADD_APPROX
+};
 /* Unary op codes: ew1_f64 takes them all (ROUND is half to even);
    ew1_i32 takes NEG and ABS, which wrap and so map NA to itself. */
 enum {
@@ -147,10 +156,19 @@ enum {
    logarithm is p; SIGMOID is the logistic function 1 / (1 + exp(-x)),
    computed as e = exp(-|x|), then 1 / (1 + e) for x >= 0 and e / (1 + e)
    otherwise, which is accurate in both tails (subnormal results down to
-   x = -745). Binary op codes for math2_f64: pow(x, y) with base R's
-   rules for x ^ y, atan2(y, x) and hypot(x, y). The kernels return
-   RSIMD_EW_NAN_PRODUCED when a result is NaN where no operand was (pow
-   never sets it, as base R's ^ never warns). */
+   x = -745). NEXT_UP and NEXT_DOWN are IEEE nextUp and nextDown (C23
+   nextup, nextdown); RSQRT is 1 / sqrt(x), rounded twice as in base R;
+   RECIP_APPROX and RSQRT_APPROX approximate 1 / x and 1 / sqrt(x) within a
+   relative error of 2^-22 (a hardware estimate refined by Newton steps,
+   or the exact value where that is faster); none of these four has a fast
+   variant. Binary op codes for math2_f64: pow(x, y) with base R's
+   rules for x ^ y, atan2(y, x), hypot(x, y), C's nextafter(x, y) and
+   remainder(x, y) (the IEEE remainder, quotient rounded to nearest even),
+   scalbn(x, n) (SCALEB, exact x * 2^n rounded once) and the real n-th
+   root of x (ROOTN, C23's rootn, within 1 ULP), where y holds the whole
+   number n. The kernels return RSIMD_EW_NAN_PRODUCED when a result is
+   NaN where no operand was (pow never sets it, as base R's ^ never
+   warns). */
 enum {
   RSIMD_MATH_EXP = 0,
   RSIMD_MATH_EXP2,
@@ -177,9 +195,22 @@ enum {
   RSIMD_MATH_ASINH,
   RSIMD_MATH_ACOSH,
   RSIMD_MATH_ATANH,
-  RSIMD_MATH_SIGMOID
+  RSIMD_MATH_SIGMOID,
+  RSIMD_MATH_NEXT_UP,
+  RSIMD_MATH_NEXT_DOWN,
+  RSIMD_MATH_RSQRT,
+  RSIMD_MATH_RECIP_APPROX,
+  RSIMD_MATH_RSQRT_APPROX
 };
-enum { RSIMD_MATH_POW = 0, RSIMD_MATH_ATAN2, RSIMD_MATH_HYPOT };
+enum {
+  RSIMD_MATH_POW = 0,
+  RSIMD_MATH_ATAN2,
+  RSIMD_MATH_HYPOT,
+  RSIMD_MATH_NEXTAFTER,
+  RSIMD_MATH_REMAINDER,
+  RSIMD_MATH_SCALEB,
+  RSIMD_MATH_ROOTN
+};
 /* OR-ed into an op code of math1_f64, math2_f64 or sincos_f64 (whose
    only op is RSIMD_MATH_SIN): fast mode (option rsimd.math_accuracy =
    "fast"), in which the SIMD tiers use SLEEF's 3.5-ULP functions where

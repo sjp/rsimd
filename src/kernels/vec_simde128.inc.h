@@ -459,6 +459,41 @@ RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) {
 }
 #define RSIMD_HAVE_VI64_TO_VF64 1
 #endif
+#if defined(RSIMD_S128_A64)
+/* recip_approx is the exact quotient: on the Apple M-series an FDIV is
+   faster than FRECPE and two FRECPS steps (measured 1.37x). rsqrt_approx
+   is FRSQRTE (about 8 bits) refined by two FRSQRTS Newton steps, within
+   about 2^-31: 1.57x faster than 1 / sqrt(a) in a bare loop there, about
+   as fast inside the kernel, and expected to gain more on the Neoverse
+   cores, whose FSQRT and FDIV are slower. */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
+  return simde_mm_div_pd(simde_mm_set1_pd(1.0), a);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) {
+  float64x2_t x = simde__m128d_to_neon_f64(a), r = vrsqrteq_f64(x);
+  r = vmulq_f64(r, vrsqrtsq_f64(vmulq_f64(x, r), r));
+  r = vmulq_f64(r, vrsqrtsq_f64(vmulq_f64(x, r), r));
+  return simde__m128d_from_neon_f64(r);
+}
+#elif defined(__aarch64__) || defined(_M_ARM64)
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
+  return simde_mm_div_pd(simde_mm_set1_pd(1.0), a);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) {
+  return simde_mm_div_pd(simde_mm_set1_pd(1.0), simde_mm_sqrt_pd(a));
+}
+#else
+/* SSE's float estimates of 1 / m and 1 / sqrt(m) for the doubles m in
+   [1, 4), for the shared recip_approx and rsqrt_approx of
+   vec_fixed.inc.h. */
+#define RSIMD_VF64_F32_EST 1
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_f32_rcp(rsimd_vf64 m) {
+  return simde_mm_cvtps_pd(simde_mm_rcp_ps(simde_mm_cvtpd_ps(m)));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_f32_rsqrt(rsimd_vf64 m) {
+  return simde_mm_cvtps_pd(simde_mm_rsqrt_ps(simde_mm_cvtpd_ps(m)));
+}
+#endif
 #endif
 
 #include "vec_fixed.inc.h"

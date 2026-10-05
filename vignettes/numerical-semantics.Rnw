@@ -429,4 +429,42 @@ table(ulp_diff(simd_sin(x), sin(x)))
 simd_math_accuracy(old)
 @
 
+\subsection{Exact operations and roots}
+
+Some functions need no approximation at all and give identical results on
+every tier: \code{simd\_ilogb()} (the binary exponent),
+\code{simd\_scaleb()} (\code{x * 2\^{}n}, rounded once),
+\code{simd\_nextafter()}, \code{simd\_next\_up()},
+\code{simd\_next\_down()}, \code{simd\_remainder()} (the IEEE remainder,
+whose quotient is rounded to nearest rather than down as in
+\code{\%\%}) and \code{simd\_rsqrt()}, which is base R's
+\code{1 / sqrt(x)}. \code{simd\_rootn(x, n)} is within 1 ULP of the real
+\code{n}-th root and exact when the root is, which \code{x\^{}(1/n)} is not:
+
+<<rootn>>=
+c(1000^(1 / 3), simd_rootn(1000, 3), simd_rootn(-8, 3))
+simd_remainder(c(5, 7), 3) - c(5, 7) %% 3
+@
+
+\section{Approximations}
+
+\code{simd\_recip\_approx()} and \code{simd\_rsqrt\_approx()} trade
+accuracy for speed in a different way from fast mode: they are within a
+relative error of $2^{-22}$ (about single precision) of \code{1 / x} and
+\code{1 / sqrt(x)} on every tier, but each tier gets there its own way,
+from a hardware estimate refined by Newton steps, or by computing the
+exact value where that is faster, so the results are not reproducible
+across tiers. Zeros, infinities, subnormal numbers, the largest numbers
+and missing values are always handled exactly.
+\code{simd\_mul\_add\_approx()} is \code{x * y + z} rounded once where
+the CPU has a fused multiply-add and twice elsewhere. Their help page
+lists the method and bound of each tier; they do not depend on
+\code{rsimd.math\_accuracy}.
+
+<<approx>>=
+x <- 10^seq(-300, 300, length.out = 1e4)
+max(abs(simd_recip_approx(x) * x - 1))
+max(abs(simd_rsqrt_approx(x) * sqrt(x) - 1))
+@
+
 \end{document}

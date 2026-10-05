@@ -4,7 +4,7 @@
    chunk by chunk through the active implementation and warn "NaNs
    produced" as base R does. `accuracy` is the code of option
    rsimd.math_accuracy (0 accurate, 1 fast). Results are bare double
-   vectors. */
+   vectors, except ilogb's integer one. */
 
 #include <math.h>
 #include <stdint.h>
@@ -86,9 +86,11 @@ static SEXP run_math1(SEXP x, int code, double p, int mode) {
    without LOGB). */
 static SEXP simd_math1_impl(SEXP x, SEXP op, SEXP accuracy) {
   static const char *const names[] = {
-    "exp",  "exp2", "exp10", "expm1", "log",   "log2",  "log10", "log1p", "",
-    "cbrt", "sin",  "cos",   "tan",   "asin",  "acos",  "atan",  "sinpi", "cospi",
-    "tanpi", "sinh", "cosh", "tanh",  "asinh", "acosh", "atanh", "sigmoid"};
+    "exp",     "exp2",      "exp10", "expm1",        "log",         "log2",  "log10",
+    "log1p",   "",          "cbrt",  "sin",          "cos",         "tan",   "asin",
+    "acos",    "atan",      "sinpi", "cospi",        "tanpi",       "sinh",  "cosh",
+    "tanh",    "asinh",     "acosh", "atanh",        "sigmoid",     "next_up",
+    "next_down", "rsqrt",   "recip_approx", "rsqrt_approx"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   if (code == RSIMD_MATH_LOGB) Rf_error("internal error: unknown op ''");
   return run_math1(x, code | accuracy_bit(accuracy), 1.0, MATH1_WARN);
@@ -129,10 +131,13 @@ SEXP C_simd_log(SEXP x, SEXP base, SEXP accuracy) {
   return rsimd_sv_result(simd_log_impl(x, base, accuracy), 0);
 }
 
-/* Binary functions by name: pow(x, y), atan2(y, x), hypot(x, y). */
+/* Binary functions by name: pow(x, y), atan2(y, x), hypot(x, y),
+   nextafter(x, y), remainder(x, y), and scaleb(x, n) and rootn(x, n),
+   whose n the R side has made a vector of whole numbers. */
 static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
-  static const char *const names[] = {"pow", "atan2", "hypot"};
-  static const char *const xy[] = {"x", "y"}, *const yx[] = {"y", "x"};
+  static const char *const names[] = {"pow",       "atan2",  "hypot", "nextafter",
+                                      "remainder", "scaleb", "rootn"};
+  static const char *const xy[] = {"x", "y"}, *const yx[] = {"y", "x"}, *const xn[] = {"x", "n"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), flags, st = 0;
   int fast = accuracy_bit(accuracy);
   SEXP sargs[2], out;
@@ -141,7 +146,10 @@ static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
 
   sargs[0] = x;
   sargs[1] = y;
-  rsimd_ew_init(&e, 2, sargs, code == RSIMD_MATH_ATAN2 ? yx : xy);
+  rsimd_ew_init(&e, 2, sargs,
+                code == RSIMD_MATH_ATAN2                                   ? yx
+                : code == RSIMD_MATH_SCALEB || code == RSIMD_MATH_ROOTN ? xn
+                                                                           : xy);
   flags = e.flags | check_operands(&e, code == RSIMD_MATH_POW
                                          ? "non-numeric argument to binary operator"
                                          : math_msg);
@@ -196,6 +204,29 @@ SEXP C_simd_sincos(SEXP x, SEXP accuracy) {
   SET_VECTOR_ELT(out, 1, rsimd_sv_result(VECTOR_ELT(out, 1), 0));
   UNPROTECT(1);
   return out;
+}
+
+/* ilogb(x) as an integer vector: NA for zero, an infinity, NaN or NA. */
+static SEXP simd_ilogb_impl(SEXP x) {
+  int flags;
+  SEXP out;
+  int *po;
+  rsimd_ew e;
+
+  rsimd_ew_init(&e, 1, &x, (const char *const[]){"x"});
+  flags = check_operands(&e, math_msg);
+  out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
+  po = (int *) rsimd_out_ptr(out);
+  RSIMD_FOREACH_CHUNK_EW(&e, pp, len, off, {
+    rsimd_active->ilogb_f64(pp[0], len, flags, po + off);
+  });
+  UNPROTECT(1);
+  return out;
+}
+
+SEXP C_simd_ilogb(SEXP x) {
+  rsimd_entry();
+  return rsimd_sv_result(simd_ilogb_impl(x), 0);
 }
 
 /* The bits of x as an integer ordered like the doubles: -0 and +0 both

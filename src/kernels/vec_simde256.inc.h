@@ -283,5 +283,15 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_loadu_i32(const int32_t *p) {
 RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
   simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm256_cvttpd_epi32(v));
 }
+/* SSE's float estimates of 1 / m and 1 / sqrt(m) for the doubles m in
+   [1, 4), for the shared recip_approx and rsqrt_approx of
+   vec_fixed.inc.h (AVX2 has no double estimates). */
+#define RSIMD_VF64_F32_EST 1
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_f32_rcp(rsimd_vf64 m) {
+  return simde_mm256_cvtps_pd(simde_mm_rcp_ps(simde_mm256_cvtpd_ps(m)));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_f32_rsqrt(rsimd_vf64 m) {
+  return simde_mm256_cvtps_pd(simde_mm_rsqrt_ps(simde_mm256_cvtpd_ps(m)));
+}
 
 #include "vec_fixed.inc.h"

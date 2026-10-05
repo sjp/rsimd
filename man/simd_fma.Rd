@@ -69,8 +69,9 @@ A vector of the length of the longest operand: integer for
 integer or logical, otherwise double.
 }
 \seealso{
-\code{\link{simd_add}}, \code{\link{simd_mul}}, \link{rsimd_options},
-\link{rsimd-integer64}.
+\code{\link{simd_add}}, \code{\link{simd_mul}},
+\code{\link{simd_mul_add_approx}} (fused where that is fast),
+\link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_fma(0.1, 10, -1)

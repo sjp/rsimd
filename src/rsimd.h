@@ -63,6 +63,7 @@ SEXP C_simd_math1(SEXP x, SEXP op, SEXP accuracy);
 SEXP C_simd_log(SEXP x, SEXP base, SEXP accuracy);
 SEXP C_simd_math2(SEXP x, SEXP y, SEXP op, SEXP accuracy);
 SEXP C_simd_sincos(SEXP x, SEXP accuracy);
+SEXP C_simd_ilogb(SEXP x);
 SEXP C_simd_ulp_dist(SEXP a, SEXP b);
 
 /* ML helpers */

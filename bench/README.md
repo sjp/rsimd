@@ -19,7 +19,7 @@ Rscript bench/run.R --ops sum,exp --sizes 1e4,1e6 --out /tmp/bench
 | Option | Meaning |
 |--------|---------|
 | `--quick` | Sizes 1e3 and 1e5 and half the timing budget (at least 10, at most 100 iterations). |
-| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`. |
+| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`. |
 | `--sizes a,b` | Input lengths (default `1e3,1e5,1e7`: L1-resident, cache-resident, DRAM-bound). |
 | `--out dir` | Output directory (default `bench/results/`, which git ignores). |
 

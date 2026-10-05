@@ -175,6 +175,89 @@ static inline double rsimd_sigmoid_f64(double x) {
   return (x >= 0 ? 1.0 : e) / (1.0 + e);
 }
 
+/* IEEE nextUp and nextDown (C23 nextup and nextdown, which C99 lacks). */
+static inline double rsimd_next_up_f64(double x) { return nextafter(x, INFINITY); }
+static inline double rsimd_next_down_f64(double x) { return nextafter(x, -INFINITY); }
+
+/* x * 2^n for a whole n (C's scalbn: exact, or rounded once to a
+   subnormal or infinite result). n beyond +-2200 changes nothing. */
+static inline double rsimd_scaleb_f64(double x, double n) {
+  return scalbn(x, n > 2200 ? 2200 : n < -2200 ? -2200 : (int) n);
+}
+
+/* r^an as the double-double hi + lo, for a whole an in [1, 512], by
+   binary powering with exact products (fma gives each product's rounding
+   error). The caller keeps r^an and its intermediate powers normal. */
+static inline void rsimd_ipow_dd(double r, int an, double *hi, double *lo) {
+  double ph = 1.0, pl = 0.0, bh = r, bl = 0.0, h, l;
+  for (;;) {
+    if (an & 1) {
+      h = ph * bh;
+      l = fma(ph, bh, -h) + (ph * bl + pl * bh);
+      ph = h + l;
+      pl = l - (ph - h);
+    }
+    an >>= 1;
+    if (an == 0) break;
+    h = bh * bh;
+    l = fma(bh, bh, -h) + 2.0 * bh * bl;
+    bh = h + l;
+    bl = l - (bh - h);
+  }
+  *hi = ph;
+  *lo = pl;
+}
+
+/* The real n-th root of x for a whole n, as C23's rootn. n = 0, and a
+   negative x (-Inf too) with an even n, give NaN; zeros and infinities
+   give a zero or an infinity, with the sign of x for an odd n; n = 1 is x,
+   n = -1 is 1 / x and n = 2 is sqrt(x). Otherwise |x| = m * 2^(k |n|)
+   exactly, with m in [1, 2^|n|) when |n| <= 512 (k = 0 above), and the
+   root is r = exp2(log2(m) / n) after one Newton step, r - r c with
+   c = ((r^n - m) / r^n) / n, scaled by 2^k (2^-k for a negative n). The
+   step roughly squares the relative error of r, so r needs only about 30
+   correct bits. For
+   |n| <= 512, r^|n| is computed in double-double (rsimd_ipow_dd), which
+   makes c almost exact and the root correctly rounded in all but rare
+   ties (measured: within 0.5 ULP); for |n| > 512, where m can be
+   subnormal or near overflow, c is ((q - 1) / q) / n with
+   q = r^h (r^(n - h) / m) and h = trunc(n / 2), which neither overflows
+   nor underflows. Exact for exact roots. The SIMD tiers run the same
+   steps with SLEEF's functions (rsimd_math_rootn), its 3.5-ULP log2 for
+   the first r. */
+static inline double rsimd_rootn_f64(double x, double n) {
+  double ax, an, k, m, r, c;
+  int odd;
+  if (isnan(x)) return x;
+  if (n == 0) return NAN;
+  if (n == 1) return x;
+  if (n == -1) return 1.0 / x;
+  odd = fmod(n, 2.0) != 0;
+  if (x < 0 && !odd) return NAN;
+  if (x == 0 || isinf(x)) {
+    double mag = (x == 0) == (n > 0) ? 0.0 : INFINITY;
+    return odd ? copysign(mag, x) : mag;
+  }
+  if (n == 2) return sqrt(x);
+  ax = fabs(x);
+  an = fabs(n);
+  k = an <= 512 ? floor(ilogb(ax) / an) : 0;
+  m = scalbn(ax, (int) (-k * an));
+  r = exp2(log2(m) / n);
+  if (an <= 512) {
+    double h, l;
+    rsimd_ipow_dd(r, (int) an, &h, &l);
+    /* r^n = h + l for n > 0, 1 / (h + l) for n < 0. */
+    c = (n > 0 ? ((h - m) + l) / h : fma(-m, h, 1.0) - m * l) / n;
+  } else {
+    double h = trunc(n / 2), q = pow(r, h) * (pow(r, n - h) / m);
+    c = ((q - 1) / q) / n;
+  }
+  r = r - r * c;
+  r = scalbn(r, (int) (n > 0 ? k : -k));
+  return odd ? copysign(r, x) : r;
+}
+
 /* f(x) for unary op code `op`; p is the divisor of LOGB. */
 static inline double rsimd_math1_f64(int op, double x, double p) {
   switch (op) {
@@ -204,9 +287,80 @@ static inline double rsimd_math1_f64(int op, double x, double p) {
   case RSIMD_MATH_ACOSH: return acosh(x);
   case RSIMD_MATH_ATANH: return atanh(x);
   case RSIMD_MATH_SIGMOID: return rsimd_sigmoid_f64(x);
+  case RSIMD_MATH_NEXT_UP: return rsimd_next_up_f64(x);
+  case RSIMD_MATH_NEXT_DOWN: return rsimd_next_down_f64(x);
+  case RSIMD_MATH_RSQRT:
+  case RSIMD_MATH_RSQRT_APPROX: return 1.0 / sqrt(x);
+  case RSIMD_MATH_RECIP_APPROX: return 1.0 / x;
   default: return NAN;
   }
 }
+
+#if !RSIMD_TIER_IS(none) && !defined(RSIMD_NO_F64_SIMD)
+
+/* ---- vector helpers that need no SLEEF ---------------------------------- */
+
+/* 2^k for whole k in [-1022, 1023], built from the bits: k + 2^52 + 2^51
+   holds k in its low bits. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_pow2i(rsimd_vf64 k) {
+  const rsimd_vf64 magic = rsimd_vf64_set1(6755399441055744.0);
+  rsimd_vi64 i = rsimd_vi64_sub(rsimd_vf64_as_vi64(rsimd_vf64_add(k, magic)),
+                                rsimd_vf64_as_vi64(magic));
+  return rsimd_vi64_as_vf64(rsimd_vi64_sll(rsimd_vi64_add(i, rsimd_vi64_set1(1023)), 52));
+}
+
+/* rsimd_scaleb_f64() lane by lane, for whole n (musl's scalbn): factors of
+   2^1023 or 2^-969 (2^-1022 2^53, which keeps a second rounding away from
+   the subnormal range) bring n into [-1022, 1023], then one multiply by
+   2^n rounds once. Lanes where n is NaN are unspecified. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_scaleb(rsimd_vf64 x, rsimd_vf64 n) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0), zero = rsimd_vf64_zero(),
+                   hi = rsimd_vf64_set1(1023.0), lo = rsimd_vf64_set1(-1022.0);
+  int j;
+  n = rsimd_vf64_min(rsimd_vf64_max(n, rsimd_vf64_set1(-2200.0)), rsimd_vf64_set1(2200.0));
+  for (j = 0; j < 2; j++) {
+    rsimd_mf64 m = rsimd_vf64_cmp_gt(n, hi);
+    if (rsimd_mf64_any(m)) {
+      x = rsimd_vf64_mul(x, rsimd_vf64_blend(one, rsimd_vf64_set1(0x1p1023), m));
+      n = rsimd_vf64_sub(n, rsimd_vf64_blend(zero, hi, m));
+    }
+    m = rsimd_vf64_cmp_lt(n, lo);
+    if (rsimd_mf64_any(m)) {
+      x = rsimd_vf64_mul(x, rsimd_vf64_blend(one, rsimd_vf64_set1(0x1p-969), m));
+      n = rsimd_vf64_add(n, rsimd_vf64_blend(zero, rsimd_vf64_set1(969.0), m));
+    }
+  }
+  n = rsimd_vf64_min(rsimd_vf64_max(n, lo), hi);
+  return rsimd_vf64_mul(x, rsimd_math_pow2i(n));
+}
+
+/* The unbiased exponent of each lane of ax (finite and > 0) as a double:
+   C's ilogb, exact for subnormals, which are scaled by 2^54 first. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_ilogb(rsimd_vf64 ax) {
+  const rsimd_vf64 two52 = rsimd_vf64_set1(4503599627370496.0);
+  rsimd_mf64 sub = rsimd_vf64_cmp_lt(ax, rsimd_vf64_set1(0x1p-1022));
+  rsimd_vf64 e;
+  ax = rsimd_vf64_blend(ax, rsimd_vf64_mul(ax, rsimd_vf64_set1(0x1p54)), sub);
+  /* The biased exponent E, as the double 2^52 + E minus 2^52. */
+  e = rsimd_vf64_sub(rsimd_vi64_as_vf64(rsimd_vi64_or(rsimd_vi64_srl(rsimd_vf64_as_vi64(ax), 52),
+                                                      rsimd_vf64_as_vi64(two52))),
+                     two52);
+  return rsimd_vf64_sub(e, rsimd_vf64_blend(rsimd_vf64_set1(1023.0), rsimd_vf64_set1(1077.0), sub));
+}
+
+/* rsimd_next_up_f64() lane by lane, on the bits: one more for a positive
+   number, one less (a smaller magnitude) for a negative one, the smallest
+   subnormal for a zero, and +Inf stays. A NaN lane is unspecified. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_next_up(rsimd_vf64 a) {
+  const rsimd_vf64 zero = rsimd_vf64_zero();
+  rsimd_vi64 d = rsimd_vi64_blend(rsimd_vi64_set1(-1), rsimd_vi64_set1(1),
+                                  rsimd_mf64_to_mi64(rsimd_vf64_cmp_ge(a, zero)));
+  rsimd_vf64 r = rsimd_vi64_as_vf64(rsimd_vi64_add(rsimd_vf64_as_vi64(a), d));
+  r = rsimd_vf64_blend(r, rsimd_vf64_set1(4.9406564584124654e-324), rsimd_vf64_cmp_eq(a, zero));
+  return rsimd_vf64_blend(r, a, rsimd_vf64_cmp_eq(a, rsimd_vf64_set1(INFINITY)));
+}
+
+#endif
 
 #if RSIMD_TIER_IS(none)
 
@@ -253,6 +407,11 @@ int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double
   case RSIMD_MATH_COS: RSIMD_MATH1_NONE_LOOP(cos(a)) break;
   case RSIMD_MATH_TANH: RSIMD_MATH1_NONE_LOOP(tanh(a)) break;
   case RSIMD_MATH_SIGMOID: RSIMD_MATH1_NONE_LOOP(rsimd_sigmoid_f64(a)) break;
+  case RSIMD_MATH_NEXT_UP: RSIMD_MATH1_NONE_LOOP(rsimd_next_up_f64(a)) break;
+  case RSIMD_MATH_NEXT_DOWN: RSIMD_MATH1_NONE_LOOP(rsimd_next_down_f64(a)) break;
+  case RSIMD_MATH_RSQRT:
+  case RSIMD_MATH_RSQRT_APPROX: RSIMD_MATH1_NONE_LOOP(1.0 / sqrt(a)) break;
+  case RSIMD_MATH_RECIP_APPROX: RSIMD_MATH1_NONE_LOOP(1.0 / a) break;
   default: RSIMD_MATH1_NONE_LOOP(rsimd_math1_f64(op & ~RSIMD_MATH_FAST, a, p)) break;
   }
   return st;
@@ -274,6 +433,14 @@ int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, in
     case RSIMD_MATH_POW: r = rsimd_pow_f64(a, b); break;
     case RSIMD_MATH_ATAN2: r = rsimd_math2_na_f64(atan2(a, b), a, b); break;
     case RSIMD_MATH_HYPOT: r = rsimd_math2_na_f64(hypot(a, b), a, b); break;
+    case RSIMD_MATH_NEXTAFTER: r = rsimd_math2_na_f64(nextafter(a, b), a, b); break;
+    case RSIMD_MATH_REMAINDER: r = rsimd_math2_na_f64(remainder(a, b), a, b); break;
+    case RSIMD_MATH_SCALEB:
+      r = rsimd_math2_na_f64(isnan(b) ? b : rsimd_scaleb_f64(a, b), a, b);
+      break;
+    case RSIMD_MATH_ROOTN:
+      r = rsimd_math2_na_f64(isnan(b) ? b : rsimd_rootn_f64(a, b), a, b);
+      break;
     default: r = NAN; break;
     }
     if (op != RSIMD_MATH_POW && isnan(r) && !isnan(a) && !isnan(b)) st = RSIMD_EW_NAN_PRODUCED;
@@ -552,8 +719,59 @@ RSIMD_ALWAYS_INLINE int rsimd_math1_run(int op, const void *x, R_xlen_t n, int f
   return st;
 }
 
+/* 1 / a and 1 / sqrt(a) within 2^-22 (rsimd_vf64_recip_approx and
+   rsqrt_approx), exact in the lanes outside their range: zeros,
+   infinities, NaN, subnormals, |a| >= 2^1022 and, for rsqrt, negative
+   numbers. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_recip_approx(rsimd_vf64 a) {
+  rsimd_vf64 ax = rsimd_vf64_abs(a), r = rsimd_vf64_recip_approx(a);
+  rsimd_mf64 ok = rsimd_mf64_and(rsimd_vf64_cmp_ge(ax, rsimd_vf64_set1(0x1p-1022)),
+                                 rsimd_vf64_cmp_lt(ax, rsimd_vf64_set1(0x1p1022)));
+  if (!rsimd_mf64_all(ok)) r = rsimd_vf64_blend(rsimd_vf64_div(rsimd_vf64_set1(1.0), a), r, ok);
+  return r;
+}
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_rsqrt_approx(rsimd_vf64 a) {
+  rsimd_vf64 r = rsimd_vf64_rsqrt_approx(a);
+  rsimd_mf64 ok = rsimd_mf64_and(rsimd_vf64_cmp_ge(a, rsimd_vf64_set1(0x1p-1022)),
+                                 rsimd_vf64_cmp_lt(a, rsimd_vf64_set1(INFINITY)));
+  if (!rsimd_mf64_all(ok)) {
+    r = rsimd_vf64_blend(rsimd_vf64_div(rsimd_vf64_set1(1.0), rsimd_vf64_sqrt(a)), r, ok);
+  }
+  return r;
+}
+
+/* The math1_f64 ops without a fast variant (NEXT_UP .. RSQRT_APPROX):
+   one instantiation. */
+static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, double *out) {
+  const void *y = NULL;
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1), bc1 = rsimd_vf64_zero();
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0);
+  int st = 0;
+  (void) y;
+  switch (op) {
+  case RSIMD_MATH_NEXT_UP: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_next_up(a))); break;
+  case RSIMD_MATH_NEXT_DOWN:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_vf64_neg(rsimd_math_next_up(rsimd_vf64_neg(a)))));
+    break;
+  case RSIMD_MATH_RSQRT:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_vf64_div(one, rsimd_vf64_sqrt(a))));
+    break;
+  case RSIMD_MATH_RECIP_APPROX:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_recip_approx(a)));
+    break;
+  case RSIMD_MATH_RSQRT_APPROX:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_rsqrt_approx(a)));
+    break;
+  default: break;
+  }
+  return st;
+}
+
 int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
 int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out) {
+  if ((op & ~RSIMD_MATH_FAST) >= RSIMD_MATH_NEXT_UP) {
+    return rsimd_math1_extra(op & ~RSIMD_MATH_FAST, x, n, flags, out);
+  }
   if (op & RSIMD_MATH_FAST) return rsimd_math1_run(op & ~RSIMD_MATH_FAST, x, n, flags, p, out, 1);
   return rsimd_math1_run(op, x, n, flags, p, out, 0);
 }
@@ -591,10 +809,133 @@ RSIMD_ALWAYS_INLINE int rsimd_math2_run(int op, const void *x, const void *y, R_
   return st;
 }
 
+/* rsimd_ipow_dd() lane by lane, for whole an in [0, 512] (lanes with
+   an = 0 give 1): binary powering until every lane's exponent is used. */
+RSIMD_ALWAYS_INLINE void rsimd_math_ipow_dd(rsimd_vf64 r, rsimd_vf64 an, rsimd_vf64 *hi,
+                                            rsimd_vf64 *lo) {
+  const rsimd_vf64 zero = rsimd_vf64_zero(), half = rsimd_vf64_set1(0.5),
+                   two = rsimd_vf64_set1(2.0);
+  rsimd_vf64 ph = rsimd_vf64_set1(1.0), pl = zero, bh = r, bl = zero, h, l, nh, d;
+  for (;;) {
+    d = rsimd_vf64_floor(rsimd_vf64_mul(an, half));
+    {
+      rsimd_mf64 odd = rsimd_vf64_cmp_ne(an, rsimd_vf64_mul(d, two));
+      if (rsimd_mf64_any(odd)) {
+        h = rsimd_vf64_mul(ph, bh);
+        l = rsimd_vf64_add(rsimd_vf64_fma(ph, bh, rsimd_vf64_neg(h)),
+                           rsimd_vf64_add(rsimd_vf64_mul(ph, bl), rsimd_vf64_mul(pl, bh)));
+        nh = rsimd_vf64_add(h, l);
+        pl = rsimd_vf64_blend(pl, rsimd_vf64_sub(l, rsimd_vf64_sub(nh, h)), odd);
+        ph = rsimd_vf64_blend(ph, nh, odd);
+      }
+    }
+    an = d;
+    if (!rsimd_mf64_any(rsimd_vf64_cmp_gt(an, zero))) break;
+    h = rsimd_vf64_mul(bh, bh);
+    l = rsimd_vf64_add(rsimd_vf64_fma(bh, bh, rsimd_vf64_neg(h)),
+                       rsimd_vf64_mul(two, rsimd_vf64_mul(bh, bl)));
+    bh = rsimd_vf64_add(h, l);
+    bl = rsimd_vf64_sub(l, rsimd_vf64_sub(bh, h));
+  }
+  *hi = ph;
+  *lo = pl;
+}
+
+/* rsimd_rootn_f64() lane by lane, with SLEEF's functions; b holds whole
+   numbers. The general steps run in every lane and the special cases are
+   blended over them. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_rootn(rsimd_vf64 a, rsimd_vf64 b) {
+  const rsimd_vf64 zero = rsimd_vf64_zero(), one = rsimd_vf64_set1(1.0),
+                   half = rsimd_vf64_set1(0.5), inf = rsimd_vf64_set1(INFINITY);
+  rsimd_vf64 ax = rsimd_vf64_abs(a), an = rsimd_vf64_abs(b), k, m, r, c = zero;
+  rsimd_mf64 small = rsimd_vf64_cmp_le(an, rsimd_vf64_set1(512.0)), odd, z, msk;
+  k = rsimd_vf64_blend(zero, rsimd_vf64_floor(rsimd_vf64_div(rsimd_math_ilogb(ax), an)), small);
+  m = rsimd_math_scaleb(ax, rsimd_vf64_neg(rsimd_vf64_mul(k, an)));
+  r = rsimd_sleef_exp2_fast(rsimd_vf64_div(rsimd_sleef_log2_fast(m), b));
+  if (rsimd_mf64_any(small)) {
+    rsimd_vf64 h, l, cp, cn;
+    rsimd_math_ipow_dd(r, rsimd_vf64_blend(zero, an, small), &h, &l);
+    cp = rsimd_vf64_div(rsimd_vf64_add(rsimd_vf64_sub(h, m), l), h);
+    cn = rsimd_vf64_sub(rsimd_vf64_fma(rsimd_vf64_neg(m), h, one), rsimd_vf64_mul(m, l));
+    c = rsimd_vf64_div(rsimd_vf64_blend(cp, cn, rsimd_vf64_cmp_lt(b, zero)), b);
+  }
+  if (!rsimd_mf64_all(small)) {
+    rsimd_vf64 h = rsimd_vf64_trunc(rsimd_vf64_mul(b, half)), q;
+    q = rsimd_vf64_mul(rsimd_sleef_pow(r, h),
+                       rsimd_vf64_div(rsimd_sleef_pow(r, rsimd_vf64_sub(b, h)), m));
+    c = rsimd_vf64_blend(rsimd_vf64_div(rsimd_vf64_div(rsimd_vf64_sub(q, one), q), b), c, small);
+  }
+  r = rsimd_vf64_sub(r, rsimd_vf64_mul(r, c));
+  r = rsimd_vf64_mul(
+    r, rsimd_math_pow2i(rsimd_vf64_blend(k, rsimd_vf64_neg(k), rsimd_vf64_cmp_lt(b, zero))));
+  /* b - 2 floor(b / 2) is exact for whole b. */
+  odd = rsimd_vf64_cmp_ne(
+    rsimd_vf64_sub(b, rsimd_vf64_mul(rsimd_vf64_set1(2.0), rsimd_vf64_floor(rsimd_vf64_mul(b, half)))),
+    zero);
+  r = rsimd_vf64_blend(r, rsimd_vf64_or(r, rsimd_math_signed_zero(a)), odd);
+  msk = rsimd_vf64_cmp_eq(b, rsimd_vf64_set1(2.0));
+  if (rsimd_mf64_any(msk)) r = rsimd_vf64_blend(r, rsimd_vf64_sqrt(a), msk);
+  /* Zeros and infinities: 0 or Inf, signed like a for an odd b. */
+  z = rsimd_vf64_cmp_eq(a, zero);
+  msk = rsimd_mf64_or(z, rsimd_vf64_cmp_eq(ax, inf));
+  if (rsimd_mf64_any(msk)) {
+    rsimd_mf64 pos = rsimd_vf64_cmp_gt(b, zero);
+    rsimd_mf64 to0 = rsimd_mf64_or(rsimd_mf64_and(z, pos), rsimd_mf64_andnot(rsimd_mf64_or(z, pos),
+                                                                              msk));
+    rsimd_vf64 mag = rsimd_vf64_blend(inf, zero, to0);
+    r = rsimd_vf64_blend(r, rsimd_vf64_blend(mag, rsimd_vf64_or(mag, rsimd_math_signed_zero(a)), odd),
+                         msk);
+  }
+  msk = rsimd_mf64_andnot(odd, rsimd_vf64_cmp_lt(a, zero));
+  if (rsimd_mf64_any(msk)) r = rsimd_vf64_blend(r, rsimd_vf64_set1(NAN), msk);
+  msk = rsimd_vf64_cmp_eq(an, one);
+  if (rsimd_mf64_any(msk)) {
+    r = rsimd_vf64_blend(r, rsimd_vf64_blend(a, rsimd_vf64_div(one, a), rsimd_vf64_cmp_lt(b, zero)),
+                         msk);
+  }
+  return rsimd_vf64_blend(r, rsimd_vf64_set1(NAN), rsimd_vf64_cmp_eq(b, zero));
+}
+
+/* SLEEF's remainder, which is exact while |a / b| < 2^1000 but gives NaN
+   once its quotient overflows (measured: exact up to exponents 1020
+   apart): those lanes are recomputed by libm. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_remainder(rsimd_vf64 a, rsimd_vf64 b, int lanes) {
+  rsimd_vf64 r = rsimd_sleef_remainder(a, b), ax = rsimd_vf64_abs(a);
+  rsimd_mf64 big =
+    rsimd_mf64_and(rsimd_vf64_cmp_gt(ax, rsimd_vf64_mul(rsimd_vf64_abs(b), rsimd_vf64_set1(0x1p1000))),
+                   rsimd_vf64_cmp_lt(ax, rsimd_vf64_set1(INFINITY)));
+  if (rsimd_mf64_any(big)) r = rsimd_math_fix2(r, a, b, big, lanes, remainder);
+  return r;
+}
+
+/* The math2_f64 ops without a fast variant (NEXTAFTER .. ROOTN): one
+   instantiation. SLEEF's nextafter is exact, and so is its remainder in
+   the range rsimd_math_remainder() leaves it. */
+static int rsimd_math2_extra(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                             double *out) {
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1), bc1 = rsimd_ew_bcast(y, flags, 1, 1);
+  int st = 0;
+  switch (op) {
+  case RSIMD_MATH_NEXTAFTER:
+    RSIMD_MATH_LOOP(2, RSIMD_MATH2_RESULT(rsimd_sleef_nextafter(a, b)));
+    break;
+  case RSIMD_MATH_REMAINDER:
+    RSIMD_MATH_LOOP(2, RSIMD_MATH2_RESULT(rsimd_math_remainder(a, b, lanes)));
+    break;
+  case RSIMD_MATH_SCALEB: RSIMD_MATH_LOOP(2, RSIMD_MATH2_RESULT(rsimd_math_scaleb(a, b))); break;
+  case RSIMD_MATH_ROOTN: RSIMD_MATH_LOOP(2, RSIMD_MATH2_RESULT(rsimd_math_rootn(a, b))); break;
+  default: break;
+  }
+  return st;
+}
+
 int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
                             double *out);
 int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
                             double *out) {
+  if ((op & ~RSIMD_MATH_FAST) >= RSIMD_MATH_NEXTAFTER) {
+    return rsimd_math2_extra(op & ~RSIMD_MATH_FAST, x, y, n, flags, out);
+  }
   if (op & RSIMD_MATH_FAST) return rsimd_math2_run(op & ~RSIMD_MATH_FAST, x, y, n, flags, out, 1);
   return rsimd_math2_run(op, x, y, n, flags, out, 0);
 }
@@ -658,6 +999,49 @@ int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, doubl
 #define RSIMD_SKIP_math1_f64 1
 #define RSIMD_SKIP_math2_f64 1
 #define RSIMD_SKIP_sincos_f64 1
+#endif
+
+/* ---- ilogb --------------------------------------------------------------
+   C's ilogb as an int, NA (INT_MIN) for zero, an infinity, NaN or NA,
+   where C returns its sentinels. Needs no SLEEF. */
+#if RSIMD_TIER_IS(none)
+
+void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out);
+void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out) {
+  R_xlen_t i;
+  for (i = 0; i < n; i++) {
+    double a = rsimd_math_get(x, flags, 0, i);
+    out[i] = (isnan(a) || isinf(a) || a == 0) ? RSIMD_NA_I32 : ilogb(a);
+  }
+}
+
+#elif !defined(RSIMD_NO_F64_SIMD)
+
+/* The exponent as a double, NA lanes as INT_MIN (exactly a double), stored
+   by the truncating conversion. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_ilogb_na(rsimd_vf64 a) {
+  rsimd_vf64 ax = rsimd_vf64_abs(a);
+  rsimd_mf64 ok = rsimd_mf64_and(rsimd_vf64_cmp_gt(ax, rsimd_vf64_zero()),
+                                 rsimd_vf64_cmp_lt(ax, rsimd_vf64_set1(INFINITY)));
+  return rsimd_vf64_blend(rsimd_vf64_set1(-2147483648.0), rsimd_math_ilogb(ax), ok);
+}
+
+void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out);
+void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out) {
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1);
+  ptrdiff_t i = 0;
+  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
+    rsimd_vf64_storeu_i32(out + i, rsimd_math_ilogb_na(rsimd_ew_ld(x, flags, 0, bc0, i, 1)));
+  }
+  if (i < n) {
+    rsimd_p64 pg = rsimd_p64_while(i, n);
+    rsimd_vf64_storeu_i32_p(pg, out + i,
+                            rsimd_math_ilogb_na(rsimd_ew_ld_p(x, flags, 0, bc0, i, pg, 1)));
+  }
+}
+
+#else /* RSIMD_NO_F64_SIMD: 32-bit ARM, the none tier does doubles */
+#define RSIMD_SKIP_ilogb_f64 1
 #endif
 
 #undef RSIMD_MATH_PI

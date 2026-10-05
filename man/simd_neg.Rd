@@ -84,7 +84,8 @@ otherwise double.
 }
 \seealso{
 \code{\link{abs}}, \code{\link{sign}}, \code{\link{sqrt}},
-\code{\link{simd_add}}, \link{rsimd_options}, \link{rsimd-integer64}.
+\code{\link{simd_add}}, \code{\link{simd_recip_approx}},
+\code{\link{simd_rsqrt}}, \link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_neg(c(1L, -2L, NA))

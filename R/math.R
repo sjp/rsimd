@@ -11,18 +11,43 @@
   invisible()
 }
 
-.math1 <- function(x, op) {
+# `accuracy` is 0L for the functions that rsimd.math_accuracy does not
+# affect, which then do not read it.
+.math1 <- function(x, op, accuracy = .math_accuracy_code()) {
   .sync_impl()
   .math_check(paste0("simd_", op), list(x = x))
-  .Call(C_simd_math1, x, op, .math_accuracy_code())
+  .Call(C_simd_math1, x, op, accuracy)
 }
 
-.math2 <- function(x, y, op, names = c("x", "y")) {
+.math2 <- function(x, y, op, names = c("x", "y"), accuracy = .math_accuracy_code()) {
   .sync_impl()
   args <- list(x, y)
   names(args) <- names
   .math_check(paste0("simd_", op), args)
-  .Call(C_simd_math2, x, y, op, .math_accuracy_code())
+  .Call(C_simd_math2, x, y, op, accuracy)
+}
+
+# The whole-number argument n of simd_scaleb() and simd_rootn() as an
+# integer vector: integer and logical as they are, doubles only if whole
+# and in the integer range (NA and NaN become NA). Attributes are kept, so
+# a simd_vec keeps its pin.
+.whole_arg <- function(n) {
+  if (is.double(n)) {
+    bad <- !is.na(n) & (abs(n) > .Machine$integer.max | n != trunc(n))
+    if (any(bad)) stop("'n' must be whole numbers in the integer range", call. = FALSE)
+  }
+  if (!is.integer(n)) storage.mode(n) <- "integer"
+  n
+}
+
+.math_n <- function(x, n, op) {
+  .sync_impl()
+  fun <- paste0("simd_", op)
+  .math_check(fun, list(x = x, n = n))
+  if (!(is.numeric(n) || is.logical(n))) {
+    stop("non-numeric argument to mathematical function", call. = FALSE)
+  }
+  .Call(C_simd_math2, x, .whole_arg(n), op, 0L)
 }
 
 simd_exp <- function(x) .math1(x, "exp")
@@ -91,3 +116,27 @@ simd_asinh <- function(x) .math1(x, "asinh")
 simd_acosh <- function(x) .math1(x, "acosh")
 
 simd_atanh <- function(x) .math1(x, "atanh")
+
+simd_ilogb <- function(x) {
+  .sync_impl()
+  .math_check("simd_ilogb", list(x = x))
+  .Call(C_simd_ilogb, x)
+}
+
+simd_scaleb <- function(x, n) .math_n(x, n, "scaleb")
+
+simd_rootn <- function(x, n) .math_n(x, n, "rootn")
+
+simd_nextafter <- function(x, y) .math2(x, y, "nextafter", accuracy = 0L)
+
+simd_next_up <- function(x) .math1(x, "next_up", accuracy = 0L)
+
+simd_next_down <- function(x) .math1(x, "next_down", accuracy = 0L)
+
+simd_remainder <- function(x, y) .math2(x, y, "remainder", accuracy = 0L)
+
+simd_rsqrt <- function(x) .math1(x, "rsqrt", accuracy = 0L)
+
+simd_recip_approx <- function(x) .math1(x, "recip_approx", accuracy = 0L)
+
+simd_rsqrt_approx <- function(x) .math1(x, "rsqrt_approx", accuracy = 0L)

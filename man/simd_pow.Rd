@@ -2,21 +2,31 @@
 \alias{simd_pow}
 \alias{simd_cbrt}
 \alias{simd_hypot}
-\title{Powers, Cube Roots and Hypotenuses}
+\alias{simd_rootn}
+\alias{simd_rsqrt}
+\title{Powers, Roots and Hypotenuses}
 \usage{
 simd_pow(x, y)
 
 simd_cbrt(x)
 
 simd_hypot(x, y)
+
+simd_rootn(x, n)
+
+simd_rsqrt(x)
 }
 \arguments{
 \item{x, y}{Double, integer or logical vectors.}
+\item{n}{An integer or logical vector, or a double vector of whole numbers
+in the integer range (\code{NA} allowed).}
 }
 \description{
-\code{x^y}, the real cube root of \code{x} and \code{sqrt(x^2 + y^2)}
-computed with SIMD instructions. They correspond to \code{Pow},
-\code{Cbrt} and \code{Hypot} of .NET's \code{TensorPrimitives}.
+\code{x^y}, the real cube root of \code{x}, \code{sqrt(x^2 + y^2)}, the
+real \code{n}-th root of \code{x} and \code{1 / sqrt(x)}, computed with
+SIMD instructions. They correspond to \code{Pow}, \code{Cbrt},
+\code{Hypot}, \code{RootN} and \code{ReciprocalSqrt} of .NET's
+\code{TensorPrimitives}.
 }
 \details{
 \code{simd_pow(x, y)} follows base R's \code{x^y} exactly: \code{x^2} is
@@ -44,6 +54,40 @@ underflow in the squares: \code{simd_hypot(1e200, 1e200)} is
 missing result (\code{simd_hypot(Inf, NaN)} is \code{NaN}, unlike C's
 \code{Inf}), as for base R's \code{atan2()}.
 
+\code{simd_rootn(x, n)} is C23's \code{rootn()}: the real \code{n}-th root
+of \code{x} for a whole number \code{n}, positive or negative. For an odd
+\code{n} the root of a negative number is negative (\code{simd_rootn(-8, 3)}
+is \code{-2}, where \code{(-8)^(1/3)} is \code{NaN}); for an even \code{n}
+it is \code{NaN}. It is within 1 ULP of the exact root on every
+implementation, and exact whenever the root is: \code{simd_rootn(1000, 3)}
+is exactly \code{10} and \code{simd_rootn(2^60, 4)} exactly \code{2^15},
+where \code{1000^(1/3)} is \code{9.999999999999998}: \code{x^(1/n)} rounds
+\code{1/n} first, and can be more than 100 ULP off. The method is a first
+approximation from \code{exp2(log2(m) / n)}, where \code{m} is \code{|x|}
+scaled by a power of two, refined by one Newton step whose \code{n}-th power
+is computed in double-double arithmetic, which makes the result correctly
+rounded in nearly every case (measured: never more than 0.502 ULP from the
+exact root); \code{simd_rootn(x, 2)} is \code{sqrt(x)} exactly,
+\code{simd_rootn(x, 1)} is \code{x} and \code{simd_rootn(x, -1)} is \code{1
+/ x}. The special values are C23's: \code{n = 0} gives \code{NaN}; a zero
+gives a zero for a positive \code{n} and \code{Inf} for a negative one, and
+an infinity the reverse, each with the sign of \code{x} for an odd \code{n}
+and positive for an even one (so \code{simd_rootn(-0, 2)} is \code{0} and
+\code{simd_rootn(-0, -3)} is \code{-Inf}); a negative \code{x}, including
+\code{-Inf}, with an even \code{n} gives \code{NaN}. Every \code{NaN} that
+does not come from a missing operand warns \code{"NaNs produced"}. An
+\code{NA} (or \code{NaN}) in \code{n} gives \code{NA}; a double \code{n}
+that is not a whole number in the integer range is an error. Base R has no
+\code{rootn()}.
+
+\code{simd_rsqrt(x)} is base R's \code{1 / sqrt(x)}, two correctly
+rounded operations, so identical to it on every implementation, including
+\code{-Inf} for \code{-0} and \code{"NaNs produced"} for a negative
+\code{x}. \code{\link{simd_rsqrt_approx}()} is a faster approximation.
+
+Neither \code{simd_rootn()} nor \code{simd_rsqrt()} depends on option
+\code{rsimd.math_accuracy}.
+
 The two-operand functions follow the broadcast rule:
 
 \rsimdBroadcast
@@ -53,12 +97,12 @@ The two-operand functions follow the broadcast rule:
 \rsimdAttributes
 }
 \value{
-A double vector, of the length of the longer operand for \code{simd_pow()}
-and \code{simd_hypot()}.
+A double vector, of the length of the longer operand for \code{simd_pow()},
+\code{simd_hypot()} and \code{simd_rootn()}.
 }
 \seealso{
 \code{\link{Arithmetic}}, \code{\link{simd_sqrt}}, \code{\link{simd_exp}},
-\link{rsimd_options}.
+\code{\link{simd_recip_approx}}, \link{rsimd_options}.
 }
 \examples{
 simd_pow(c(2, -2, 10), 3)
@@ -67,4 +111,8 @@ simd_pow(-8, 1/3)
 simd_cbrt(c(-8, 27, 2))
 simd_hypot(3, 4)
 simd_hypot(1e200, 1e200)
+simd_rootn(c(27, -8, 2^60, 16), c(3L, 3L, 4L, -2L))
+1000^(1/3) == 10
+simd_rootn(1000, 3) == 10
+simd_rsqrt(c(4, 0, -0))
 }

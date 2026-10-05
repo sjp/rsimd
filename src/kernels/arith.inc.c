@@ -107,7 +107,8 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
 #define RSIMD_EW_MERGED(e) r = check ? rsimd_na_merge3_f64(e, a, b, c) : (e)
   switch (op) {
   case RSIMD_EW_FMA: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(fma(a, b, c))) break;
-  case RSIMD_EW_MUL_ADD: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(a * b + c)) break;
+  case RSIMD_EW_MUL_ADD:
+  case RSIMD_EW_MUL_ADD_APPROX: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(a * b + c)) break;
   case RSIMD_EW_ADD_MUL: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED((a + b) * c)) break;
   case RSIMD_EW_LERP: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(fma(c, b, (1.0 - c) * a))) break;
   case RSIMD_EW_CLAMP:
@@ -608,6 +609,13 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
   case RSIMD_EW_FMA: RSIMD_EW_F64_LOOP(3, RSIMD_EW_MERGED(rsimd_vf64_fma(a, b, c))); break;
   case RSIMD_EW_MUL_ADD:
     RSIMD_EW_F64_LOOP(3, RSIMD_EW_MERGED(rsimd_vf64_add(rsimd_vf64_mul(a, b), c)));
+    break;
+  case RSIMD_EW_MUL_ADD_APPROX:
+#if RSIMD_NATIVE_FMA
+    RSIMD_EW_F64_LOOP(3, RSIMD_EW_MERGED(rsimd_vf64_fma(a, b, c)));
+#else
+    RSIMD_EW_F64_LOOP(3, RSIMD_EW_MERGED(rsimd_vf64_add(rsimd_vf64_mul(a, b), c)));
+#endif
     break;
   case RSIMD_EW_ADD_MUL:
     RSIMD_EW_F64_LOOP(3, RSIMD_EW_MERGED(rsimd_vf64_mul(rsimd_vf64_add(a, b), c)));

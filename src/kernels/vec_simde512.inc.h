@@ -17,6 +17,7 @@
 #include "x86/avx512/mullo.h"
 #include "x86/avx512/div.h"
 #include "x86/avx512/fmadd.h"
+#include "x86/avx512/fnmadd.h"
 #include "x86/avx512/max.h"
 #include "x86/avx512/min.h"
 #include "x86/avx512/abs.h"
@@ -410,4 +411,34 @@ RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
 }
 RSIMD_INLINE void rsimd_vf64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vf64 v) {
   simde_mm256_mask_storeu_epi32(p, pg, rsimd_s512_cvttpd_epi32(v));
+}
+/* VRCP14PD and VRSQRT14PD (relative error below 2^-14) refined by one
+   Newton step: about 2^-28 (recip) and 2^-27.4 (rsqrt). Valid for
+   2^-1022 <= |a| < 2^1022 (and a > 0 for rsqrt). The vendored SIMDe
+   subset has neither instruction, so a build where SIMDe emulates
+   AVX-512 stands in the exact value cut to 14 significand bits, which
+   exercises the same Newton step. */
+#if defined(SIMDE_X86_AVX512F_NATIVE)
+RSIMD_INLINE rsimd_vf64 rsimd_s512_rcp14(rsimd_vf64 a) { return _mm512_rcp14_pd(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_s512_rsqrt14(rsimd_vf64 a) { return _mm512_rsqrt14_pd(a); }
+#else
+RSIMD_INLINE rsimd_vf64 rsimd_s512_cut14(rsimd_vf64 r) {
+  return rsimd_vi64_as_vf64(
+    rsimd_vi64_and(rsimd_vf64_as_vi64(r), rsimd_vi64_set1(-(INT64_C(1) << 38))));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_s512_rcp14(rsimd_vf64 a) {
+  return rsimd_s512_cut14(simde_mm512_div_pd(simde_mm512_set1_pd(1.0), a));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_s512_rsqrt14(rsimd_vf64 a) {
+  return rsimd_s512_cut14(simde_mm512_div_pd(simde_mm512_set1_pd(1.0), simde_mm512_sqrt_pd(a)));
+}
+#endif
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
+  rsimd_vf64 r = rsimd_s512_rcp14(a);
+  return rsimd_vf64_fma(r, simde_mm512_fnmadd_pd(a, r, simde_mm512_set1_pd(1.0)), r);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) {
+  rsimd_vf64 r = rsimd_s512_rsqrt14(a);
+  rsimd_vf64 d = simde_mm512_fnmadd_pd(a, simde_mm512_mul_pd(r, r), simde_mm512_set1_pd(1.0));
+  return rsimd_vf64_fma(simde_mm512_mul_pd(simde_mm512_set1_pd(0.5), r), d, r);
 }

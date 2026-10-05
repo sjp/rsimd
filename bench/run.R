@@ -140,6 +140,22 @@ ops <- list(
   list(
     op = "is_pow2", type = "double", simd = quote(simd_is_pow2(xw)),
     base = quote(xw > 0 & log2(abs(xw)) == trunc(log2(abs(xw)))), bound = FALSE
+  ),
+  list(
+    op = "recip_approx", type = "double", simd = quote(simd_recip_approx(xp)),
+    base = quote(1 / xp), bound = FALSE
+  ),
+  list(
+    op = "rsqrt", type = "double", simd = quote(simd_rsqrt(xp)), base = quote(1 / sqrt(xp)),
+    bound = FALSE
+  ),
+  list(
+    op = "rsqrt_approx", type = "double", simd = quote(simd_rsqrt_approx(xp)),
+    base = quote(1 / sqrt(xp)), bound = TRUE
+  ),
+  list(
+    op = "rootn", type = "double", simd = quote(simd_rootn(xp, 3L)), base = quote(xp^(1 / 3)),
+    bound = TRUE
   )
 )
 

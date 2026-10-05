@@ -14,7 +14,7 @@
   "simd_add", "simd_sub", "simd_mul", "simd_div", "simd_add_wrap", "simd_sub_wrap",
   "simd_mul_wrap", "simd_neg", "simd_abs", "simd_neg_wrap", "simd_abs_wrap", "simd_idiv",
   "simd_mod", "simd_pmin", "simd_pmax", "simd_pmin_num", "simd_pmax_num", "simd_clamp",
-  "simd_sign", "simd_mul_add", "simd_add_mul"
+  "simd_sign", "simd_mul_add", "simd_add_mul", "simd_mul_add_approx"
 )
 
 # Checks every operand in `args` (a named list) for function `fun`; the
@@ -154,6 +154,10 @@ simd_fma <- function(x, y, z, na_check = getOption("rsimd.na_check", TRUE)) {
 
 simd_mul_add <- function(x, y, z, na_check = getOption("rsimd.na_check", TRUE)) {
   .ew3(x, y, z, "mul_add", "simd_mul_add", na_check)
+}
+
+simd_mul_add_approx <- function(x, y, z, na_check = getOption("rsimd.na_check", TRUE)) {
+  .ew3(x, y, z, "mul_add_approx", "simd_mul_add_approx", na_check)
 }
 
 simd_add_mul <- function(x, y, z, na_check = getOption("rsimd.na_check", TRUE)) {

@@ -158,8 +158,8 @@ RSIMD_OP(ew3_i32, int,
           const rsimd_opts *o))
 
 /* Elementary functions, out[i] = f(x[i]) (math1_f64, op codes
-   RSIMD_MATH_EXP .. SIGMOID, p used by LOGB only), out[i] = f(x[i], y[i])
-   (math2_f64, RSIMD_MATH_POW .. HYPOT) and both sin(x[i]) and cos(x[i])
+   RSIMD_MATH_EXP .. RSQRT_APPROX, p used by LOGB only), out[i] = f(x[i], y[i])
+   (math2_f64, RSIMD_MATH_POW .. ROOTN) and both sin(x[i]) and cos(x[i])
    (sincos_f64, op RSIMD_MATH_SIN), with base R's missing-value rules; any
    op may have RSIMD_MATH_FAST set (fast mode). Operands are read as
    doubles or int32 elements with the flags of the elementwise kernels
@@ -170,6 +170,12 @@ RSIMD_OP(math1_f64, int, (int op, const void *x, R_xlen_t n, int flags, double p
 RSIMD_OP(math2_f64, int,
          (int op, const void *x, const void *y, R_xlen_t n, int flags, double *out))
 RSIMD_OP(sincos_f64, int, (int op, const void *x, R_xlen_t n, int flags, double *s, double *c))
+
+/* The unbiased binary exponent of x[i] as an int (C's ilogb, exact for
+   subnormals), or NA_integer_ for zero, an infinity, NaN or NA. x is read
+   as math1_f64 reads it. Needs no SLEEF: every tier with double vectors
+   has it. */
+RSIMD_OP(ilogb_f64, void, (const void *x, R_xlen_t n, int flags, int *out))
 
 /* The passes of softmax and log-softmax (op codes RSIMD_SOFTMAX_* in
    kernel_types.h) over n elements of x, which may be out itself. x must

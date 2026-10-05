@@ -76,6 +76,8 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_max(rsimd_vf64 a, rsimd_vf64 b) { return a > 
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_abs(rsimd_vf64 a) { return fabs(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_neg(rsimd_vf64 a) { return -a; }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_sqrt(rsimd_vf64 a) { return sqrt(a); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) { return 1.0 / a; }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) { return 1.0 / sqrt(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_and(rsimd_vf64 a, rsimd_vf64 b) {
   return rsimd_none_bits_f64(rsimd_none_f64_bits(a) & rsimd_none_f64_bits(b));
 }

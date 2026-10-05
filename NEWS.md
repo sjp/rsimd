@@ -47,6 +47,14 @@ First release.
   3.5-ULP variants where they exist, with the same missing values, special
   values and warnings. Machine-learning helpers `simd_sigmoid()`,
   `simd_softmax()` and `simd_log_softmax()`.
+* **Floating-point extras:** `simd_ilogb()`, `simd_scaleb()`,
+  `simd_nextafter()`, `simd_next_up()`, `simd_next_down()`,
+  `simd_remainder()` (IEEE remainder) and `simd_rsqrt()`, identical to C and
+  base R on every tier; `simd_rootn()`, the real n-th root, within 1 ULP and
+  exact for exact roots. Approximations `simd_recip_approx()` and
+  `simd_rsqrt_approx()` (within a relative error of 2^-22, from hardware
+  estimates and Newton steps) and `simd_mul_add_approx()` (fused where the
+  CPU has a fused multiply-add).
 * **Complex vectors:** `simd_add()`, `simd_sub()`, `simd_neg()`,
   `simd_sum()` and the predicates take complex input; `simd_conj()`,
   `simd_re()` and `simd_im()`.

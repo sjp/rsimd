@@ -32,6 +32,10 @@
    those of the Hamming kernels every two vectors. */
 #define RSIMD_COUNT_BLOCK 2
 #define RSIMD_HAMMING_BLOCK 2
+/* Model the float estimates of sse2 and avx2 (RCPPS, RSQRTPS) with the
+   largest relative error they are allowed, 1.5 * 2^-12, so that the
+   approximation bound is checked against the worst case. */
+#define RSIMD_EST_SKEW 0x1.8p-12
 #include "kernels/common.inc.h"
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
@@ -759,6 +763,14 @@ static double math_ref2(int op, double a, double b) {
   switch (op) {
   case RSIMD_MATH_POW: return rsimd_pow_f64(a, b);
   case RSIMD_MATH_ATAN2: r = rsimd_math2_na_f64(atan2(a, b), a, b); break;
+  case RSIMD_MATH_NEXTAFTER: r = rsimd_math2_na_f64(nextafter(a, b), a, b); break;
+  case RSIMD_MATH_REMAINDER: r = rsimd_math2_na_f64(remainder(a, b), a, b); break;
+  case RSIMD_MATH_SCALEB:
+    r = rsimd_math2_na_f64(isnan(b) ? b : rsimd_scaleb_f64(a, b), a, b);
+    break;
+  case RSIMD_MATH_ROOTN:
+    r = rsimd_math2_na_f64(isnan(b) ? b : rsimd_rootn_f64(a, b), a, b);
+    break;
   default: r = rsimd_math2_na_f64(hypot(a, b), a, b); break;
   }
   if (isnan(r) && !isnan(a) && !isnan(b)) math_ref_status = RSIMD_EW_NAN_PRODUCED;
@@ -1027,6 +1039,418 @@ static void test_math(void) {
   test_math_mode(1);
 }
 #endif /* RSIMD_HAVE_SLEEF */
+
+/* ---- Math extras ------------------------------------------------------------
+   ilogb_f64 against C's ilogb, with every broadcast and int32 operand; the
+   layer's recip_approx and rsqrt_approx within 2^-22 over a sweep of
+   their range; on the tiers with SLEEF the math1 ops NEXT_UP ..
+   RSQRT_APPROX and the math2 ops NEXTAFTER .. ROOTN against the scalar
+   forms of math.inc.c (exactly, except the approximations, within 2^-22
+   of the exact value, and rootn, within 1 ULP of a long double
+   reference); on the none tier the scalar rootn against long double; and
+   on every tier exact powers b^n, whose root must be exactly b. */
+#ifndef RSIMD_NO_F64_SIMD
+
+static double approx_worst[2] = {0, 0}; /* relative error: recip, rsqrt */
+static double rootn_worst = 0;          /* ULP */
+/* rootn's bound against the long double reference, which is exact enough
+   (to about 0.15 ULP for 64-bit long double) except where long double is
+   double. */
+#define ROOTN_BOUND (LDBL_MANT_DIG >= 113 ? 1.0 : 1.15)
+
+/* A finite double from random bits: every binade (and the subnormals)
+   about equally likely, both signs. */
+static double random_double(void) {
+  double v;
+  do {
+    v = from_bits(next_rand());
+  } while (!isfinite(v));
+  return v;
+}
+
+/* The layer ops over normal numbers 2^-1022 <= |x| < 2^1022 (recip with
+   both signs), through the predicated loop. */
+static void test_approx_layer(void) {
+  static double v[N + 1], r1[N + 1], r2[N + 1];
+  static const double edge[] = {0x1p-1022,  0x1.fffffffffffffp1021, 1.0,  0x1.fffffffffffffp0,
+                                2.0,        0x1.0000000000001p0,    3.0,  0x1.8p-1000,
+                                0x1p1000,   1e-300,                 1e300, 0.1,
+                                7.0,        0x1.fffffffffffffp-1,   4.0,  0x1.fffffffffffffp1,
+                                0x1.6a09e667f3bcdp0, 0x1.6a09e667f3bcdp1};
+  int rep;
+  ptrdiff_t i, j;
+  char buf[160];
+  for (rep = 0; rep < 100; rep++) {
+    const double sign = rep % 2 ? -1.0 : 1.0;
+    for (j = 0; j < N; j++) {
+      if (rep < 2 && j < (ptrdiff_t) (sizeof edge / sizeof edge[0])) {
+        v[j] = edge[j];
+      } else {
+        v[j] = ldexp(1 + (double) (next_rand() >> 11) * 0x1p-53, (int) (next_rand() % 2044) - 1022);
+      }
+    }
+    for (i = 0; i + RSIMD_LANES_64 <= N; i += RSIMD_LANES_64) {
+      rsimd_vf64 a = rsimd_vf64_loadu(v + i);
+      rsimd_vf64_storeu(r1 + i, rsimd_vf64_recip_approx(rsimd_vf64_mul(rsimd_vf64_set1(sign), a)));
+      rsimd_vf64_storeu(r2 + i, rsimd_vf64_rsqrt_approx(a));
+    }
+    if (i < N) {
+      rsimd_p64 pg = rsimd_p64_while(i, N);
+      rsimd_vf64 a = rsimd_vf64_loadu_p(pg, v + i, v[i]);
+      rsimd_vf64_storeu_p(pg, r1 + i,
+                          rsimd_vf64_recip_approx(rsimd_vf64_mul(rsimd_vf64_set1(sign), a)));
+      rsimd_vf64_storeu_p(pg, r2 + i, rsimd_vf64_rsqrt_approx(a));
+    }
+    for (j = 0; j < N; j++) {
+      long double s = sqrtl((long double) v[j]);
+      double e1 = (double) fabsl(((long double) r1[j] * sign) * v[j] - 1.0L);
+      double e2 = (double) fabsl((long double) r2[j] * s - 1.0L);
+      n_checks += 2;
+      if (e1 > approx_worst[0]) approx_worst[0] = e1;
+      if (e2 > approx_worst[1]) approx_worst[1] = e2;
+      if (!(e1 <= 0x1p-22)) {
+        snprintf(buf, sizeof buf, "input %a: got %a (error %g)", sign * v[j], r1[j], e1);
+        fail("layer recip_approx", N, j, buf);
+      }
+      if (!(e2 <= 0x1p-22)) {
+        snprintf(buf, sizeof buf, "input %a: got %a (error %g)", v[j], r2[j], e2);
+        fail("layer rsqrt_approx", N, j, buf);
+      }
+    }
+  }
+}
+
+/* ilogb_f64 with double and int32 input, broadcast or not. */
+static double ilx[N + 1];
+static int32_t ilxi[N + 1], ilout[N + 1];
+static void test_ilogb(ptrdiff_t n) {
+  static const double specials[] = {0.0,       -0.0, INFINITY, -INFINITY, NAN, 5e-324, -5e-324,
+                                    0x1p-1022, DBL_MAX, 1.0, -1.0, 0x1.fffffffffffffp-1023, 0.75};
+  const int ns = (int) (sizeof specials / sizeof specials[0]);
+  ptrdiff_t j;
+  int f;
+  char what[64];
+  for (j = 0; j < n; j++) {
+    ilx[j] = j < ns ? specials[j] : random_double();
+    ilxi[j] = j % 5 == 1 ? 0 : (int32_t) next_rand();
+  }
+  if (n > ns) ilx[ns] = rsimd_na_real();
+  if (n > 3) ilxi[3] = RSIMD_NA_I32;
+  for (f = 0; f < 4; f++) {
+    const int flags = ((f & 1) ? RSIMD_EW_SCALAR(0) : 0) | ((f & 2) ? RSIMD_EW_I32(0) : 0);
+    for (j = 0; j <= n; j++) ilout[j] = SENTINEL_I32;
+    RSIMD_KERNEL(ilogb_f64)((f & 2) ? (const void *) ilxi : ilx, n, flags, ilout);
+    snprintf(what, sizeof what, "ilogb_f64 flags %d", flags);
+    for (j = 0; j < n; j++) {
+      ptrdiff_t k = (f & 1) ? 0 : j;
+      double a = (f & 2) ? (ilxi[k] == RSIMD_NA_I32 ? rsimd_na_real() : ilxi[k]) : ilx[k];
+      int32_t want = (isnan(a) || isinf(a) || a == 0) ? RSIMD_NA_I32 : ilogb(a);
+      check_int(what, n, j, ilout[j], want);
+    }
+    check_int(what, n, n, ilout[n], SENTINEL_I32);
+  }
+}
+
+static long double ref_rootn(double x, double n) {
+  long double r = powl(fabsl((long double) x), 1.0L / (long double) n);
+  return x < 0 ? -r : r;
+}
+
+/* The ULP error of got (for x, n) against long double, checked against
+   ROOTN_BOUND where the result is finite and nonzero. */
+static void check_rootn_ulp(const char *what, ptrdiff_t n, ptrdiff_t i, double x, double nn,
+                            double got) {
+  long double ref;
+  double w, err;
+  char buf[200];
+  if (LDBL_MANT_DIG < 64 || isnan(got) || isinf(got) || got == 0) return;
+  ref = ref_rootn(x, nn);
+  w = (double) ref;
+  err = (double) (fabsl((long double) got - ref) / ldexp(1.0, ilogb(w) - 52));
+  n_checks++;
+  if (err > rootn_worst) rootn_worst = err;
+  if (!(err <= ROOTN_BOUND)) {
+    snprintf(buf, sizeof buf, "rootn(%a, %.0f): got %a, %.3f ULP from %.20Lg", x, nn, got, err, ref);
+    fail(what, n, i, buf);
+  }
+}
+
+/* The roots of exact powers: rootn(b^n, n) is b and rootn(-b^n, n) is -b
+   for odd n, for n in 3..60 and b up to 3000 (and b^n exactly
+   representable, below 2^1000), with the scalar form, and on the tiers with
+   SLEEF with the math2 kernel too. */
+static double ppx[N + 1], ppn[N + 1], ppb[N + 1];
+#ifdef RSIMD_HAVE_SLEEF
+static double ppout[N + 1];
+#endif
+static void rootn_exact_batch(ptrdiff_t m) {
+  ptrdiff_t j;
+  char buf[160];
+  for (j = 0; j < m; j++) {
+    double r = rsimd_rootn_f64(ppx[j], ppn[j]);
+    n_checks++;
+    if (bits(r) != bits(ppb[j])) {
+      snprintf(buf, sizeof buf, "rootn(%a, %.0f): got %a want %a", ppx[j], ppn[j], r, ppb[j]);
+      fail("rootn exact powers scalar", m, j, buf);
+    }
+  }
+#ifdef RSIMD_HAVE_SLEEF
+  ppout[m] = SENTINEL_F64;
+  RSIMD_KERNEL(math2_f64)(RSIMD_MATH_ROOTN, ppx, ppn, m, 0, ppout);
+  for (j = 0; j < m; j++) {
+    n_checks++;
+    if (bits(ppout[j]) != bits(ppb[j])) {
+      snprintf(buf, sizeof buf, "rootn(%a, %.0f): got %a want %a", ppx[j], ppn[j], ppout[j],
+               ppb[j]);
+      fail("rootn exact powers kernel", m, j, buf);
+    }
+  }
+#endif
+}
+static void test_rootn_exact(void) {
+  ptrdiff_t m = 0;
+  int n, b, k;
+  for (n = 3; n <= 60; n++) {
+    for (b = 2; b <= 3000; b++) {
+      double p = b;
+      for (k = 1; k < n; k++) {
+        double q = p * b;
+        if (fma(p, (double) b, -q) != 0 || q > 0x1p1000) break;
+        p = q;
+      }
+      if (k < n) break;
+      ppx[m] = p;
+      ppn[m] = n;
+      ppb[m] = b;
+      if (++m == N) {
+        rootn_exact_batch(m);
+        m = 0;
+      }
+      if (n % 2) {
+        ppx[m] = -p;
+        ppn[m] = n;
+        ppb[m] = -b;
+        if (++m == N) {
+          rootn_exact_batch(m);
+          m = 0;
+        }
+      }
+    }
+  }
+  if (m > 0) rootn_exact_batch(m);
+}
+
+#if RSIMD_TIER_IS(none)
+/* The scalar rootn (the none tier's) against long double, over random
+   finite x and a set of n. */
+static void test_rootn_scalar(void) {
+  static const double ns[] = {2,    3,    4,    5,    6,    7,     8,           9,
+                              10,   11,   17,   64,   100,  511,   512,         513,
+                              1000, 123457, 2147483647.0, -2, -3,  -4,          -5,
+                              -7,   -10,  -100, -512, -513, -1000, -2147483647.0};
+  size_t k;
+  int j;
+  for (k = 0; k < sizeof ns / sizeof ns[0]; k++) {
+    const double nn = ns[k];
+    const int odd = fmod(nn, 2.0) != 0;
+    for (j = 0; j < 4000; j++) {
+      double x = fabs(random_double());
+      if (odd && (next_rand() & 1)) x = -x;
+      check_rootn_ulp("scalar rootn", 4000, j, x, nn, rsimd_rootn_f64(x, nn));
+    }
+  }
+}
+#endif
+
+#ifdef RSIMD_HAVE_SLEEF
+/* got within relative error `bound` of want where want is a nonzero
+   finite number, otherwise equal (NaN kinds compared); the worst error
+   goes to *worst. */
+static void check_rel(const char *what, ptrdiff_t n, const double *got, const double *want,
+                      const double *a, double bound, double *worst) {
+  ptrdiff_t i;
+  char buf[200];
+  for (i = 0; i < n; i++) {
+    double g = got[i], w = want[i];
+    int ok;
+    n_checks++;
+    if (isnan(w) || isnan(g) || isinf(w) || w == 0) {
+      ok = bits(g) == bits(w) || (isnan(g) && isnan(w) && is_na_ref(g) == is_na_ref(w));
+    } else {
+      double e = (double) fabsl(((long double) g - w) / w);
+      ok = e <= bound;
+      if (e > *worst) *worst = e;
+    }
+    if (!ok) {
+      snprintf(buf, sizeof buf, "input %a: got %a want %a", a[i], g, w);
+      fail(what, n, i, buf);
+    }
+  }
+  n_checks++;
+  if (bits(got[n]) != bits(SENTINEL_F64)) fail(what, n, n, "wrote past the end");
+}
+
+/* math1 extras over every length, double and int32 input, broadcast or
+   not, with and without RSIMD_MATH_FAST (which they ignore). */
+static void test_math1_extras(void) {
+  static const ptrdiff_t lens[] = {1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 33, 65, N};
+  static const double specials[] = {0.0,    -0.0,    INFINITY,  -INFINITY, NAN,
+                                    5e-324, -5e-324, 0x1p-1022, DBL_MAX,   -DBL_MAX,
+                                    0x1p1022, -0x1p1022, 0x1.fffffffffffffp1021, 1.0, -1.0,
+                                    0x1.fffffffffffffp-1023, 0x1p-1023};
+  const int nsp = (int) (sizeof specials / sizeof specials[0]);
+  size_t li;
+  int op, f, st;
+  ptrdiff_t j, n;
+  char what[96];
+  for (li = 0; li < sizeof lens / sizeof lens[0]; li++) {
+    n = lens[li];
+    for (j = 0; j < n; j++) {
+      ma[j] = j < nsp ? specials[j] : random_double();
+      mia[j] = (int32_t) (next_rand() % 2001) - 1000;
+    }
+    if (n > nsp) ma[nsp] = rsimd_na_real();
+    if (n > 3) mia[3] = RSIMD_NA_I32;
+    for (op = RSIMD_MATH_NEXT_UP; op <= RSIMD_MATH_RSQRT_APPROX; op++) {
+      const int approx = op == RSIMD_MATH_RECIP_APPROX || op == RSIMD_MATH_RSQRT_APPROX;
+      for (f = 0; f < 8; f++) {
+        const int flags = ((f & 1) ? RSIMD_EW_SCALAR(0) : 0) | ((f & 2) ? RSIMD_EW_I32(0) : 0);
+        reset_out();
+        st = RSIMD_KERNEL(math1_f64)(op | ((f & 4) ? RSIMD_MATH_FAST : 0),
+                                     (f & 2) ? (const void *) mia : ma, n, flags, 1.0, fout);
+        math_ref_status = 0;
+        for (j = 0; j < n; j++) {
+          ptrdiff_t k = (f & 1) ? 0 : j;
+          mref2[j] = (f & 2) ? (mia[k] == RSIMD_NA_I32 ? rsimd_na_real() : mia[k]) : ma[k];
+          mref[j] = math_ref1(op, mref2[j], 1.0);
+        }
+        snprintf(what, sizeof what, "math1 op %d flags %d", op, f);
+        if (approx) {
+          check_rel(what, n, fout, mref, mref2, 0x1p-22,
+                    &approx_worst[op == RSIMD_MATH_RSQRT_APPROX]);
+        } else {
+          check_math(what, n, fout, mref, mref2, NULL, 0, 0);
+        }
+        check_int(what, n, 0, st, math_ref_status);
+      }
+    }
+  }
+}
+
+/* Inputs of the math2 extras: x in ma (and int32 in mia), y or n in mb
+   (and mib). */
+static void math2_extra_inputs(int op, ptrdiff_t n) {
+  static const double sx[] = {0.0,  -0.0, INFINITY, -INFINITY, NAN,    5e-324,
+                              -5e-324, 1.0, -1.0,  DBL_MAX,   -DBL_MAX, 0x1p-1022};
+  static const double sy[] = {0.0, -0.0, INFINITY, -INFINITY, NAN, 1.0, 3.0, 5e-324, -0x1p-1022};
+  static const double sn[] = {0, 1, -1, 2, -2, 3, -3, 4, 5, 1023, -1022, 1074, -1074, -1075,
+                              2098, -2098, 2147483647.0, -2147483647.0, 512, 513, -513, 1000};
+  const int nsx = (int) (sizeof sx / sizeof sx[0]), nsy = (int) (sizeof sy / sizeof sy[0]),
+            nsn = (int) (sizeof sn / sizeof sn[0]);
+  ptrdiff_t j;
+  for (j = 0; j < n; j++) {
+    double x = j < nsx ? sx[j] : random_double(), y;
+    switch (op) {
+    case RSIMD_MATH_NEXTAFTER:
+      y = j % 4 == 0 ? x : j % 4 == 1 ? sy[(j / 4) % nsy] : random_double();
+      break;
+    case RSIMD_MATH_REMAINDER:
+      y = j % 5 == 0 ? sy[(j / 5) % nsy]
+          : j % 5 == 1 ? x / (double) (1 + next_rand() % 1000)
+          : j % 5 == 2 ? ldexp(x, -(int) (next_rand() % 60))
+                       : random_double();
+      break;
+    case RSIMD_MATH_SCALEB:
+      y = j % 3 == 0 ? sn[(j / 3) % nsn] : (double) ((int) (next_rand() % 4401) - 2200);
+      break;
+    default: /* ROOTN: x log-uniform, some exact powers of the small n */
+      if (j >= nsx) {
+        x = pow(10.0, -320 + (double) (next_rand() >> 11) * 0x1p-53 * 628);
+        if (next_rand() & 1) x = -x;
+      }
+      y = j % 3 == 0 ? sn[(j / 3) % nsn] : (double) ((int) (next_rand() % 81) - 40);
+      if (j % 7 == 5) x = pow(3.0, fabs(y) > 30 ? 3 : fabs(y)) * (x < 0 ? -1 : 1);
+      break;
+    }
+    ma[j] = x;
+    mb[j] = y;
+    mia[j] = (int32_t) (next_rand() % 2001) - 1000;
+    mib[j] = (op == RSIMD_MATH_SCALEB || op == RSIMD_MATH_ROOTN)
+               ? (int32_t) y
+               : (int32_t) (next_rand() % 21) - 10;
+  }
+  if (n > 9) ma[9] = rsimd_na_real();
+  if (n > 12) mb[12] = rsimd_na_real();
+  if (n > 5) mia[5] = RSIMD_NA_I32;
+  if (n > 7) mib[7] = RSIMD_NA_I32;
+}
+
+static void test_math2_extras(void) {
+  static const ptrdiff_t lens[] = {1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 33, 65, N};
+  size_t li;
+  int op, f, st;
+  ptrdiff_t j, n;
+  char what[96];
+  for (li = 0; li < sizeof lens / sizeof lens[0]; li++) {
+    n = lens[li];
+    for (op = RSIMD_MATH_NEXTAFTER; op <= RSIMD_MATH_ROOTN; op++) {
+      math2_extra_inputs(op, n);
+      /* f: bits 0-1 broadcast x, y; bits 2-3 int32 x, y; bit 4 RSIMD_MATH_FAST. */
+      for (f = 0; f < 32; f++) {
+        const void *x = (f & 4) ? (const void *) mia : ma, *y = (f & 8) ? (const void *) mib : mb;
+        int flags = ((f & 1) ? RSIMD_EW_SCALAR(0) : 0) | ((f & 2) ? RSIMD_EW_SCALAR(1) : 0) |
+                    ((f & 4) ? RSIMD_EW_I32(0) : 0) | ((f & 8) ? RSIMD_EW_I32(1) : 0);
+        double *xa = mref2, *yb = mout2;
+        reset_out();
+        st = RSIMD_KERNEL(math2_f64)(op | ((f & 16) ? RSIMD_MATH_FAST : 0), x, y, n, flags, fout);
+        math_ref_status = 0;
+        for (j = 0; j < n; j++) {
+          ptrdiff_t jx = (f & 1) ? 0 : j, jy = (f & 2) ? 0 : j;
+          xa[j] = (f & 4) ? (mia[jx] == RSIMD_NA_I32 ? rsimd_na_real() : mia[jx]) : ma[jx];
+          yb[j] = (f & 8) ? (mib[jy] == RSIMD_NA_I32 ? rsimd_na_real() : mib[jy]) : mb[jy];
+          mref[j] = math_ref2(op, xa[j], yb[j]);
+        }
+        snprintf(what, sizeof what, "math2 op %d flags %d", op, f);
+        if (op == RSIMD_MATH_ROOTN) {
+          /* Special values exactly as none, the rest within the bound. */
+          for (j = 0; j < n; j++) {
+            if (isnan(mref[j]) || isinf(mref[j]) || mref[j] == 0) {
+              n_checks++;
+              if (!(bits(fout[j]) == bits(mref[j]) ||
+                    (isnan(fout[j]) && isnan(mref[j]) && is_na_ref(fout[j]) == is_na_ref(mref[j])))) {
+                char buf[160];
+                snprintf(buf, sizeof buf, "rootn(%a, %a): got %a want %a", xa[j], yb[j], fout[j],
+                         mref[j]);
+                fail(what, n, j, buf);
+              }
+            } else {
+              check_rootn_ulp(what, n, j, xa[j], yb[j], fout[j]);
+            }
+          }
+          n_checks++;
+          if (bits(fout[n]) != bits(SENTINEL_F64)) fail(what, n, n, "wrote past the end");
+        } else {
+          check_math(what, n, fout, mref, xa, yb, 0, 0);
+        }
+        check_int(what, n, 0, st, math_ref_status);
+      }
+    }
+  }
+}
+#endif /* RSIMD_HAVE_SLEEF */
+
+static void test_math_extras(void) {
+  test_approx_layer();
+  test_rootn_exact();
+#if RSIMD_TIER_IS(none)
+  test_rootn_scalar();
+#endif
+#ifdef RSIMD_HAVE_SLEEF
+  test_math1_extras();
+  test_math2_extras();
+#endif
+}
+#endif /* RSIMD_NO_F64_SIMD */
 
 static void test_int_horizontal(void) {
   ptrdiff_t L = RSIMD_LANES_32, i, j;
@@ -2188,6 +2612,9 @@ static double ref_ew3(int op, double a, double b, double c) {
   case RSIMD_EW_MUL_ADD: return rsimd_na_merge3_f64(a * b + c, a, b, c);
   case RSIMD_EW_ADD_MUL: return rsimd_na_merge3_f64((a + b) * c, a, b, c);
   case RSIMD_EW_LERP: return rsimd_na_merge3_f64(fma(c, b, (1.0 - c) * a), a, b, c);
+  /* Fused where the tier has a native fused multiply-add (none has not). */
+  case RSIMD_EW_MUL_ADD_APPROX:
+    return rsimd_na_merge3_f64(RSIMD_NATIVE_FMA ? fma(a, b, c) : a * b + c, a, b, c);
   default: return rsimd_pmin_f64(rsimd_pmax_f64(a, b), c);
   }
 }
@@ -2338,7 +2765,7 @@ static void test_arith(ptrdiff_t n) {
       check_f64_kind(what, n, fout, fref);
     }
   }
-  for (op = RSIMD_EW_FMA; op <= RSIMD_EW_CLAMP; op++) {
+  for (op = RSIMD_EW_FMA; op <= RSIMD_EW_MUL_ADD_APPROX; op++) {
     for (f = 0; f < 64; f++) {
       int sc = f & 7, ti = f >> 3, lohi = 0;
       const void *x = ti & 1 ? (const void *) ia : (const void *) fa;
@@ -3352,6 +3779,9 @@ int main(void) {
     test_complex(n);
 #endif
     test_hamming(n);
+#ifndef RSIMD_NO_F64_SIMD
+    test_ilogb(n);
+#endif
   }
   test_bytes_exhaustive();
 #ifndef RSIMD_NO_F64_SIMD
@@ -3363,6 +3793,9 @@ int main(void) {
 #endif
   test_int_horizontal();
   test_intdiv_const();
+#ifndef RSIMD_NO_F64_SIMD
+  test_math_extras();
+#endif
 #ifdef RSIMD_HAVE_SLEEF
   test_sleef();
   test_pi_oracle();
@@ -3378,6 +3811,10 @@ int main(void) {
          sleef_worst_name[2]);
   printf("; none sinpi/cospi/tanpi worst %.3f/%.3f/%.3f ULP", pi_oracle_worst[0],
          pi_oracle_worst[1], pi_oracle_worst[2]);
+#endif
+#ifndef RSIMD_NO_F64_SIMD
+  printf("; approx worst recip 2^%.2f rsqrt 2^%.2f; rootn worst %.3f ULP", log2(approx_worst[0]),
+         log2(approx_worst[1]), rootn_worst);
 #endif
   printf("\n");
   return n_fail != 0;

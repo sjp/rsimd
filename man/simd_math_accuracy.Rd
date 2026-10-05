@@ -43,6 +43,10 @@ apart), infinities, the signs of zero results, the exact cases (such as
 \code{simd_sinpi(1)} or \code{simd_log2(8)}), the range reductions and the
 \code{"NaNs produced"} warnings are the same in both.
 
+The exact functions of \link{simd_ilogb}, \code{\link{simd_rootn}},
+\code{\link{simd_rsqrt}} and the approximations of
+\link{simd_recip_approx} do not depend on the mode.
+
 The \code{"none"} implementation always uses the C math library, so the
 mode makes no difference to it, and neither does it to an implementation
 built without SLEEF (see \code{\link{simd_available}}). The mode applies to

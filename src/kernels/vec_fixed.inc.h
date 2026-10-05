@@ -174,6 +174,58 @@ RSIMD_FIXED_I32_PARTIAL(vi64)
 RSIMD_FIXED_I32_PARTIAL(vf64)
 #endif
 
+#if !defined(RSIMD_NO_F64_SIMD) && defined(RSIMD_VF64_F32_EST)
+/* recip_approx and rsqrt_approx on x86 below AVX-512, which has estimate
+   instructions for floats only (RCPPS and RSQRTPS, relative error at most
+   1.5 * 2^-12): the significand of a, moved to [1, 2) (to [1, 4) for
+   rsqrt, which keeps the parity of the exponent), is estimated as a float,
+   the exponent is put back by integer arithmetic on the bits, and one
+   Newton step in double brings the relative error to about 2^-22.8
+   (recip) and 2^-22.2 (rsqrt). Valid for 2^-1022 <= |a| < 2^1022 (and
+   a > 0 for rsqrt), where the estimate and the result are normal.
+
+   Test builds may define RSIMD_EST_SKEW: the estimates are then modelled
+   as the exact value times 1 + RSIMD_EST_SKEW, the largest error the
+   instructions are allowed, which emulators such as qemu (which compute
+   them exactly) never show. */
+#ifdef RSIMD_EST_SKEW
+#define RSIMD_F32_RCP(m)                                                         \
+  rsimd_vf64_mul(rsimd_vf64_div(rsimd_vf64_set1(1.0), (m)), rsimd_vf64_set1(1.0 + (RSIMD_EST_SKEW)))
+#define RSIMD_F32_RSQRT(m)                                                       \
+  rsimd_vf64_mul(rsimd_vf64_div(rsimd_vf64_set1(1.0), rsimd_vf64_sqrt(m)),       \
+                 rsimd_vf64_set1(1.0 + (RSIMD_EST_SKEW)))
+#else
+#define RSIMD_F32_RCP(m) rsimd_vf64_f32_rcp(m)
+#define RSIMD_F32_RSQRT(m) rsimd_vf64_f32_rsqrt(m)
+#endif
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
+  const rsimd_vi64 expo = rsimd_vi64_set1(INT64_C(0x7FF0000000000000)),
+                   one = rsimd_vi64_set1(INT64_C(0x3FF0000000000000));
+  rsimd_vi64 b = rsimd_vf64_as_vi64(a), e = rsimd_vi64_and(b, expo);
+  rsimd_vf64 r = RSIMD_F32_RCP(rsimd_vi64_as_vf64(rsimd_vi64_or(rsimd_vi64_andnot(expo, b), one)));
+  rsimd_vf64 d;
+  r = rsimd_vi64_as_vf64(rsimd_vi64_add(rsimd_vi64_sub(rsimd_vf64_as_vi64(r), e), one));
+  d = rsimd_vf64_sub(rsimd_vf64_set1(1.0), rsimd_vf64_mul(a, r));
+  return rsimd_vf64_add(r, rsimd_vf64_mul(r, d));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) {
+  const rsimd_vi64 mant = rsimd_vi64_set1(INT64_C(0x000FFFFFFFFFFFFF));
+  rsimd_vi64 b = rsimd_vf64_as_vi64(a);
+  /* t = e + 2048 for the unbiased exponent e; k = floor(e / 2). */
+  rsimd_vi64 t = rsimd_vi64_add(rsimd_vi64_srl(b, 52), rsimd_vi64_set1(1025));
+  rsimd_vi64 k = rsimd_vi64_sub(rsimd_vi64_srl(t, 1), rsimd_vi64_set1(1024));
+  rsimd_vi64 mexp = rsimd_vi64_add(rsimd_vi64_and(t, rsimd_vi64_set1(1)), rsimd_vi64_set1(1023));
+  rsimd_vf64 r = RSIMD_F32_RSQRT(
+    rsimd_vi64_as_vf64(rsimd_vi64_or(rsimd_vi64_and(b, mant), rsimd_vi64_sll(mexp, 52))));
+  rsimd_vf64 d;
+  r = rsimd_vi64_as_vf64(rsimd_vi64_sub(rsimd_vf64_as_vi64(r), rsimd_vi64_sll(k, 52)));
+  d = rsimd_vf64_sub(rsimd_vf64_set1(1.0), rsimd_vf64_mul(a, rsimd_vf64_mul(r, r)));
+  return rsimd_vf64_add(r, rsimd_vf64_mul(rsimd_vf64_mul(rsimd_vf64_set1(0.5), r), d));
+}
+#undef RSIMD_F32_RCP
+#undef RSIMD_F32_RSQRT
+#endif
+
 #undef RSIMD_FIXED_PARTIAL
 #undef RSIMD_FIXED_MINMAX
 #undef RSIMD_FIXED_I32_PARTIAL

@@ -177,9 +177,13 @@ Bits & \code{simd\_bit\_and}, \code{simd\_shl}, \code{simd\_popcount}
 Conversions & \code{simd\_as\_double}, \code{simd\_as\_integer},
   \code{simd\_as\_integer64} (\code{?simd\_as\_integer}) \\
 Elementary functions & \code{simd\_exp}, \code{simd\_log}, \code{simd\_sin},
-  \code{simd\_sinpi}, \code{simd\_tanh}, \code{simd\_pow}
-  (\code{?simd\_exp}, \code{?simd\_sin}, \code{?simd\_sinh},
-  \code{?simd\_sinpi}, \code{?simd\_pow}) \\
+  \code{simd\_sinpi}, \code{simd\_tanh}, \code{simd\_pow},
+  \code{simd\_rootn} (\code{?simd\_exp}, \code{?simd\_sin},
+  \code{?simd\_sinh}, \code{?simd\_sinpi}, \code{?simd\_pow}) \\
+Floating point & \code{simd\_ilogb}, \code{simd\_scaleb},
+  \code{simd\_next\_up}, \code{simd\_remainder} (\code{?simd\_ilogb});
+  approximations \code{simd\_recip\_approx}, \code{simd\_rsqrt\_approx}
+  (\code{?simd\_recip\_approx}) \\
 Machine learning & \code{simd\_sigmoid}, \code{simd\_softmax},
   \code{simd\_log\_softmax} (\code{?simd\_softmax}) \\
 Control & \code{simd\_use}, \code{simd\_with\_impl},

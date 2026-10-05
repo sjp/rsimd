@@ -30,7 +30,7 @@
  *                     is_na reduce_add reduce_min reduce_max
  *   rsimd_vf64 also   div fma abs neg sqrt floor ceil trunc rint cmp_ne cmp_le cmp_ge
  *                     is_nan as_vi64 loadu_i32 loadu_i32_p storeu_i32
- *                     storeu_i32_p uzp_even uzp_odd
+ *                     storeu_i32_p uzp_even uzp_odd recip_approx rsqrt_approx
  *   rsimd_vi32 also   mulhi sll srl sra loadu_u8 loadu_u8_p storeu_u8
  *                     storeu_u8_p inc
  *   rsimd_vi64 also   as_vf64 loadu_i32 loadu_i32_p storeu_i32 storeu_i32_p
@@ -43,6 +43,11 @@
  * Semantics shared by all tiers:
  *   - Loads and stores are unaligned (R vectors are only 8-byte aligned).
  *   - fma(a, b, c) is a * b + c with a single rounding, on every tier.
+ *   - recip_approx(a) and rsqrt_approx(a) are 1 / a and 1 / sqrt(a)
+ *     within a relative error of 2^-22, for 2^-1022 <= |a| < 2^1022 (and
+ *     a > 0 for rsqrt_approx); other lanes are unspecified. Each tier uses
+ *     a hardware estimate refined by Newton steps (x86 below AVX-512
+ *     estimates in float, from the significand) or the exact value.
  *   - floor, ceil, trunc and rint (half to even) are exact for every
  *     double, keep the sign of zero and pass NaN payloads through.
  *   - min(a, b) is a < b ? a : b and max(a, b) is a > b ? a : b, as on x86:
@@ -376,7 +381,8 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
  *   rsimd_sleef_<f>(v)   exp exp2 exp10 expm1 log log2 log10 log1p cbrt
  *                        sin cos tan asin acos atan sinh cosh tanh asinh
  *                        acosh atanh, and sinpi cospi
- *   rsimd_sleef_<f>(a, b)  pow atan2, and hypot
+ *   rsimd_sleef_<f>(a, b)  pow atan2, and hypot; nextafter and remainder,
+ *                        which are exact
  *   rsimd_sleef_sincos(v, &s, &c), rsimd_sleef_sincospi(v, &s, &c)
  *                        store the sine and cosine through pointers (SVE
  *                        vectors cannot be struct members)
@@ -501,6 +507,8 @@ RSIMD_SLEEF_DEF1(cospi, u05)
 RSIMD_SLEEF_DEF2(pow, u10)
 RSIMD_SLEEF_DEF2(atan2, u10)
 RSIMD_SLEEF_DEF2(hypot, u05)
+RSIMD_SLEEF_DEF2(nextafter, )
+RSIMD_SLEEF_DEF2(remainder, )
 RSIMD_SLEEF_DEFSC(sincos, u10)
 RSIMD_SLEEF_DEFSC(sincospi, u05)
 
@@ -583,6 +591,8 @@ RSIMD_INLINE rsimd_vf64 rsimd_sleef_cospi_fast(rsimd_vf64 a) {
 #define RSIMD_SLEEF_POW rsimd_sleef_pow
 #define RSIMD_SLEEF_ATAN2 rsimd_sleef_atan2
 #define RSIMD_SLEEF_HYPOT rsimd_sleef_hypot
+#define RSIMD_SLEEF_NEXTAFTER rsimd_sleef_nextafter
+#define RSIMD_SLEEF_REMAINDER rsimd_sleef_remainder
 #define RSIMD_SLEEF_SINCOS rsimd_sleef_sincos
 #define RSIMD_SLEEF_SINCOSPI rsimd_sleef_sincospi
 #define RSIMD_SLEEF_EXP_FAST rsimd_sleef_exp_fast

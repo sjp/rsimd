@@ -158,13 +158,15 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   return rsimd_sv_result(simd_ew2_impl(x, y, op, na_check), rsimd_str_in(op, keeps));
 }
 
-/* Ternary ops by name: fma(x, y, z), mul_add, add_mul, lerp(x, y, t) and
-   clamp(x, lo, hi). mul_add, add_mul and clamp of integer and logical
-   operands give an integer result, and with an integer64 operand an
-   integer64 one; everything else is double. clamp errors when lo > hi
-   anywhere. */
+/* Ternary ops by name: fma(x, y, z), mul_add, add_mul, lerp(x, y, t),
+   clamp(x, lo, hi) and mul_add_approx. mul_add, add_mul, clamp and
+   mul_add_approx of integer and logical operands give an integer result,
+   and with an integer64 operand an integer64 one (mul_add_approx is then
+   mul_add, exact and checked); everything else is double. clamp errors
+   when lo > hi anywhere. */
 static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
-  static const char *const names[] = {"fma", "mul_add", "add_mul", "lerp", "clamp"};
+  static const char *const names[] = {"fma", "mul_add", "add_mul", "lerp", "clamp",
+                                      "mul_add_approx"};
   static const char *const xyz[] = {"x", "y", "z"}, *const xyt[] = {"x", "y", "t"},
                            *const xlohi[] = {"x", "lo", "hi"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
@@ -182,6 +184,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   if (any_i64(&e)) {
     double *po;
     int flags = e.flags | i32_flags(&e);
+    if (code == RSIMD_EW_MUL_ADD_APPROX) code = RSIMD_EW_MUL_ADD;
     out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));
     po = (double *) rsimd_out_ptr(out);
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
@@ -195,6 +198,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   }
   if (all_int_like(&e) && code != RSIMD_EW_FMA && code != RSIMD_EW_LERP) {
     int *po;
+    if (code == RSIMD_EW_MUL_ADD_APPROX) code = RSIMD_EW_MUL_ADD;
     out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
     po = (int *) rsimd_out_ptr(out);
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
