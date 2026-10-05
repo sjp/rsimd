@@ -103,7 +103,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           mkdir -p "$RUNNER_TEMP/rsimd-lib" "$RUNNER_TEMP/vignettes"
-          R CMD INSTALL --library="$RUNNER_TEMP/rsimd-lib" . 2>&1 | tee install.log
+          R CMD INSTALL --library="$RUNNER_TEMP/rsimd-lib" . 2>&1 | tee "$RUNNER_TEMP/install.log"
           cp vignettes/*.Rnw "$RUNNER_TEMP/vignettes"
           cp -r vignettes/benchmark-results "$RUNNER_TEMP/vignettes"
           cd "$RUNNER_TEMP/vignettes"

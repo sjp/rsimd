@@ -18,6 +18,40 @@ cm_bound <- list(
 )
 cm_tol <- function(f, fast) cm_bound[[f]][[fast + 1L]] + 6
 
+# Is the C library's complex arithmetic accurate (glibc, macOS)? Windows'
+# is not: its clog, casin, catan, ctan and the rest lose many bits near the
+# unit circle and the axes, and its cexp, csin and ccos reduce large
+# arguments as inaccurately as its sin and cos. Base R's functions, and so
+# the none tier, are then no reference for accuracy, and the SIMD tiers are
+# compared with the first SIMD tier instead, whose accuracy the other
+# platforms check.
+libm_complex_accurate <- function() {
+  z <- complex(real = 1 + 2^-30, imaginary = 2^-30)
+  libm_reduces_trig() && abs(Re(log(z)) / (0.5 * log1p(2^-29 + 2^-59)) - 1) < 1e-12
+}
+
+# The tier, among `tiers`, that the other tiers' accuracy is checked against.
+cm_ref_tier <- function(tiers) {
+  simd <- setdiff(tiers, "none")
+  if (libm_complex_accurate() || !length(simd)) "none" else simd[[1L]]
+}
+
+# How much log(z, w) and atan2(z, w) magnify the errors of the logarithms
+# and arc tangent they are built from (1 where well conditioned): the
+# relative error of log(v) is about 1 / |log(v)| ULP, and atan(u) has
+# condition number |u| / (|1 + u^2| |atan(u)|).
+cm_logb_scale <- function(z, w) {
+  s <- 1 + 1 / Mod(log(w)) + 1 / Mod(log(z))
+  s[!is.finite(s)] <- 1
+  s
+}
+cm_atan2_scale <- function(z, w) {
+  u <- z / w
+  s <- 1 + suppressWarnings(Mod(u) / (Mod(1 + u^2) * Mod(atan(u))))
+  s[!is.finite(s)] <- 1
+  s
+}
+
 # Complex test inputs: moderate parts, the whole exponent range, near the
 # unit circle, near +-1 and +-i, on and near the axes with signed zeros,
 # and every combination of special parts.
@@ -133,6 +167,7 @@ test_that("the none tier is identical to base R, warnings included", {
 test_that("acosh is C99's principal value, not base R's acos(z) * i", {
   z <- cm_inputs(500L)
   ok <- !is.na(z)
+  ref <- cm_ref_tier(tiers_to_test())
   for (tier in tiers_to_test()) {
     a <- simd_with_impl(tier, simd_acosh(z))
     # Re >= 0, and the imaginary part has the sign of Im(z).
@@ -143,6 +178,7 @@ test_that("acosh is C99's principal value, not base R's acos(z) * i", {
     b <- suppressWarnings(acosh(z))
     fix <- !is.na(b) & (Re(b) < 0)
     b[fix] <- -b[fix]
+    if (tier != "none" && ref != "none") b <- simd_with_impl(ref, simd_acosh(z))
     off_axis <- ok & Im(z) != 0 & is.finite(Re(z)) & is.finite(Im(z))
     expect_null(cm_mismatch(a[off_axis], b[off_axis], 12, z[off_axis]), label = tier)
   }
@@ -161,8 +197,9 @@ test_that("SIMD tiers are within the bounds and give base R's special values", {
     fast <- acc == "fast"
     for (f in cm_fns) {
       res <- with_accuracy(acc, with_each_tier(function() suppressWarnings(simd_fn(f)(z))))
-      ref <- res[["none"]]
-      for (tier in setdiff(names(res), "none")) {
+      ref_tier <- cm_ref_tier(names(res))
+      ref <- res[[ref_tier]]
+      for (tier in setdiff(names(res), c("none", ref_tier))) {
         expect_null(cm_mismatch(res[[tier]], ref, cm_tol(f, fast), z), label = paste(f, acc, tier))
       }
     }
@@ -171,13 +208,16 @@ test_that("SIMD tiers are within the bounds and give base R's special values", {
 
 test_that("special values and branch cuts are base R's exactly on every tier", {
   z <- c(cm_specials(), cm_specials(c(0, -0, 1, -1, 2, -2, 1.5, -1.5, 25, -25)))
+  ref_tier <- cm_ref_tier(tiers_to_test())
   for (f in cm_fns) {
     want <- suppressWarnings(simd_with_impl("none", simd_fn(f)(z)))
     exact <- !is.finite(Re(z)) | !is.finite(Im(z)) | !is.finite(Re(want)) | !is.finite(Im(want))
+    close_to <- suppressWarnings(simd_with_impl(ref_tier, simd_fn(f)(z)))
     for (tier in tiers_to_test()) {
       got <- suppressWarnings(simd_with_impl(tier, simd_fn(f)(z)))
       expect_true(bit_identical(got[exact], want[exact]), label = paste(f, tier))
-      expect_null(cm_mismatch(got, want, cm_tol(f, FALSE), z), label = paste(f, tier))
+      if (tier == "none" && ref_tier != "none") next
+      expect_null(cm_mismatch(got, close_to, cm_tol(f, FALSE), z), label = paste(f, tier))
     }
   }
 })
@@ -209,26 +249,44 @@ test_that("general powers, log with a base and atan2 are within the bounds", {
         pow = simd_pow(z, w), logb = suppressWarnings(simd_log(z, w)),
         atan2 = suppressWarnings(simd_atan2(z, w))
       ))
-      expect_true(bit_identical(none$pow, z^w))
-      expect_true(bit_identical(none$logb, suppressWarnings(log(z, w))))
-      expect_true(bit_identical(none$atan2, suppressWarnings(atan2(z, w))))
       scale <- 1 + Mod(w * log(z))
       scale[!is.finite(scale)] <- 1
-      for (tier in setdiff(tiers_to_test(), "none")) {
+      if (libm_complex_accurate()) {
+        expect_true(bit_identical(none$pow, z^w))
+      } else {
+        # Windows: the polar form of base R's power calls pow, sin and cos,
+        # which R.dll and this package's DLL need not take from the same
+        # library, so the none tier matches base R only within the bound.
+        expect_null(cm_mismatch(none$pow, z^w, cm_tol("pow", fast) * scale, z, zeros = FALSE),
+          label = paste("none pow", acc)
+        )
+      }
+      expect_true(bit_identical(none$logb, suppressWarnings(log(z, w))))
+      expect_true(bit_identical(none$atan2, suppressWarnings(atan2(z, w))))
+      ref_tier <- cm_ref_tier(tiers_to_test())
+      ref <- if (ref_tier == "none") {
+        none
+      } else {
+        simd_with_impl(ref_tier, list(
+          pow = simd_pow(z, w), logb = suppressWarnings(simd_log(z, w)),
+          atan2 = suppressWarnings(simd_atan2(z, w))
+        ))
+      }
+      for (tier in setdiff(tiers_to_test(), c("none", ref_tier))) {
         simd_with_impl(tier, {
           # General powers: the bound grows with |w log z|; zero parts may
           # differ in sign.
           got <- simd_pow(z, w)
           tol <- cm_tol("pow", fast) * scale
-          expect_null(cm_mismatch(got, none$pow, tol, z, zeros = FALSE),
+          expect_null(cm_mismatch(got, ref$pow, tol, z, zeros = FALSE),
             label = paste("pow", acc, tier)
           )
           got <- suppressWarnings(simd_log(z, w))
-          expect_null(cm_mismatch(got, none$logb, cm_tol("logb", fast), z),
+          expect_null(cm_mismatch(got, ref$logb, cm_tol("logb", fast) * cm_logb_scale(z, w), z),
             label = paste("logb", acc, tier)
           )
           got <- suppressWarnings(simd_atan2(z, w))
-          expect_null(cm_mismatch(got, none$atan2, cm_tol("atan2", fast), z),
+          expect_null(cm_mismatch(got, ref$atan2, cm_tol("atan2", fast) * cm_atan2_scale(z, w), z),
             label = paste("atan2", acc, tier)
           )
         })
@@ -391,19 +449,25 @@ test_that("without a matching multiply or divide variant, powers stay exact", {
     bit_identical(simd_mul(z, w), z * w) && bit_identical(simd_div(1, z), 1 / z)
   )
   if (!same_ops) skip("this compiler's complex operators are not base R's")
-  none <- simd_with_impl("none", list(
+  ref_tier <- cm_ref_tier(tiers_to_test())
+  ref <- simd_with_impl(ref_tier, list(
     logb = suppressWarnings(simd_log(z, w)), atan2 = suppressWarnings(simd_atan2(z, w))
   ))
+  logb_tol <- cm_tol("logb", FALSE) * cm_logb_scale(z, w)
+  atan2_tol <- cm_tol("atan2", FALSE) * cm_atan2_scale(z, w)
   for (tier in tiers_to_test()) {
     simd_with_impl(tier, {
       expect_true(bit_identical(simd_pow(z, k), z^k), label = tier)
       expect_true(bit_identical(simd_pow(z, -3), z^-3), label = tier)
+    })
+    if (tier == "none" && ref_tier != "none") next
+    simd_with_impl(tier, {
       expect_null(
-        cm_mismatch(suppressWarnings(simd_log(z, w)), none$logb, cm_tol("logb", FALSE), z),
+        cm_mismatch(suppressWarnings(simd_log(z, w)), ref$logb, logb_tol, z),
         label = tier
       )
       expect_null(
-        cm_mismatch(suppressWarnings(simd_atan2(z, w)), none$atan2, cm_tol("atan2", FALSE), z),
+        cm_mismatch(suppressWarnings(simd_atan2(z, w)), ref$atan2, atan2_tol, z),
         label = tier
       )
     })

@@ -133,6 +133,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "soft_fma.h"
 #include "tiers.h"
 
 /* Tier identification and name mangling. */

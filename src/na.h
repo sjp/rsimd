@@ -99,6 +99,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "kernel_types.h"
+#include "soft_fma.h"
 
 #define RSIMD_NA_I32 INT32_MIN
 #define RSIMD_NA_I64 INT64_MIN
@@ -261,7 +262,7 @@ static inline double rsimd_na_merge3_f64(double r, double x, double y, double z)
    x %/% 0 is x / 0. The residual x - k * y is computed with a single
    rounding (fma), so its sign is exact. A zero quotient is +0. */
 static inline double rsimd_idiv_f64(double x, double y) {
-  double k = floor(x / y), res = isinf(y) ? x : fma(-k, y, x);
+  double k = floor(x / y), res = isinf(y) ? x : rsimd_fma(-k, y, x);
   if ((res < 0 && y > 0) || (res > 0 && y < 0)) k -= 1;
   return k + 0.0;
 }

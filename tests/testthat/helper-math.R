@@ -35,14 +35,15 @@ math_mismatch <- function(a, b, ulps, x = NULL, zeros = TRUE, abs = 0, abs_below
   )
 }
 
-# Expects f(...) on every tier to match the none tier within `ulps`
-# (math_mismatch), and returns the none tier's value.
-expect_tiers_close <- function(f, ..., ulps = 2, label = "", x = NULL) {
+# Expects f(...) on every tier to match the none tier within `ulps`, or
+# within `abs` (per element) of it (math_mismatch), and returns the none
+# tier's value.
+expect_tiers_close <- function(f, ..., ulps = 2, label = "", x = NULL, abs = 0) {
   res <- with_each_tier(function() suppressWarnings(f(...)))
   ref <- res[["none"]]
   problems <- character(0)
   for (tier in setdiff(names(res), "none")) {
-    m <- math_mismatch(res[[tier]], ref, ulps, x)
+    m <- math_mismatch(res[[tier]], ref, ulps, x, abs = abs, abs_below = Inf)
     if (!is.null(m)) problems <- c(problems, sprintf("%s on %s: %s", label, tier, m))
   }
   testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
@@ -60,6 +61,26 @@ expect_close_to <- function(got, want, ulps, label = "", ...) {
 # for sinpi(-0) and is inaccurate near the zeros, so accuracy comparisons
 # with base R's sinpi and cospi are only made when it is the platform's.
 base_has_platform_sinpi <- function() 1 / sinpi(-0) < 0
+
+# Does the C library reduce large arguments of sin, cos and tan accurately?
+# Windows' does not: its error grows with |x| (it is wholly wrong near
+# .Machine$double.xmax), and base R's and the none tier's with it.
+libm_reduces_trig <- function() abs(sin(1e22) + 0.8522008497671888) < 1e-15
+
+# The absolute error allowed, beyond the ULP bound, when the `name`
+# function of x is compared with the C library's (the none tier or base
+# R): 0, except for sin, cos and tan where the library does not reduce
+# arguments accurately, where it is |x| 2^-60 (times tan's derivative),
+# well above that reduction error.
+trig_ref_err <- function(x, name) {
+  if (!(name %in% c("sin", "cos", "tan")) || libm_reduces_trig()) {
+    return(0)
+  }
+  err <- abs(x) * 2^-60
+  if (name == "tan") err <- err * (1 + suppressWarnings(tan(x))^2)
+  err[is.na(err)] <- 0
+  err
+}
 
 # R 4.6.0 returns +0 instead of -0 for these functions of -0 (base R's
 # small-argument shortcuts); rsimd keeps C's -0.

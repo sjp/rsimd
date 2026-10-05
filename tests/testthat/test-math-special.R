@@ -18,7 +18,9 @@ test_that("special values give the same kind of result as base R on every tier",
       info <- paste(name, "on", tier)
       # Every tier exactly as none for the kinds, infinities and zeros.
       bound <- if (name == "cbrt") 4 else 2
-      expect_null(math_mismatch(got, res[["none"]], bound, x), label = info)
+      expect_null(math_mismatch(got, res[["none"]], bound, x,
+        abs = trig_ref_err(x, name), abs_below = Inf
+      ), label = info)
       if (is.null(base_f) || name == "tanpi") next
       want <- suppressWarnings(base_f(x))
       expect_identical(is.na(got), is.na(want), info = info)

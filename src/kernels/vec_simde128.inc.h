@@ -56,8 +56,8 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_fma(rsimd_vf64 a, rsimd_vf64 b, rsimd_vf64 c)
   simde_mm_storeu_pd(x, a);
   simde_mm_storeu_pd(y, b);
   simde_mm_storeu_pd(z, c);
-  x[0] = fma(x[0], y[0], z[0]);
-  x[1] = fma(x[1], y[1], z[1]);
+  x[0] = rsimd_fma(x[0], y[0], z[0]);
+  x[1] = rsimd_fma(x[1], y[1], z[1]);
   return simde_mm_loadu_pd(x);
 #endif
 }

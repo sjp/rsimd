@@ -7,7 +7,9 @@ Authors@R: c(
     person("SIMDe authors", role = "cph", comment = "SIMDe, see inst/COPYRIGHTS"),
     person("Naoki", "Shibata", role = "cph", comment = "SLEEF"),
     person("SLEEF authors", role = "cph", comment = "SLEEF, see inst/COPYRIGHTS"),
-    person("ARM Ltd.", role = "cph", comment = "SLEEF AdvSIMD and SVE code")
+    person("ARM Ltd.", role = "cph", comment = "SLEEF AdvSIMD and SVE code"),
+    person("Rich", "Felker", role = "cph", comment = "musl's fma"),
+    person("musl authors", role = "cph", comment = "musl's fma, see inst/COPYRIGHTS")
   )
 Description: Fast vectorised primitives for R atomic vectors, including
     reductions, elementwise arithmetic, predicates, bitwise operations,

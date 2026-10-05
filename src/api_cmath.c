@@ -15,7 +15,12 @@
  *
  * acosh is the exception: base R's acosh(z) is acos(z) * i, which is the
  * negative of the principal value wherever its real part is negative (the
- * lower half-plane and real z > 1). rsimd uses C99's cacosh instead. */
+ * lower half-plane and real z > 1). rsimd uses C99's cacosh instead; on
+ * Windows, whose cacosh loses the sign and accuracy near the imaginary axis,
+ * it is built from cacos as the vector kernels build it.
+ *
+ * On Windows, base R has no working ctanh and computes tanh as
+ * -i tan(iz); so does rsimd there. */
 
 #include <complex.h>
 #include <math.h>
@@ -151,6 +156,25 @@ static double complex z_atan(double complex z) {
   return catan(z);
 }
 
+/* Base R's ctanh where the platform's is not working (R's R_ctanh). */
+#ifdef _WIN32
+static double complex z_tanh(double complex z) { return -I * z_tan(z * I); /* A&S 4.5.9 */ }
+#else
+#define z_tanh ctanh
+#endif
+
+/* C99's cacosh: Re >= 0 and the sign of Im(z) in the imaginary part. */
+#ifdef _WIN32
+static double complex z_cacosh(double complex z) {
+  double complex a = cacos(z), r;
+  __real__ r = fabs(cimag(a));
+  __imag__ r = copysign(creal(a), cimag(z));
+  return r;
+}
+#else
+#define z_cacosh cacosh
+#endif
+
 static double complex z_asinh(double complex z) { return -I * z_asin(z * I); }
 
 static double complex z_atanh(double complex z) { return -I * z_atan(z * I); }
@@ -193,12 +217,12 @@ CBASE1(b_cos, ccos(z))
 CBASE1(b_tan, z_tan(z))
 CBASE1(b_sinh, csinh(z))
 CBASE1(b_cosh, ccosh(z))
-CBASE1(b_tanh, ctanh(z))
+CBASE1(b_tanh, z_tanh(z))
 CBASE1(b_asin, z_asin(z))
 CBASE1(b_acos, z_acos(z))
 CBASE1(b_atan, z_atan(z))
 CBASE1(b_asinh, z_asinh(z))
-CBASE1(b_acosh, cacosh(z))
+CBASE1(b_acosh, z_cacosh(z))
 CBASE1(b_atanh, z_atanh(z))
 
 static void b_pow(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {

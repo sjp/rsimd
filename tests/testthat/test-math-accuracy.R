@@ -6,7 +6,8 @@
 check_math1 <- function(name, spec, extended) {
   x <- math_inputs(spec[[3]], extended)
   none_bound <- if (is.null(spec$none)) 2 else spec$none
-  expect_tiers_close(spec[[1]], x, ulps = none_bound, label = name, x = x)
+  err <- trig_ref_err(x, name)
+  expect_tiers_close(spec[[1]], x, ulps = none_bound, label = name, x = x, abs = err)
   base_f <- spec[[2]]
   if (is.null(base_f) || (isTRUE(spec$platform) && !base_has_platform_sinpi())) {
     return(invisible())
@@ -18,7 +19,7 @@ check_math1 <- function(name, spec, extended) {
   for (tier in tiers_to_test()) {
     got <- simd_with_impl(tier, suppressWarnings(spec[[1]](x)))
     expect_close_to(got, want, base_bound, paste(name, "vs base R on", tier),
-      x = x, zeros = zeros
+      x = x, zeros = zeros, abs = err, abs_below = Inf
     )
   }
 }
@@ -105,14 +106,22 @@ test_that("sincos gives sin and cos", {
   res <- with_each_tier(function() suppressWarnings(simd_sincos(x)))
   # SLEEF's sincos is its own algorithm, so the results may differ from
   # simd_sin() and simd_cos() in the last bit; both are within 1 ULP.
+  sin_err <- trig_ref_err(x, "sin")
+  cos_err <- trig_ref_err(x, "cos")
   for (tier in names(res)) {
     expect_named(res[[tier]], c("sin", "cos"))
-    expect_close_to(res[[tier]]$sin, res[["none"]]$sin, 2, paste("sin on", tier), x = x)
-    expect_close_to(res[[tier]]$cos, res[["none"]]$cos, 2, paste("cos on", tier), x = x)
-    expect_close_to(res[[tier]]$sin, suppressWarnings(sin(x)), 2, paste("base sin on", tier),
-      zeros = getRversion() < "4.6.0"
+    expect_close_to(res[[tier]]$sin, res[["none"]]$sin, 2, paste("sin on", tier),
+      x = x, abs = sin_err, abs_below = Inf
     )
-    expect_close_to(res[[tier]]$cos, suppressWarnings(cos(x)), 2, paste("base cos on", tier))
+    expect_close_to(res[[tier]]$cos, res[["none"]]$cos, 2, paste("cos on", tier),
+      x = x, abs = cos_err, abs_below = Inf
+    )
+    expect_close_to(res[[tier]]$sin, suppressWarnings(sin(x)), 2, paste("base sin on", tier),
+      zeros = getRversion() < "4.6.0", abs = sin_err, abs_below = Inf
+    )
+    expect_close_to(res[[tier]]$cos, suppressWarnings(cos(x)), 2, paste("base cos on", tier),
+      abs = cos_err, abs_below = Inf
+    )
   }
   expect_identical(res[["none"]]$sin, suppressWarnings(sin(x)))
 })
@@ -140,10 +149,17 @@ test_that("exp and its relatives produce subnormals and overflow where base R do
 
 test_that("sin, cos and tan reduce large arguments correctly", {
   x <- c(1e22, 1e300, 2^53, -2^1000, 1e15 + 0.3, 8.98846567431158e307)
-  for (f in list(list(simd_sin, sin), list(simd_cos, cos), list(simd_tan, tan))) {
-    expect_tiers_close(f[[1]], x, ulps = 2)
+  # Where the C library does not reduce these accurately (Windows), the
+  # none tier and base R are no reference (trig_ref_err); the exact values
+  # below still are.
+  fns <- list(list(simd_sin, sin, "sin"), list(simd_cos, cos, "cos"), list(simd_tan, tan, "tan"))
+  for (f in fns) {
+    err <- trig_ref_err(x, f[[3]])
+    expect_tiers_close(f[[1]], x, ulps = 2, abs = err)
     for (tier in tiers_to_test()) {
-      expect_close_to(simd_with_impl(tier, f[[1]](x)), f[[2]](x), 2, paste("on", tier))
+      expect_close_to(simd_with_impl(tier, f[[1]](x)), f[[2]](x), 2, paste("on", tier),
+        abs = err, abs_below = Inf
+      )
     }
   }
   expect_equal(simd_sin(1e22), -0.8522008497671888, tolerance = 1e-15)

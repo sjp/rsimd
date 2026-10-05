@@ -114,7 +114,16 @@ test_that("mul and div are identical to base R on every tier", {
   x <- rand_z(5000, seed = 3L, wide = TRUE)
   y <- rand_z(5000, seed = 4L, wide = TRUE)
   expect_tiers_give(x * y, simd_mul, x, y)
-  expect_tiers_give(x / y, simd_div, x, y)
+  # Where the operands hold both NA and NaN, whether base R's quotient keeps
+  # the NA or the NaN depends on the C library's division (macOS's differs
+  # from libgcc's), so those elements are compared only as missing values.
+  parts <- cbind(Re(x), Im(x), Re(y), Im(y))
+  mixed <- rowSums(is.na(parts) & !is.nan(parts)) > 0 & rowSums(is.nan(parts)) > 0
+  expect_tiers_give(x[!mixed] / y[!mixed], simd_div, x[!mixed], y[!mixed])
+  for (tier in tiers_to_test()) {
+    q <- simd_with_impl(tier, simd_div(x[mixed], y[mixed]))
+    expect_identical(is.na(Re(q)) | is.na(Im(q)), rep(TRUE, sum(mixed)), info = tier)
+  }
 })
 
 test_that("Annex G special values and extreme magnitudes match base R", {

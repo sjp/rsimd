@@ -57,7 +57,15 @@ static inline double rsimd_rpow_f64(double x, double y) {
     if (y == 4.0) return x * x * x * x;
     if (y == 3.0) return x * x * x;
   }
-  if (isfinite(x) && isfinite(y)) return pow(x, y);
+  if (isfinite(x) && isfinite(y)) {
+#if defined(_WIN64) && defined(__MINGW64_VERSION_MAJOR) && __MINGW64_VERSION_MAJOR >= 3
+    /* R's USE_POWL_IN_R_POW: Mingw-w64's pow is inaccurate, so 64-bit
+       Windows builds of R use powl. */
+    return (double) powl(x, y);
+#else
+    return pow(x, y);
+#endif
+  }
   if (isnan(x) || isnan(y)) return x + y;
   if (isinf(x)) {
     if (x > 0) return y < 0.0 ? 0.0 : INFINITY;
@@ -89,18 +97,18 @@ static inline double rsimd_math2_na_f64(double r, double x, double y) {
    hi + lo, so that libm's sin and cos and the final addition are the only
    rounding errors. */
 static inline double rsimd_sinpi_small(double t) {
-  double hi = RSIMD_MATH_PI * t, lo = fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
+  double hi = RSIMD_MATH_PI * t, lo = rsimd_fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
   return sin(hi) + cos(hi) * lo;
 }
 static inline double rsimd_cospi_small(double t) {
-  double hi = RSIMD_MATH_PI * t, lo = fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
+  double hi = RSIMD_MATH_PI * t, lo = rsimd_fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
   return cos(hi) - sin(hi) * lo;
 }
 
 /* tan(pi t) for 0 < t < 1/2, corrected to first order for the low part
    of pi t (within about 1 ULP, measured). */
 static inline double rsimd_tanpi_small(double t) {
-  double hi = RSIMD_MATH_PI * t, lo = fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
+  double hi = RSIMD_MATH_PI * t, lo = rsimd_fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
   double th = tan(hi);
   return th + (1.0 + th * th) * lo;
 }
@@ -193,14 +201,14 @@ static inline void rsimd_ipow_dd(double r, int an, double *hi, double *lo) {
   for (;;) {
     if (an & 1) {
       h = ph * bh;
-      l = fma(ph, bh, -h) + (ph * bl + pl * bh);
+      l = rsimd_fma(ph, bh, -h) + (ph * bl + pl * bh);
       ph = h + l;
       pl = l - (ph - h);
     }
     an >>= 1;
     if (an == 0) break;
     h = bh * bh;
-    l = fma(bh, bh, -h) + 2.0 * bh * bl;
+    l = rsimd_fma(bh, bh, -h) + 2.0 * bh * bl;
     bh = h + l;
     bl = l - (bh - h);
   }
@@ -248,7 +256,7 @@ static inline double rsimd_rootn_f64(double x, double n) {
     double h, l;
     rsimd_ipow_dd(r, (int) an, &h, &l);
     /* r^n = h + l for n > 0, 1 / (h + l) for n < 0. */
-    c = (n > 0 ? ((h - m) + l) / h : fma(-m, h, 1.0) - m * l) / n;
+    c = (n > 0 ? ((h - m) + l) / h : rsimd_fma(-m, h, 1.0) - m * l) / n;
   } else {
     double h = trunc(n / 2), q = pow(r, h) * (pow(r, n - h) / m);
     c = ((q - 1) / q) / n;

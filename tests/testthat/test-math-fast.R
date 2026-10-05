@@ -87,7 +87,9 @@ test_that("fast unary functions are within 3.5 ULP of SLEEF's bound of the none 
     # (the accurate bound less SLEEF's 1 ULP) is added to the 3.5 ULP.
     none_bound <- if (is.null(spec$none)) 2 else spec$none
     bound <- if (name %in% fast_math1) none_bound + 2.5 else none_bound
-    with_accuracy("fast", expect_tiers_close(spec[[1]], x, ulps = bound, label = name, x = x))
+    with_accuracy("fast", expect_tiers_close(spec[[1]], x,
+      ulps = bound, label = name, x = x, abs = trig_ref_err(x, name)
+    ))
   }
 })
 
@@ -102,8 +104,12 @@ test_that("fast binary functions, log to a base and sincos are within their boun
     expect_tiers_close(simd_pow, px, py, ulps = 2, label = "pow")
     expect_tiers_close(simd_log, abs(x), 3, ulps = 4.5, label = "log base 3")
     s <- math_random(3000, -1e3, 1e3)
-    expect_tiers_close(function(v) simd_sincos(v)$sin, s, ulps = 4.5, label = "sincos sin")
-    expect_tiers_close(function(v) simd_sincos(v)$cos, s, ulps = 4.5, label = "sincos cos")
+    expect_tiers_close(function(v) simd_sincos(v)$sin, s,
+      ulps = 4.5, label = "sincos sin", abs = trig_ref_err(s, "sin")
+    )
+    expect_tiers_close(function(v) simd_sincos(v)$cos, s,
+      ulps = 4.5, label = "sincos cos", abs = trig_ref_err(s, "cos")
+    )
   })
 })
 

@@ -61,15 +61,15 @@ static inline int rsimd_ham_c128_from(const Rcomplex *x, const Rcomplex *y, R_xl
    every product. */
 static inline double rsimd_cmul_re_(int v, double a, double b, double c, double d) {
   switch (v) {
-  case RSIMD_CMUL_FMA1: return fma(a, c, -(b * d));
-  case RSIMD_CMUL_FMA2: return fma(-b, d, a * c);
+  case RSIMD_CMUL_FMA1: return rsimd_fma(a, c, -(b * d));
+  case RSIMD_CMUL_FMA2: return rsimd_fma(-b, d, a * c);
   default: return a * c - b * d;
   }
 }
 static inline double rsimd_cmul_im_(int v, double a, double b, double c, double d) {
   switch (v) {
-  case RSIMD_CMUL_FMA1: return fma(b, c, a * d);
-  case RSIMD_CMUL_FMA2: return fma(a, d, b * c);
+  case RSIMD_CMUL_FMA1: return rsimd_fma(b, c, a * d);
+  case RSIMD_CMUL_FMA2: return rsimd_fma(a, d, b * c);
   default: return a * d + b * c;
   }
 }
@@ -110,13 +110,13 @@ static inline void rsimd_cdiv_formula_(int fused, double a, double b, double c, 
   s = sw ? b : -a;
   t = sw ? -a : b;
   ratio = small / big;
-  denom = fused ? fma(small, ratio, big) : small * ratio + big;
+  denom = fused ? rsimd_fma(small, ratio, big) : small * ratio + big;
   if (fabs(ratio) > DBL_MIN) {
-    x = fused ? fma(u, ratio, v) : u * ratio + v;
-    y = fused ? fma(s, ratio, t) : s * ratio + t;
+    x = fused ? rsimd_fma(u, ratio, v) : u * ratio + v;
+    y = fused ? rsimd_fma(s, ratio, t) : s * ratio + t;
   } else {
-    x = fused ? fma(small, u / big, v) : small * (u / big) + v;
-    y = fused ? fma(small, s / big, t) : small * (s / big) + t;
+    x = fused ? rsimd_fma(small, u / big, v) : small * (u / big) + v;
+    y = fused ? rsimd_fma(small, s / big, t) : small * (s / big) + t;
   }
   out->r = x / denom;
   out->i = y / denom;
@@ -168,13 +168,13 @@ static inline void rsimd_cprod_dd_(const rsimd_c128_arith *a, rsimd_cprod_state 
     t2 = p.i * e.i;
     sr = t1 - t2;
     z = sr - t1;
-    lr = ((t1 - (sr - z)) + (-t2 - z)) + (fma(p.r, e.r, -t1) - fma(p.i, e.i, -t2)) +
+    lr = ((t1 - (sr - z)) + (-t2 - z)) + (rsimd_fma(p.r, e.r, -t1) - rsimd_fma(p.i, e.i, -t2)) +
          (lo.r * e.r - lo.i * e.i);
     t3 = p.r * e.i;
     t4 = p.i * e.r;
     si = t3 + t4;
     z = si - t3;
-    li = ((t3 - (si - z)) + (t4 - z)) + (fma(p.r, e.i, -t3) + fma(p.i, e.r, -t4)) +
+    li = ((t3 - (si - z)) + (t4 - z)) + (rsimd_fma(p.r, e.i, -t3) + rsimd_fma(p.i, e.r, -t4)) +
          (lo.r * e.i + lo.i * e.r);
     hr = sr + lr;
     hi = si + li;

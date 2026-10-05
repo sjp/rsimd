@@ -106,11 +106,11 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
   R_xlen_t i;
 #define RSIMD_EW_MERGED(e) r = check ? rsimd_na_merge3_f64(e, a, b, c) : (e)
   switch (op) {
-  case RSIMD_EW_FMA: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(fma(a, b, c))) break;
+  case RSIMD_EW_FMA: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(rsimd_fma(a, b, c))) break;
   case RSIMD_EW_MUL_ADD:
   case RSIMD_EW_MUL_ADD_APPROX: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(a * b + c)) break;
   case RSIMD_EW_ADD_MUL: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED((a + b) * c)) break;
-  case RSIMD_EW_LERP: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(fma(c, b, (1.0 - c) * a))) break;
+  case RSIMD_EW_LERP: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(rsimd_fma(c, b, (1.0 - c) * a))) break;
   case RSIMD_EW_CLAMP:
     RSIMD_EW_NONE_LOOP(3, {
       if (b > c) st |= RSIMD_EW_LO_GT_HI;
