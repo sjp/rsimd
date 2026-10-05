@@ -16,7 +16,9 @@
  * logical, bitwise and conversion kernels (src/kernels/predicates.inc.c,
  * compare.inc.c, bitwise.inc.c, convert.inc.c), against the scalar forms
  * those files define for the none tier, and so are the complex kernels
- * (src/kernels/complex.inc.c) and the Hamming kernels (compare.inc.c,
+ * (src/kernels/complex.inc.c: multiply and divide in every rounding
+ * variant, products, comparisons, scans; and cmath.inc.c's Mod and Arg)
+ * and the Hamming kernels (compare.inc.c,
  * bitwise.inc.c, int64.inc.c, complex.inc.c, against plain loops). On tiers built with SLEEF the
  * elementary-function wrappers (accurate and fast) are compared with long
  * double libm, and the elementary-function kernels (src/kernels/math.inc.c,
@@ -47,6 +49,7 @@
 #include "kernels/int64.inc.c"
 #include "kernels/convert.inc.c"
 #include "kernels/math.inc.c"
+#include "kernels/cmath.inc.c"
 #include "kernels/ml.inc.c"
 
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
@@ -3281,6 +3284,310 @@ static void test_complex(ptrdiff_t n) {
 }
 #endif
 
+#ifndef RSIMD_NO_F64_SIMD
+/* The layer's interleave on two full vectors. */
+static void test_zip(void) {
+  ptrdiff_t W = RSIMD_LANES_64, j;
+  double a[RSIMD_MAX_LANES_64], b[RSIMD_MAX_LANES_64], lo[RSIMD_MAX_LANES_64 + 1],
+    hi[RSIMD_MAX_LANES_64 + 1];
+  for (j = 0; j < W; j++) {
+    a[j] = (double) (2 * j);
+    b[j] = (double) (2 * j + 1);
+  }
+  lo[W] = hi[W] = SENTINEL_F64;
+  rsimd_vf64_storeu(lo, rsimd_vf64_zip_lo(rsimd_vf64_loadu(a), rsimd_vf64_loadu(b)));
+  rsimd_vf64_storeu(hi, rsimd_vf64_zip_hi(rsimd_vf64_loadu(a), rsimd_vf64_loadu(b)));
+  for (j = 0; j < W; j++) {
+    check_int("zip_lo", W, j, (long) lo[j], (long) j);
+    check_int("zip_hi", W, j, (long) hi[j], (long) (W + j));
+  }
+}
+
+/* Base R's operators, as the runtime's __muldc3 and __divdc3 compute them
+   (what C99's operators call where the inline product has two NaN parts,
+   and for every quotient). */
+extern double _Complex __muldc3(double, double, double, double);
+extern double _Complex __divdc3(double, double, double, double);
+static void h_mul1(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  double _Complex z = __muldc3(x->r, x->i, y->r, y->i);
+  memcpy(out, &z, sizeof *out);
+}
+static void h_div1(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  double _Complex z = __divdc3(x->r, x->i, y->r, y->i);
+  memcpy(out, &z, sizeof *out);
+}
+static void h_cp1(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  Rcomplex t = *y;
+  out->r = x->r * t.r - x->i * t.i;
+  out->i = x->r * t.i + x->i * t.r;
+}
+
+static Rcomplex cy[N + 1], cref[N + 1];
+
+static int same_c128(Rcomplex a, Rcomplex b) {
+  return bits(a.r) == bits(b.r) && bits(a.i) == bits(b.i);
+}
+
+/* nan_blind: any NaN matches any NaN (NA included). */
+static void check_c128(const char *what, ptrdiff_t n, const Rcomplex *got, const Rcomplex *want,
+                       int nan_blind) {
+  ptrdiff_t i;
+  char buf[200];
+  for (i = 0; i < n; i++) {
+    n_checks++;
+    if (!same_c128(got[i], want[i]) &&
+        !(nan_blind && same_or_nan(got[i].r, want[i].r) && same_or_nan(got[i].i, want[i].i))) {
+      snprintf(buf, sizeof buf, "got %a%+ai want %a%+ai", got[i].r, got[i].i, want[i].r,
+               want[i].i);
+      fail(what, n, i, buf);
+    }
+  }
+  n_checks++;
+  if (bits(got[n].r) != bits(SENTINEL_F64)) fail(what, n, n, "wrote past the end");
+}
+
+/* Operands for the complex arithmetic: 0 the reduction inputs (ties,
+   zeros, infinities, NA and NaN), 1 finite numbers of moderate magnitude,
+   2 numbers over the whole exponent range with zero parts (every scaling
+   case of the division). */
+static double carith_double(int lo, int hi) {
+  uint64_t r = next_rand();
+  double m = 1.0 + (double) (r >> 12) / 4503599627370496.0;
+  return (r & 1 ? -1.0 : 1.0) * ldexp(m, lo + (int) (next_rand() % (uint64_t) (hi - lo + 1)));
+}
+
+static void fill_carith(int kind) {
+  const int lo = kind == 1 ? -8 : -1074, hi = kind == 1 ? 8 : 1023;
+  ptrdiff_t i;
+  for (i = 0; i < N; i++) {
+    if (kind == 0) {
+      cy[i].r = rd[(i * 5 + 1) % N];
+      cy[i].i = rd[(i * 3 + 2) % N];
+      continue;
+    }
+    cz[i].r = carith_double(lo, hi);
+    cz[i].i = carith_double(lo, hi);
+    cy[i].r = carith_double(lo, hi);
+    cy[i].i = carith_double(lo, hi);
+    if (kind == 2 && i % 5 == 0) cz[i].i = 0.0;
+    if (kind == 2 && i % 7 == 0) cy[i].r = 0.0;
+    if (kind == 2 && i % 11 == 0) cy[i].i = -0.0;
+  }
+}
+
+static const int cmul_variants[10][2] = {{1, 1}, {0, 0}, {2, 1}, {1, 2}, {2, 2},
+                                         {1, 0}, {0, 1}, {2, 0}, {0, 2}, {-1, -1}};
+
+/* The fast-mode product as the vector tiers compute it: W lane products of
+   the elements of full vectors (a skipped element as 1), combined
+   pairwise, then the tail in order, then into s->p. */
+static void cprod_fast_ref(const Rcomplex *x, ptrdiff_t n, rsimd_cprod_state *s,
+                           const rsimd_c128_arith *a, const rsimd_opts *o) {
+  const ptrdiff_t W = RSIMD_LANES_64;
+  Rcomplex lane[RSIMD_MAX_LANES_64];
+  rsimd_cprod_state t;
+  ptrdiff_t i, j, k;
+  for (j = 0; j < W; j++) {
+    lane[j].r = 1.0;
+    lane[j].i = 0.0;
+  }
+  for (i = 0; i + W <= n; i += W) {
+    for (j = 0; j < W; j++) {
+      Rcomplex e = x[i + j];
+      if (rsimd_cprod_skip_(e, s, o)) {
+        e.r = 1.0;
+        e.i = 0.0;
+      }
+      lane[j] = rsimd_cmul_1_(a, lane[j], e);
+    }
+  }
+  for (k = 1; k < W; k *= 2) {
+    for (j = 0; j + k < W; j += 2 * k) lane[j] = rsimd_cmul_1_(a, lane[j], lane[j + k]);
+  }
+  t = *s;
+  t.p = lane[0];
+  rsimd_cprod_seq_(x, i, n, &t, a, o);
+  s->saw_na = t.saw_na;
+  s->saw_nan = t.saw_nan;
+  s->p = rsimd_cmul_1_(a, s->p, t.p);
+}
+
+static void test_carith(ptrdiff_t n) {
+  rsimd_c128_arith a = {0, 0, 0, 0, 0, h_mul1, h_div1, h_cp1};
+  char what[96];
+  int kind, v, f, d, prec, check, narm;
+  ptrdiff_t i;
+  for (kind = 0; kind < 3; kind++) {
+    fill_reduce(kind == 0 ? 1 : 0);
+    fill_complex();
+    fill_carith(kind);
+    /* x * y and x / y, every variant and broadcast */
+    for (v = 0; v < 10; v++) {
+      a.mul_re = cmul_variants[v][0];
+      a.mul_im = cmul_variants[v][1];
+      a.div = v < 3 ? v : RSIMD_CDIV_FMA;
+      for (f = 0; f < 3; f++) {
+        const int flags = f == 1 ? RSIMD_EW_SCALAR(0) : f == 2 ? RSIMD_EW_SCALAR(1) : 0;
+        for (d = 0; d < 2; d++) {
+          if (d && v >= 3) continue;
+          for (i = 0; i < n; i++) {
+            Rcomplex x = cz[f == 1 ? 0 : i], y = cy[f == 2 ? 0 : i];
+            cref[i] = d ? rsimd_cdiv_1_(&a, x, y) : rsimd_cmul_1_(&a, x, y);
+          }
+          for (i = 0; i <= n; i++) czout[i].r = czout[i].i = SENTINEL_F64;
+          RSIMD_KERNEL(ew2_c128)(d ? RSIMD_EW_DIV : RSIMD_EW_MUL, cz, cy, n, flags, czout, &a);
+          snprintf(what, sizeof what, "ew2_c128 %s kind%d variant%d flags%d", d ? "div" : "mul",
+                   kind, v, flags);
+          check_c128(what, n, czout, cref, 0);
+        }
+      }
+#ifndef RSIMD_SKIP_formula_c128
+      /* The formulas alone, against the scalar helpers where those use
+         them (no NaN part). */
+      if (v < 9) {
+        RSIMD_KERNEL(formula_c128)(RSIMD_EW_MUL, a.mul_re, a.mul_im, cz, cy, n, czout);
+        for (i = 0; i < n; i++) {
+          Rcomplex r = rsimd_cmul_1_(&a, cz[i], cy[i]);
+          n_checks++;
+          if (!isnan(czout[i].r) && !isnan(czout[i].i) && !same_c128(czout[i], r)) {
+            fail("formula_c128 mul", n, i, "differs");
+          }
+        }
+      }
+#endif
+    }
+    /* products */
+    a.mul_re = a.mul_im = RSIMD_CMUL_FMA1;
+    for (v = 0; v < 3; v++) {
+      if (v == 1) a.mul_re = a.mul_im = RSIMD_CMUL_UNFUSED;
+      if (v == 2) a.mul_re = a.mul_im = RSIMD_CMUL_SCALAR;
+      for (prec = 0; prec < 3; prec++) {
+        for (check = 0; check < 2; check++) {
+          for (narm = 0; narm < 2; narm++) {
+            rsimd_opts o = {narm, check, prec};
+            rsimd_cprod_state got, want;
+            ptrdiff_t k = n / 3;
+            memset(&got, 0, sizeof got);
+            got.p.r = 1.0;
+            want = got;
+            /* Two chunks, as the entry point would pass them. */
+            RSIMD_KERNEL(prod_c128)(cz, k, &got, &a, &o);
+            RSIMD_KERNEL(prod_c128)(cz + k, n - k, &got, &a, &o);
+            if (prec == RSIMD_PREC_FAST && a.mul_re != RSIMD_CMUL_SCALAR &&
+                RSIMD_LANES_64 > 1) {
+              cprod_fast_ref(cz, k, &want, &a, &o);
+              cprod_fast_ref(cz + k, n - k, &want, &a, &o);
+            } else {
+              rsimd_cprod_seq_(cz, 0, n, &want, &a, &o);
+            }
+            snprintf(what, sizeof what, "prod_c128 kind%d variant%d prec%d chk%d narm%d", kind,
+                     v, prec, check, narm);
+            n_checks++;
+            if (!(o.na_check || o.na_rm) && (want.saw_nan || isnan(want.p.r))) continue;
+            if (!same_c128(got.p, want.p) || !same_c128(got.lo, want.lo) ||
+                got.saw_na != want.saw_na || got.saw_nan != want.saw_nan ||
+                got.leaves != want.leaves) {
+              fail(what, n, 0, "product or flags differ");
+            }
+          }
+        }
+      }
+    }
+    /* eq and ne */
+    for (v = 0; v < 2; v++) {
+      for (f = 0; f < 3; f++) {
+        const int flags = f == 1 ? RSIMD_EW_SCALAR(0) : f == 2 ? RSIMD_EW_SCALAR(1) : 0;
+        /* Finite operands: half of y equal to x. */
+        if (kind != 0) {
+          for (i = 0; i < n; i++) cy[i] = cz[(i / 2) * 2];
+        }
+        for (i = 0; i < n; i++) {
+          Rcomplex x = cz[f == 1 ? 0 : i], y = cy[f == 2 ? 0 : i];
+          if (isnan(x.r) || isnan(x.i) || isnan(y.r) || isnan(y.i)) iref[i] = RSIMD_NA_I32;
+          else iref[i] = (x.r == y.r && x.i == y.i) == (v == 0);
+        }
+        iout[n] = SENTINEL_I32;
+        RSIMD_KERNEL(cmp_c128)(v == 0 ? RSIMD_CMP_EQ : RSIMD_CMP_NE, cz, cy, n, flags, iout);
+        snprintf(what, sizeof what, "cmp_c128 kind%d op%d flags%d", kind, v, flags);
+        check_i32(what, n, iout, iref);
+      }
+    }
+#ifndef RSIMD_SKIP_scan_c128
+    /* cumsum and cumprod in two chunks */
+    for (v = 0; v < 2; v++) {
+      Rcomplex sg, sw;
+      a.cp_re = v ? RSIMD_CMUL_FMA2 : RSIMD_CMUL_SCALAR;
+      a.cp_im = v ? RSIMD_CMUL_FMA1 : RSIMD_CMUL_SCALAR;
+      for (d = 0; d < 2; d++) {
+        sg.r = sw.r = d ? 1.0 : 0.0;
+        sg.i = sw.i = 0.0;
+        for (i = 0; i < n; i++) {
+          if (d == 0) {
+            sw.r += cz[i].r;
+            sw.i += cz[i].i;
+          } else if (v == 0) {
+            Rcomplex u = sw;
+            h_cp1(cz + i, &u, &sw);
+          } else {
+            double re = rsimd_cmul_re_(a.cp_re, cz[i].r, cz[i].i, sw.r, sw.i);
+            sw.i = rsimd_cmul_im_(a.cp_im, cz[i].r, cz[i].i, sw.r, sw.i);
+            sw.r = re;
+          }
+          cref[i] = sw;
+        }
+        for (i = 0; i <= n; i++) czout[i].r = czout[i].i = SENTINEL_F64;
+        RSIMD_KERNEL(scan_c128)(d, cz, n / 2, czout, &sg, &a);
+        RSIMD_KERNEL(scan_c128)(d, cz + n / 2, n - n / 2, czout + n / 2, &sg, &a);
+        /* NA versus NaN is the entry point's fix-up, and two inlined
+           copies of the same step may propagate different payloads. */
+        snprintf(what, sizeof what, "scan_c128 kind%d op%d variant%d", kind, d, v);
+        check_c128(what, n, czout, cref, 1);
+      }
+    }
+#endif
+  }
+}
+
+#if !defined(RSIMD_SKIP_math1_c128) && defined(RSIMD_HAVE_SLEEF)
+/* Mod and Arg: libm exactly where a part is not finite, else within
+   SLEEF's bounds of the long double reference. */
+static void test_cmath(ptrdiff_t n) {
+  int kind, op, fast;
+  static char what[64]; /* check_ulp keeps the name of the worst case */
+  ptrdiff_t i;
+  for (kind = 0; kind < 3; kind++) {
+    fill_reduce(kind == 0 ? 1 : 0);
+    fill_complex();
+    fill_carith(kind);
+    for (fast = 0; fast < 2; fast++) {
+      for (op = 0; op < 2; op++) {
+        for (i = 0; i < n; i++) {
+          fa[i] = cz[i].r;
+          fb[i] = cz[i].i;
+          ldref[i] = op == RSIMD_CMATH_MOD ? hypotl(fa[i], fb[i]) : atan2l(fb[i], fa[i]);
+        }
+        fout[n] = SENTINEL_F64;
+        RSIMD_KERNEL(math1_c128)(op | (fast ? RSIMD_MATH_FAST : 0), cz, n, fout);
+        snprintf(what, sizeof what, "math1_c128 kind%d op%d fast%d", kind, op, fast);
+        for (i = 0; i < n; i++) {
+          if (!isfinite(cz[i].r) || !isfinite(cz[i].i)) {
+            fref[i] = op == RSIMD_CMATH_MOD ? hypot(cz[i].r, cz[i].i) : atan2(cz[i].i, cz[i].r);
+            n_checks++;
+            if (bits(fout[i]) != bits(fref[i]) && !(isnan(fout[i]) && isnan(fref[i]))) {
+              fail(what, n, i, "non-finite element differs from libm");
+            }
+            ldref[i] = (long double) fout[i];
+          }
+        }
+        /* The tail is libm's, which is within 1 ULP. */
+        check_ulp(what, n, fout, fast ? 3.5 : 1.0);
+      }
+    }
+  }
+}
+#endif
+#endif
+
 /* ---- integer64 kernels (int64.inc.c), against the scalar forms ---------- */
 
 static int64_t lsmall[N + 1], lsmall2[N + 1]; /* within +-2^31, and edges */
@@ -3777,6 +4084,10 @@ int main(void) {
     test_int64(n);
 #ifndef RSIMD_NO_F64_SIMD
     test_complex(n);
+    test_carith(n);
+#if !defined(RSIMD_SKIP_math1_c128) && defined(RSIMD_HAVE_SLEEF)
+    test_cmath(n);
+#endif
 #endif
     test_hamming(n);
 #ifndef RSIMD_NO_F64_SIMD
@@ -3790,6 +4101,7 @@ int main(void) {
 #ifndef RSIMD_NO_F64_SIMD
   test_f64_horizontal();
   test_uzp();
+  test_zip();
 #endif
   test_int_horizontal();
   test_intdiv_const();

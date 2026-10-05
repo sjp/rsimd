@@ -462,9 +462,7 @@ test_that("arguments and types are validated", {
   for (f in c("simd_min", "simd_max", "simd_range")) {
     expect_error(get(f)(1i), "invalid 'type' (complex) of argument", fixed = TRUE)
   }
-  no_complex <- c(
-    "simd_prod", "simd_mean", "simd_which_min", "simd_which_max", "simd_any", "simd_all"
-  )
+  no_complex <- c("simd_which_min", "simd_which_max", "simd_any", "simd_all")
   for (f in no_complex) {
     msg <- tryCatch(get(f)(1i), error = conditionMessage)
     expect_identical(msg, paste0(f, "() does not support 'x' of type complex"))

@@ -86,6 +86,18 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) {
   return simde_mm256_permute4x64_pd(simde_mm256_unpackhi_pd(a, b), SIMDE_MM_SHUFFLE(3, 1, 2, 0));
 }
+/* Interleave: zip_lo gives lanes a0 b0 a1 b1 ... of the lower halves of a
+   and b, zip_hi the same of the upper halves, so the complex numbers with
+   real parts a and imaginary parts b (the inverse of uzp_even/uzp_odd). */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_lo(rsimd_vf64 a, rsimd_vf64 b) {
+  /* a0 a2 a1 a3 and b0 b2 b1 b3, then unpacklo gives a0 b0 a1 b1. */
+  return simde_mm256_unpacklo_pd(simde_mm256_permute4x64_pd(a, SIMDE_MM_SHUFFLE(3, 1, 2, 0)),
+                                 simde_mm256_permute4x64_pd(b, SIMDE_MM_SHUFFLE(3, 1, 2, 0)));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_hi(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm256_unpackhi_pd(simde_mm256_permute4x64_pd(a, SIMDE_MM_SHUFFLE(3, 1, 2, 0)),
+                                 simde_mm256_permute4x64_pd(b, SIMDE_MM_SHUFFLE(3, 1, 2, 0)));
+}
 /* Lane moves for prefix scans (see the 128-bit layer); k is 1 or 2. */
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {
   if (k == 1) {

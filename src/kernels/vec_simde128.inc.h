@@ -108,6 +108,15 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) {
   return simde_mm_unpackhi_pd(a, b);
 }
+/* Interleave: zip_lo gives lanes a0 b0 a1 b1 ... of the lower halves of a
+   and b, zip_hi the same of the upper halves, so the complex numbers with
+   real parts a and imaginary parts b (the inverse of uzp_even/uzp_odd). */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_lo(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm_unpacklo_pd(a, b);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_hi(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm_unpackhi_pd(a, b);
+}
 /* Lane moves for prefix scans: lanes shifted up by k (k = 1 here), with
    the lanes of `fill` below k; the last lane in every lane; lane 0. */
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_shift_up(rsimd_vf64 v, int k, rsimd_vf64 fill) {

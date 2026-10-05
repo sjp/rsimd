@@ -62,7 +62,7 @@ test_that("comparisons match base R on random vectors of edge lengths", {
 
 test_that("attributes are dropped and unsupported types rejected", {
   expect_identical(simd_eq(c(a = 1, b = 2), 1), c(TRUE, FALSE))
-  expect_error(simd_eq(1i, 1), "simd_eq() does not support 'x' of type complex", fixed = TRUE)
-  expect_error(simd_lt(1, 1i), "simd_lt() does not support 'y' of type complex", fixed = TRUE)
+  expect_identical(simd_eq(1i, 1), FALSE)
+  expect_error(simd_lt(1, 1i), "invalid comparison with complex values", fixed = TRUE)
   expect_error(simd_gt("a", 1), "must be an atomic vector")
 })

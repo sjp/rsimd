@@ -123,9 +123,11 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
    integer and logical operands compare as integers, anything with a
    double as doubles (integers converted exactly), raw with raw as unsigned
    bytes, integer64 with integer64, integer or logical as 64-bit integers.
-   A missing operand gives NA. The R side converts a raw operand compared
-   with a non-raw one to integer first, and an integer64 operand compared
-   with a double to double. */
+   A missing operand gives NA. Complex operands (both complex: the R side
+   converts the other) compare both parts for eq and ne, NA when any part
+   is NA or NaN; the other comparisons give base R's error. The R side
+   converts a raw operand compared with a non-raw one to integer first,
+   and an integer64 operand compared with a double to double. */
 static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"eq", "ne", "lt", "le", "gt", "ge"};
   static const char *const args[] = {"x", "y"};
@@ -142,7 +144,12 @@ static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
   ty = e.in[1].type;
   out = PROTECT(rsimd_alloc_like(RSIMD_LGL, e.n));
   po = (int *) rsimd_out_ptr(out);
-  if (tx == RSIMD_U8 && ty == RSIMD_U8) {
+  if (tx == RSIMD_C128 || ty == RSIMD_C128) {
+    if (code != RSIMD_CMP_EQ && code != RSIMD_CMP_NE) {
+      Rf_error("invalid comparison with complex values");
+    }
+    rsimd_c128_cmp(code, x, y, po);
+  } else if (tx == RSIMD_U8 && ty == RSIMD_U8) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->cmp_u8(code, (const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags,
                            po + off);

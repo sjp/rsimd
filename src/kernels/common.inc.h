@@ -128,6 +128,7 @@
 #error "define RSIMD_TIER before including kernels/common.inc.h"
 #endif
 
+#include <float.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -264,6 +265,8 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #define RSIMD_VF64_AS_VI64 rsimd_vf64_as_vi64
 #define RSIMD_VF64_UZP_EVEN rsimd_vf64_uzp_even
 #define RSIMD_VF64_UZP_ODD rsimd_vf64_uzp_odd
+#define RSIMD_VF64_ZIP_LO rsimd_vf64_zip_lo
+#define RSIMD_VF64_ZIP_HI rsimd_vf64_zip_hi
 #if !RSIMD_TIER_IS(none) && !RSIMD_TIER_IS(sve) && !RSIMD_TIER_IS(sve2)
 #define RSIMD_VF64_SHIFT_UP rsimd_vf64_shift_up
 #define RSIMD_VF64_BCAST_LAST rsimd_vf64_bcast_last

@@ -13,7 +13,7 @@ RSIMD_DISPATCH_DEPS = rsimd_config.h tiers.h dispatch.h kernel_list.h kernel_typ
 RSIMD_TIER_DEPS = $(RSIMD_DISPATCH_DEPS) kernels/common.inc.h kernels/tier_info.inc.c \
   kernels/table.inc.c kernels/reduce.inc.c kernels/scan.inc.c kernels/arith.inc.c \
   kernels/logical.inc.h kernels/predicates.inc.c kernels/complex.inc.c kernels/compare.inc.c \
-  kernels/bitwise.inc.c kernels/int64.inc.c kernels/convert.inc.c kernels/math.inc.c kernels/ml.inc.c \
+  kernels/bitwise.inc.c kernels/int64.inc.c kernels/convert.inc.c kernels/math.inc.c kernels/cmath.inc.c kernels/ml.inc.c \
   kernels/selftest.inc.c selftest.h \
   kernels/vec_none.inc.h kernels/vec_fixed.inc.h kernels/vec_simde128.inc.h \
   kernels/vec_simde256.inc.h kernels/vec_simde512.inc.h kernels/vec_sve.inc.h

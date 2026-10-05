@@ -37,6 +37,7 @@ simd_current <- function() {
   .sync_impl()
   out <- .Call(C_simd_current)
   attr(out, "requested") <- .impl_state$requested
+  attr(out, "complex") <- .Call(C_simd_c128_variants)
   out
 }
 

@@ -60,3 +60,9 @@
 # the accuracy tests: 0 for two NAs, two other NaNs or equal values (+0 and
 # -0 included), Inf when only one is missing or they are NA and NaN.
 .ulp_dist <- function(a, b) .Call(C_simd_ulp_dist, a, b)
+
+# Sets the complex arithmetic variants by code: c(mul_re, mul_im, div,
+# cp_re, cp_im), -1 for base R's operator alone (kernel_types.h), and
+# returns the previous codes. For testing the kernels of variants other
+# than this R build's; restore the returned codes afterwards.
+.debug_c128_variants <- function(codes) .Call(C_simd_c128_set_variants, as.integer(codes))

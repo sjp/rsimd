@@ -191,6 +191,7 @@ export(simd_sigmoid)
 export(simd_softmax)
 
 # complex numbers
+export(simd_arg)
 export(simd_conj)
 export(simd_im)
 export(simd_re)

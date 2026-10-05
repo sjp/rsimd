@@ -5,13 +5,13 @@ simd_sum <- function(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TR
 
 simd_prod <- function(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE)) {
   .sync_impl()
-  .check_supported(x, "simd_prod", c("integer64", "complex"), later = "integer64")
-  .Call(C_simd_prod, x, na.rm, na_check)
+  .check_supported(x, "simd_prod", "integer64")
+  .Call(C_simd_prod, x, na.rm, na_check, .precision_code())
 }
 
 simd_mean <- function(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE)) {
   .sync_impl()
-  .check_supported(x, "simd_mean", c("integer64", "complex"), later = "integer64")
+  .check_supported(x, "simd_mean", "integer64")
   .Call(C_simd_mean, x, na.rm, na_check, .precision_code())
 }
 
@@ -127,10 +127,13 @@ simd_sd <- function(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRU
 }
 
 # The scans share one entry point; op is 0 (cumsum), 1 (cumprod), 2
-# (cummin) or 3 (cummax). Only cumprod rejects integer64.
+# (cummin) or 3 (cummax). Only cumprod rejects integer64, and only cummin
+# and cummax complex.
 .simd_scan <- function(x, op, fun) {
   .sync_impl()
-  .check_supported(x, fun, c(if (op == 1L) "integer64", "complex"), later = character())
+  .check_supported(x, fun, c(if (op == 1L) "integer64", if (op >= 2L) "complex"),
+    later = character()
+  )
   .Call(C_simd_scan, x, op, .precision_code())
 }
 

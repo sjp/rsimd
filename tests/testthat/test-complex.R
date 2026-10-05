@@ -1,5 +1,6 @@
 # Complex numbers: add, sub, neg, conj, re, im, sum and the predicates,
-# on every tier, against base R.
+# on every tier, against base R (multiply, divide, Mod, Arg, prod, mean,
+# the scans and the comparisons are in test-complex-arith.R).
 
 modes <- c("fast", "pairwise", "compensated")
 
@@ -299,7 +300,9 @@ test_that("a small interrupt stride gives the same results", {
 })
 
 test_that("other functions reject complex input", {
-  expect_error(simd_mul(1i, 1i), "simd_mul() does not support 'x' of type complex", fixed = TRUE)
+  expect_error(simd_idiv(1i, 1i), "simd_idiv() does not support 'x' of type complex",
+    fixed = TRUE
+  )
   expect_error(simd_exp(1i), "simd_exp() does not support 'x' of type complex", fixed = TRUE)
   expect_error(simd_max(1i), "invalid 'type' (complex) of argument", fixed = TRUE)
   expect_error(simd_is_zero(1i), "simd_is_zero() does not support 'x' of type complex",

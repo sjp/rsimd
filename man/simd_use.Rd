@@ -58,7 +58,15 @@ ones.
 first, always ending with \code{"none"}.
 
 \code{simd_current()}: a character string, the selected tier, with attribute
-\code{"requested"}: \code{"auto"} or the tier that was asked for.
+\code{"requested"}: \code{"auto"} or the tier that was asked for, and
+attribute \code{"complex"}: a named character vector (\code{mul},
+\code{div}, \code{cumprod}) describing how complex multiplication,
+division and \code{cumprod()} reproduce the rounding of this R build (see
+\code{\link{simd_mul}()}): the formula the kernels use, or
+\code{"scalar"} when no kernel variant matches and base R's operator is
+used for every element, with \code{" (NA/NaN may differ)"} appended if
+only the choice between \code{NA} and \code{NaN} could not be
+reproduced.
 
 \code{simd_use()}: the previously requested value, invisibly. It signals an
 error, leaving the selection unchanged, if \code{impl} is unknown or not

@@ -27,7 +27,7 @@ SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 
 /* reductions */
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
-SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check);
+SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);
 SEXP C_simd_which(SEXP x, SEXP max);
@@ -73,6 +73,11 @@ SEXP C_simd_log_softmax(SEXP x, SEXP precision);
 /* complex numbers: Conj, Re and Im (the complex paths of the other entry
    points are in api_complex.h) */
 SEXP C_simd_cplx(SEXP z, SEXP op);
+SEXP C_simd_cmath(SEXP z, SEXP op, SEXP accuracy);
+SEXP C_simd_c128_probe_inputs(void);
+SEXP C_simd_c128_probe(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp);
+SEXP C_simd_c128_variants(void);
+SEXP C_simd_c128_set_variants(SEXP codes);
 
 /* self-test kernels (NA, precision and overflow rules) */
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision);

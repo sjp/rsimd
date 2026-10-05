@@ -49,16 +49,18 @@ SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return simd_sum_impl(x, na_rm, na_check, precision);
 }
 
-/* prod(x, na.rm): always double. The precision mode does not apply. */
-static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check) {
+/* prod(x, na.rm): double, or complex for complex x. The precision mode
+   applies to complex x only. */
+static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
   rsimd_reduce_result_init(&r, RSIMD_RED_PROD);
   switch (in.type) {
+  case RSIMD_C128: return rsimd_c128_prod(&in, &o);
   case RSIMD_F64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->prod_f64(px, len, &r, &o); });
     break;
@@ -71,9 +73,9 @@ static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check) {
   return rsimd_reduce_finish(RSIMD_RED_PROD, in.type, in.n, &r, &o);
 }
 
-SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check) {
+SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_prod_impl(x, na_rm, na_check);
+  return simd_prod_impl(x, na_rm, na_check, precision);
 }
 
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
@@ -98,7 +100,8 @@ static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_re
   return m;
 }
 
-/* mean(x, na.rm): always double. Doubles: the sum divided by the count; in
+/* mean(x, na.rm): double, or complex for complex x (each part's sum, as
+   sum gives it, divided by the count). Doubles: the sum divided by the count; in
    pairwise and compensated modes refined, as base R does, by adding the
    mean of the deviations from it (a second pass) when it is finite.
    Integers and logicals: the exact sum divided in long double. */
@@ -112,6 +115,7 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
   rsimd_reduce_result_init(&r, RSIMD_RED_MEAN);
   switch (in.type) {
+  case RSIMD_C128: return rsimd_c128_mean(&in, &o);
   case RSIMD_F64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->sum_f64(px, len, &r, &o); });
     break;
@@ -613,7 +617,8 @@ static void fill_after_nan(const rsimd_in *in, R_xlen_t i, double *out) {
    cummax of integer64 x. Everything from the first missing value on is
    missing; an integer cumsum that leaves the int32 range is NA from there
    on, with base R's warning, and an integer64 one that leaves int64 with
-   bit64's. */
+   bit64's. cumsum and cumprod of complex x are complex, computed and
+   NA-fixed as base R does. */
 static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
   rsimd_scan_state s;
   rsimd_opts o;
@@ -645,6 +650,7 @@ static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
     UNPROTECT(1);
     return out;
   }
+  if (in.type == RSIMD_C128 && which <= 1) return rsimd_c128_scan(&in, which);
   if (!is_numeric(in.type)) bad_type(in.type);
   out = PROTECT(rsimd_alloc_like(in.type == RSIMD_F64 || which == 1 ? RSIMD_F64 : RSIMD_I32, in.n));
 

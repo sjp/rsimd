@@ -275,13 +275,17 @@ results may differ in the last bits.
 \section{Complex numbers}
 
 R stores a complex vector as pairs of doubles: the real part, then the
-imaginary part. \pkg{rsimd} supports the complex operations that treat the
-two parts separately:
+imaginary part. \pkg{rsimd} supports these complex operations:
 
 \begin{itemize}
-\item \code{simd\_add()}, \code{simd\_sub()} and \code{simd\_neg()};
-\item \code{simd\_sum()}, in every \code{simd\_precision()} mode;
-\item \code{simd\_conj()}, \code{simd\_re()} and \code{simd\_im()};
+\item \code{simd\_add()}, \code{simd\_sub()}, \code{simd\_mul()},
+  \code{simd\_div()} and \code{simd\_neg()};
+\item \code{simd\_sum()}, \code{simd\_prod()} and \code{simd\_mean()}, in
+  every \code{simd\_precision()} mode, and \code{simd\_cumsum()} and
+  \code{simd\_cumprod()};
+\item \code{simd\_conj()}, \code{simd\_re()}, \code{simd\_im()},
+  \code{simd\_abs()} (the modulus, as \code{Mod()}) and \code{simd\_arg()};
+\item the comparisons \code{simd\_eq()} and \code{simd\_ne()};
 \item the predicates \code{simd\_is\_na()}, \code{simd\_is\_nan()},
   \code{simd\_is\_finite()} and \code{simd\_is\_infinite()}, with their
   \code{\_any} and \code{\_all} forms, and \code{simd\_any\_na()},
@@ -289,9 +293,9 @@ two parts separately:
 \item \code{simd\_hamming()}, where a pair differs when either part does.
 \end{itemize}
 
-A double, integer or logical operand of \code{simd\_add()} or
-\code{simd\_sub()} is converted to complex, and a length-one operand is
-reused for every element, as in base R:
+A double, integer or logical operand of the arithmetic and comparison
+functions is converted to complex, and a length-one operand is reused for
+every element, as in base R:
 
 <<complex-arith>>=
 z <- complex(real = c(1, -2, 3), imaginary = c(0.5, 1, -1))
@@ -316,13 +320,37 @@ simd_sum(w, na.rm = TRUE)
 simd_is_na(complex(real = 1, imaginary = NaN))
 @
 
-The other functions reject complex input with an error, including
-multiplication and division, \code{Mod()}, \code{Arg()}, comparisons and the
-elementary functions. These need the two parts of each number to interact,
-and are planned for a later version.
+Multiplication, division, \code{cumsum()} and \code{cumprod()} give exactly
+base R's results, including infinities, zeros and the choice between
+\code{NA} and \code{NaN}. That takes some care, because base R leaves complex
+arithmetic to the C compiler that built it, and compilers differ: one may
+fuse a product into the following addition (a fused multiply-add, rounded
+once) where another rounds both, and C runtimes divide with different
+algorithms. When \pkg{rsimd} loads, base R computes products, quotients and
+a \code{cumprod()} of a fixed set of inputs, and \pkg{rsimd} picks the
+variant of its kernels that reproduces all of them:
+
+<<complex-variants>>=
+attr(simd_current(), "complex")
+identical(simd_mul(z, z), z * z)
+identical(simd_div(1, z), 1 / z)
+simd_abs(z)
+simd_eq(z, Conj(z))
+@
+
+Where no variant matches (division on macOS, for example), \pkg{rsimd} uses
+base R's operator for every element, which is exact but no faster.
+\code{simd\_abs()} and \code{simd\_arg()} follow the elementary-function
+rules: within a fraction of a unit in the last place, with infinite and
+missing parts exactly as base R. \code{simd\_prod()} multiplies with base
+R's \code{*} in an order set by the precision mode, and the
+\code{"compensated"} mode is usually as accurate as base R's
+\code{long double} product. The other comparisons, the powers and the
+elementary functions reject complex input; the last two are planned for a
+later version.
 
 <<complex-unsupported>>=
-tryCatch(simd_mul(z, z), error = conditionMessage)
+tryCatch(simd_exp(z), error = conditionMessage)
 @
 
 \section{Where to go next}

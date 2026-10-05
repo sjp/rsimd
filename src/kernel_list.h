@@ -279,6 +279,47 @@ RSIMD_OP(pred_c128, int, (int op, const Rcomplex *x, R_xlen_t n, int mode, int *
 RSIMD_OP(hamming_c128, void,
          (const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags, rsimd_reduce_result *r,
           const rsimd_opts *o))
+/* x * y (op RSIMD_EW_MUL) or x / y (RSIMD_EW_DIV), bit-identical to base
+   R as `a` describes (kernel_types.h); RSIMD_EW_SCALAR(k) broadcasts
+   element 0 of an operand. */
+RSIMD_OP(ew2_c128, void,
+         (int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags, Rcomplex *out,
+          const rsimd_c128_arith *a))
+/* Folds the chunk into the product s in the precision mode (see
+   rsimd_cprod_state): fast multiplies W lane products, combined lane by lane
+   at the end of the chunk; pairwise and compensated multiply in order.
+   Every multiply is x * y of ew2_c128. A missing element (either part NA
+   or NaN, with na_check) is skipped and sets the flags; na.rm also takes
+   it off the count. */
+RSIMD_OP(prod_c128, void,
+         (const Rcomplex *x, R_xlen_t n, rsimd_cprod_state *s, const rsimd_c128_arith *a,
+          const rsimd_opts *o))
+/* cumsum (op 0) or cumprod (op 1) of the chunk in order, continuing from
+   *s, as base R computes them (in double, cumprod by cp_re/cp_im of a
+   without the Annex G recovery). Base R's NA/NaN fix-up of the result is
+   left to the entry point. */
+RSIMD_OP(scan_c128, void,
+         (int op, const Rcomplex *x, R_xlen_t n, Rcomplex *out, Rcomplex *s,
+          const rsimd_c128_arith *a))
+/* x == y (RSIMD_CMP_EQ) or x != y (RSIMD_CMP_NE) of complex pairs: NA when
+   any of the four parts is NA or NaN, else both parts compared. */
+RSIMD_OP(cmp_c128, void,
+         (int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags, int *out))
+/* Mod (RSIMD_CMATH_MOD) or Arg (RSIMD_CMATH_ARG) into doubles, OR-ed with
+   RSIMD_MATH_FAST in fast mode. The none tier calls libm's cabs and carg,
+   as base R does; the SIMD tiers use SLEEF's hypot and atan2 for finite
+   elements and libm for the others, so special values match base R on
+   every platform. */
+RSIMD_OP(math1_c128, void, (int op, const Rcomplex *x, R_xlen_t n, double *out))
+/* Internal: x * y (RSIMD_EW_MUL) by the rounding variants v1 (real part)
+   and v2 (imaginary part), or x / y (RSIMD_EW_DIV) by libgcc's algorithm
+   with v1 = RSIMD_CDIV_FMA or RSIMD_CDIV_UNFUSED, the formulas alone (no
+   fix-up of NaN results). Only the none tier has it, so it is always
+   compiled without contraction; the load-time choice of the variants
+   compares it with base R's results. */
+RSIMD_OP(formula_c128, void,
+         (int op, int v1, int v2, const Rcomplex *x, const Rcomplex *y, R_xlen_t n,
+          Rcomplex *out))
 
 /* Type conversion `op` (RSIMD_CVT_*) of n elements of x into out, in
    `mode` for conversions to integer, integer64 and raw; returns the status

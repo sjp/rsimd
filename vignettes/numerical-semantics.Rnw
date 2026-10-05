@@ -326,10 +326,17 @@ Odd functions of \code{-0} &
   the last bits, or warn about loss of accuracy, for large quotients. &
   Exactness. No workaround needed. \\
 Complex numbers &
-  Only addition, subtraction, negation, sums, \code{Re}, \code{Im},
-  \code{Conj}, the missing-value predicates and \code{simd\_hamming};
-  other functions are an error. &
-  The other operations mix the parts. Use base R for them. \\
+  Powers, the elementary functions and the comparisons other than
+  \code{==} and \code{!=} are an error. &
+  Not implemented yet (the comparisons are an error in base R too). Use
+  base R for them. \\
+Complex \code{prod}, \code{mean} &
+  Products multiply with base R's \code{x * y} (which recovers infinities)
+  in double or, in compensated mode, double-double precision; base R
+  multiplies in \code{long double} without that recovery. Means skip base
+  R's second pass. &
+  Results with infinite or overflowing parts can differ; finite results
+  differ in the last bits. Use compensated mode for accuracy. \\
 \code{integer64} with a double &
   The result is double, with the warning ``integer64 coerced to double'';
   \pkg{bit64} converts the double to \code{integer64}. &

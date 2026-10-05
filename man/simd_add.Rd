@@ -30,8 +30,9 @@ simd_mul_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
 }
 \arguments{
 \item{x, y}{Double, integer, logical or \pkg{bit64} \code{integer64}
-vectors; not double for the \code{_wrap} functions. \code{simd_add()} and
-\code{simd_sub()} also take complex vectors.}
+vectors; not double for the \code{_wrap} functions. \code{simd_add()},
+\code{simd_sub()}, \code{simd_mul()} and \code{simd_div()} also take
+complex vectors.}
 \item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
 \code{x} and \code{y} have no missing values, so they are not looked for; see
 Details.}
@@ -47,13 +48,32 @@ and \code{Remainder} of .NET's \code{TensorPrimitives} (whose
 \details{
 \rsimdBroadcast
 
-\code{simd_add()} and \code{simd_sub()} take complex operands: if either
-operand is complex, the other (double, integer or logical) is converted
-with \code{as.complex()}, so an integer or logical \code{NA} becomes
-\code{NA} with a zero imaginary part. The real and imaginary parts are then
-added or subtracted separately, each following the rules for doubles
-below, so a missing part makes only that part of the result missing.
-Complex operands do not combine with \code{integer64} ones.
+\code{simd_add()}, \code{simd_sub()}, \code{simd_mul()} and
+\code{simd_div()} take complex operands: if either operand is complex, the
+other (double, integer or logical) is converted with \code{as.complex()},
+so an integer or logical \code{NA} becomes \code{NA} with a zero imaginary
+part. For \code{simd_add()} and \code{simd_sub()} the real and imaginary
+parts are then added or subtracted separately, each following the rules for
+doubles below, so a missing part makes only that part of the result
+missing. Complex operands do not combine with \code{integer64} ones.
+
+Complex \code{simd_mul()} and \code{simd_div()} give exactly base R's
+results, special values and the choice between \code{NA} and \code{NaN}
+included (\code{na_check} does not apply). Base R multiplies and divides
+complex numbers with the C compiler's complex arithmetic, so its results
+depend on the compiler that built R: whether it fuses a product into the
+following addition (a fused multiply-add), in which order, and which
+division algorithm its runtime library has. When \pkg{rsimd} loads, base R
+computes products, quotients and a \code{cumprod()} of a fixed set of
+inputs, and \pkg{rsimd} picks the variant of its kernels that reproduces
+all of them; \code{attr(\link{simd_current}(), "complex")} names the
+choice. A product's parts are \eqn{ac - bd} and \eqn{ad + bc} with one
+product of each fused or not; division follows the scaled Smith's method of
+GCC's runtime (GCC 12 and later). Elements whose result has a missing part
+(infinite operands, a zero divisor, missing values) are recomputed with
+base R's own operator. Where no variant matches (for example division on
+macOS, whose runtime uses another algorithm), every element is computed with
+base R's operator, which is exact but no faster than base R.
 
 \pkg{bit64} \code{integer64} operands (with integer64, integer or logical
 operands) give integer64 results computed exactly in 64 bits, with
@@ -87,8 +107,9 @@ All implementations have their own kernels for these functions. Integer
 32-bit integers. Double \code{\%\%} with a quotient of \eqn{2^{52}} or more
 falls back to scalar code for that element. On \code{"sse2"}, double
 \code{\%/\%} and \code{\%\%} use the C library's \code{fma()} for the exact
-remainder, which is slow on CPUs without a fused multiply-add. On 32-bit ARM
-the double operations use the scalar \code{"none"} code.
+remainder, which is slow on CPUs without a fused multiply-add, and so are
+complex products where R's compiler fuses them. On 32-bit ARM the double and
+complex operations use the scalar \code{"none"} code.
 }
 \value{
 A vector of the length of the longer operand: complex when an operand is
@@ -107,4 +128,8 @@ simd_mod(c(-7, 5.5), 2)
 simd_add(.Machine$integer.max, 1L)    # NA with a warning
 simd_add_wrap(.Machine$integer.max, 2L)
 simd_add(c(1, 2), 1i)
+z <- complex(real = c(1, 0, Inf), imaginary = c(2, 0, 0))
+identical(simd_mul(z, 1 - 1i), z * (1 - 1i))
+identical(simd_div(1, z), 1 / z)
+attr(simd_current(), "complex")
 }

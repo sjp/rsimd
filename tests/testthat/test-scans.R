@@ -264,7 +264,9 @@ test_that("scans carry across chunk boundaries", {
 test_that("argument errors and attributes", {
   for (f in scans) {
     expect_error(f$simd(as.raw(1:3)), "invalid 'type' (raw) of argument", fixed = TRUE)
-    expect_error(f$simd(c(1i, 2i)), "does not support 'x' of type complex$")
+    if (identical(f$simd, simd_cummin) || identical(f$simd, simd_cummax)) {
+      expect_error(f$simd(c(1i, 2i)), "does not support 'x' of type complex$")
+    }
     expect_error(f$simd(letters), "must be an atomic vector")
     expect_identical(f$simd(c(a = 1, b = 2)), unname(f$base(c(a = 1, b = 2))))
   }

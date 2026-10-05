@@ -156,6 +156,21 @@ ops <- list(
   list(
     op = "rootn", type = "double", simd = quote(simd_rootn(xp, 3L)), base = quote(xp^(1 / 3)),
     bound = TRUE
+  ),
+  list(
+    op = "mul", type = "complex", simd = quote(simd_mul(cx, cy)), base = quote(cx * cy),
+    bound = FALSE
+  ),
+  list(
+    op = "div", type = "complex", simd = quote(simd_div(cx, cy)), base = quote(cx / cy),
+    bound = TRUE
+  ),
+  list(
+    op = "prod", type = "complex", simd = quote(simd_prod(cu)), base = quote(prod(cu)),
+    bound = TRUE
+  ),
+  list(
+    op = "abs", type = "complex", simd = quote(simd_abs(cx)), base = quote(Mod(cx)), bound = TRUE
   )
 )
 
@@ -224,6 +239,11 @@ make_inputs <- function(n) {
   env$xw <- ifelse(stats::runif(n) < 0.5, round(env$x), env$x)
   p2 <- stats::runif(n) < 0.1
   env$xw[p2] <- 2^sample(-20:20, sum(p2), replace = TRUE)
+  # Complex inputs from the doubles above (no further draws); cu has
+  # modulus 1, so its product stays finite.
+  env$cx <- complex(real = env$x, imaginary = env$y)
+  env$cy <- complex(real = env$z, imaginary = env$xt)
+  env$cu <- complex(modulus = 1, argument = env$x)
   env
 }
 

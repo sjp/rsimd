@@ -7,7 +7,7 @@
 # Functions that take complex operands. A double, integer or logical
 # operand of a binary one is converted to complex when the other operand
 # is complex, as in base R.
-.ew_complex <- c("simd_add", "simd_sub", "simd_neg")
+.ew_complex <- c("simd_add", "simd_sub", "simd_mul", "simd_div", "simd_neg")
 
 # Functions that take integer64 operands.
 .ew_i64 <- c(
@@ -56,6 +56,10 @@
 .ew2 <- function(x, y, op, fun, na_check, wrap = FALSE, names = c("x", "y")) {
   .sync_impl()
   if (.ew_plain(x, wrap) && .ew_plain(y, wrap)) {
+    return(.Call(C_simd_ew2, x, y, op, na_check))
+  }
+  # Two complex operands without a class need no conversion either.
+  if (is.complex(x) && is.complex(y) && !is.object(x) && !is.object(y) && fun %in% .ew_complex) {
     return(.Call(C_simd_ew2, x, y, op, na_check))
   }
   args <- list(x, y)
@@ -132,7 +136,13 @@ simd_mul_wrap <- function(x, y, na_check = getOption("rsimd.na_check", TRUE)) {
 
 simd_neg <- function(x) .ew1(x, "neg", "simd_neg")
 
-simd_abs <- function(x) .ew1(x, "abs", "simd_abs")
+# abs of complex z is its modulus, as in base R.
+simd_abs <- function(x) {
+  if (is.complex(x)) {
+    return(.cmath(x, "mod"))
+  }
+  .ew1(x, "abs", "simd_abs")
+}
 
 simd_neg_wrap <- function(x) .ew1(x, "neg", "simd_neg_wrap", wrap = TRUE)
 

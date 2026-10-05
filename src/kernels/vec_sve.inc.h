@@ -136,6 +136,11 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_blend(rsimd_vf64 a, rsimd_vf64 b, rsimd_mf64 
    complex numbers held in a and then b. */
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) { return svuzp1_f64(a, b); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) { return svuzp2_f64(a, b); }
+/* Interleave: zip_lo gives lanes a0 b0 a1 b1 ... of the lower halves of a
+   and b, zip_hi the same of the upper halves, so the complex numbers with
+   real parts a and imaginary parts b (the inverse of uzp_even/uzp_odd). */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_lo(rsimd_vf64 a, rsimd_vf64 b) { return svzip1_f64(a, b); }
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_hi(rsimd_vf64 a, rsimd_vf64 b) { return svzip2_f64(a, b); }
 RSIMD_INLINE double rsimd_vf64_reduce_add(rsimd_vf64 a) { return svaddv_f64(RSIMD_PT64, a); }
 RSIMD_INLINE double rsimd_vf64_reduce_min(rsimd_vf64 a) { return svminv_f64(RSIMD_PT64, a); }
 RSIMD_INLINE double rsimd_vf64_reduce_max(rsimd_vf64 a) { return svmaxv_f64(RSIMD_PT64, a); }

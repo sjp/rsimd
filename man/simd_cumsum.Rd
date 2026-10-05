@@ -14,7 +14,8 @@ simd_cummin(x)
 simd_cummax(x)
 }
 \arguments{
-\item{x}{A double, integer or logical vector, or except for
+\item{x}{A double, integer or logical vector; for \code{simd_cumsum()}
+and \code{simd_cumprod()} also a complex vector, and except for
 \code{simd_cumprod()} a \pkg{bit64} \code{integer64} vector.}
 }
 \description{
@@ -47,6 +48,16 @@ identical on every implementation and usually closer to the exact one, at
 the speed of a scalar loop. \code{simd_cumprod()} ignores the precision
 mode.
 
+\code{simd_cumsum()} and \code{simd_cumprod()} of a complex vector are
+complex and identical to base R's on every implementation, missing values
+included: they are computed in order as base R computes them (each step of
+\code{cumprod()} with the rounding of base R's build, see
+\code{\link{simd_mul}()}), then base R's rule for missing values is
+applied: from the first element with a missing part on, each part that is
+missing at the end is \code{NA} where an \code{NA} has been seen and
+\code{NaN} before that. Each step depends on the one before, so they are no
+faster than base R.
+
 The \code{"sve"} and \code{"sve2"} implementations use the \code{"neon"}
 kernels for these functions, and on 32-bit ARM they use the scalar
 \code{"none"} code.
@@ -60,8 +71,8 @@ implementation; a \code{simd_cumsum()} that leaves the integer64 range is
 \code{NA} from there on, with \pkg{bit64}'s warning (see \link{rsimd-integer64}).
 }
 \value{
-A vector of the same length as \code{x}: double, or integer as described in
-Details.
+A vector of the same length as \code{x}: double, integer or complex as
+described in Details.
 }
 \seealso{
 \code{\link{cumsum}}, \code{\link{simd_sum}}, \code{\link{simd_precision}},

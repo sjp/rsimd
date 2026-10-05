@@ -11,6 +11,7 @@
   warn_unknown_cpu_mask()
   warn_bad_debug_stride()
   init_impl()
+  init_complex()
   invisible()
 }
 

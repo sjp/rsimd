@@ -169,6 +169,15 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_even(rsimd_vf64 a, rsimd_vf64 b) {
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_uzp_odd(rsimd_vf64 a, rsimd_vf64 b) {
   return simde_mm512_permutex2var_pd(a, simde_mm512_set_epi64(15, 13, 11, 9, 7, 5, 3, 1), b);
 }
+/* Interleave: zip_lo gives lanes a0 b0 a1 b1 ... of the lower halves of a
+   and b, zip_hi the same of the upper halves, so the complex numbers with
+   real parts a and imaginary parts b (the inverse of uzp_even/uzp_odd). */
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_lo(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm512_permutex2var_pd(a, simde_mm512_set_epi64(11, 3, 10, 2, 9, 1, 8, 0), b);
+}
+RSIMD_INLINE rsimd_vf64 rsimd_vf64_zip_hi(rsimd_vf64 a, rsimd_vf64 b) {
+  return simde_mm512_permutex2var_pd(a, simde_mm512_set_epi64(15, 7, 14, 6, 13, 5, 12, 4), b);
+}
 RSIMD_INLINE double rsimd_vf64_reduce_add(rsimd_vf64 a) { return simde_mm512_reduce_add_pd(a); }
 RSIMD_INLINE double rsimd_vf64_reduce_min(rsimd_vf64 a) { return simde_mm512_reduce_min_pd(a); }
 RSIMD_INLINE double rsimd_vf64_reduce_max(rsimd_vf64 a) { return simde_mm512_reduce_max_pd(a); }

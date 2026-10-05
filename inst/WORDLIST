@@ -1,4 +1,5 @@
 anyNA
+arg
 Arg
 atan
 avx
@@ -16,8 +17,10 @@ crossprod
 csv
 cummax
 cummin
+cumprod
 cumsum
 dist
+div
 double's
 DQ
 eq
@@ -45,6 +48,7 @@ mavx
 md
 mfma
 mul
+ne
 NEON's
 NET's
 Neumaier
@@ -66,6 +70,7 @@ roundings
 rsqrt
 RSQRTPS
 Rtools
+runtimes
 rvv
 sar
 scaleb

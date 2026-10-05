@@ -90,8 +90,9 @@ static const char *const binop_msg = "non-numeric argument to binary operator";
    x %/% y, x %% y, pmin, pmax, their na.rm = TRUE forms, copysign and the
    wrapping integer ops. Integer and logical operands give an integer
    result, except for / and copysign; the R side ensures that the _wrap ops
-   only see integer and logical operands. + and - also take complex
-   operands, which the R side has made both complex. With an integer64
+   only see integer and logical operands. +, -, * and / also take complex
+   operands, which the R side has made both complex (* and / bit-identical
+   to base R, na_check not applying). With an integer64
    operand (the other integer64, integer or logical) the result is
    integer64, overflow giving NA with bit64's warning, as does a zero
    divisor of %/% and %%; the R side has converted integer64 operands of
@@ -109,8 +110,9 @@ static SEXP simd_ew2_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   sargs[0] = x;
   sargs[1] = y;
   rsimd_ew_init(&e, 2, sargs, args);
-  if (check_numeric(&e, binop_msg, code == RSIMD_EW_ADD || code == RSIMD_EW_SUB,
+  if (check_numeric(&e, binop_msg, code <= RSIMD_EW_DIV,
                     code != RSIMD_EW_DIV && code != RSIMD_EW_COPYSIGN)) {
+    if (code == RSIMD_EW_MUL || code == RSIMD_EW_DIV) return rsimd_c128_muldiv(code, x, y);
     rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, 0);
     return rsimd_c128_add(code, x, y, &o);
   }

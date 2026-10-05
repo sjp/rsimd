@@ -21,7 +21,7 @@ simd_ge(x, y)
 }
 \arguments{
 \item{x, y}{Double, integer, logical, raw or \pkg{bit64} \code{integer64}
-vectors.}
+vectors; complex vectors for \code{simd_eq()} and \code{simd_ne()}.}
 }
 \description{
 \code{x == y}, \code{x != y}, \code{x < y}, \code{x <= y}, \code{x > y} and
@@ -47,8 +47,14 @@ All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double comparisons use the scalar \code{"none"} code.
 \pkg{bit64} \code{integer64} operands compare as 64-bit integers with
 integer64, integer and logical operands; compared with a double they are
-converted to double, with a warning (see \link{rsimd-integer64}). Complex
-operands are not supported.
+converted to double, with a warning (see \link{rsimd-integer64}).
+
+\code{simd_eq()} and \code{simd_ne()} take complex operands: the other
+operand is converted with \code{as.complex()} (integer64 through double,
+with the same warning), both parts are compared, and the result is
+\code{NA} wherever either operand has a missing part, as in base R. The
+other comparisons give base R's error \code{"invalid comparison with
+complex values"}.
 }
 \value{
 A logical vector of the length of the longer operand.
@@ -58,6 +64,7 @@ A logical vector of the length of the longer operand.
 \link{rsimd-integer64}.
 }
 \examples{
+simd_eq(c(1+1i, 2i, NA), 1+1i)
 simd_eq(c(1, NA, NaN, -0), c(1, 1, 1, 0))
 simd_lt(1:5, 3L)
 simd_ge(c(TRUE, FALSE), 0.5)

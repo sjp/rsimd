@@ -305,6 +305,55 @@ enum {
   RSIMD_CVT_U8_I64
 };
 enum { RSIMD_CVT_CHECKED = 0, RSIMD_CVT_SATURATING, RSIMD_CVT_TRUNCATING };
+
+/* Complex arithmetic (kernels/complex.inc.c) reproduces base R's results
+   bit for bit. How R rounds them depends on the compiler that built R, so
+   the package compares candidates with base R's own results when it loads
+   (api_complex.c) and passes the choice to the kernels in an
+   rsimd_c128_arith.
+
+   A product (a + bi)(c + di) has the parts re = ac - bd and im = ad + bc;
+   a compiler may round each product or fuse one of them into the addition:
+     re: UNFUSED  ac - bd    FMA1 fma(a, c, -(bd))   FMA2 fma(-b, d, ac)
+     im: UNFUSED  ad + bc    FMA1 fma(b, c, ad)      FMA2 fma(a, d, bc)
+   x * y uses mul_re and mul_im (x = a + bi, y = c + di); cumprod uses
+   cp_re and cp_im with x the element and y the product so far. SCALAR
+   means that no candidate matched: the kernels then call mul1 (cp1) for
+   every element.
+
+   x / y follows libgcc's __divdc3 (GCC 12 and later: Smith's method with
+   scaling) with its products and sums fused (DIV_FMA) or not
+   (DIV_UNFUSED), or is DIV_SCALAR, div1 for every element.
+
+   mul1 and div1 are base R's operators themselves, as the entry points'
+   compiler builds them: the kernels call them for every element whose
+   result has a NaN part, which covers the Annex G recovery of infinities
+   and the choice of NA or NaN payload. cp1 is base R's cumprod step
+   (x the element, y the product so far; out may be y). */
+enum { RSIMD_CMUL_SCALAR = -1, RSIMD_CMUL_UNFUSED = 0, RSIMD_CMUL_FMA1, RSIMD_CMUL_FMA2 };
+enum { RSIMD_CDIV_SCALAR = 0, RSIMD_CDIV_FMA, RSIMD_CDIV_UNFUSED };
+typedef void (*rsimd_c128_fn)(const Rcomplex *x, const Rcomplex *y, Rcomplex *out);
+typedef struct {
+  int mul_re, mul_im, div, cp_re, cp_im;
+  rsimd_c128_fn mul1, div1, cp1;
+} rsimd_c128_arith;
+
+/* The running state of a complex product (prod_c128) between chunks, in
+   the precision mode: fast and compensated multiply into p (compensated
+   carrying the low parts in lo, a double-double product); pairwise keeps
+   leaf products in pw[k] (2^k leaves of RSIMD_PAIRWISE_LEAF elements, for
+   every set bit k of `leaves`) and the unfinished leaf in p with `fill`
+   elements. saw_na and saw_nan as in rsimd_reduce_result. */
+typedef struct {
+  Rcomplex p, lo, pw[64];
+  uint64_t leaves;
+  R_xlen_t fill;
+  unsigned saw_na : 1, saw_nan : 1;
+} rsimd_cprod_state;
+
+/* Complex elementwise math (math1_c128), double results: Mod (|z|, as
+   base R's cabs) and Arg (as carg). RSIMD_MATH_FAST may be OR-ed in. */
+enum { RSIMD_CMATH_MOD = 0, RSIMD_CMATH_ARG };
 /* Status bits of the conversion kernels, for base R's and bit64's
    coercion warnings (in checked mode only): a double outside the integer
    range ("NAs introduced by coercion to integer range"), a value not in

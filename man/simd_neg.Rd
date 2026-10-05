@@ -27,8 +27,8 @@ simd_sqrt(x)
 }
 \arguments{
 \item{x}{A double, integer or logical vector; integer or logical only for
-the \code{_wrap} functions. \code{simd_neg()} also takes a complex
-vector, and \code{simd_neg()}, \code{simd_abs()}, \code{simd_sign()} and the
+the \code{_wrap} functions. \code{simd_neg()} and \code{simd_abs()}
+also take a complex vector, and \code{simd_neg()}, \code{simd_abs()}, \code{simd_sign()} and the
 \code{_wrap} functions a \pkg{bit64} \code{integer64} vector.}
 \item{sign}{A double, integer or logical vector whose signs are copied to
 \code{x}.}
@@ -50,7 +50,12 @@ integer whose negation is out of range is \code{-2147483648}, which is
 \code{NA}. The \code{_wrap} spellings are the same functions, provided for
 symmetry with \code{\link{simd_add_wrap}()}, and reject doubles.
 \code{simd_neg()} of a complex vector negates both parts, as \code{-z}
-does (see \code{\link{simd_conj}()} for the conjugate).
+does (see \code{\link{simd_conj}()} for the conjugate). \code{simd_abs()}
+of a complex vector is its modulus, a double vector, as \code{abs(z)} and
+\code{Mod(z)} are: SLEEF's \code{hypot} (within 0.5 ULP, or 3.5 ULP in
+\link[=simd_math_accuracy]{fast mode}) for elements with both parts
+finite, the C library's otherwise, as base R (see
+\code{\link{simd_arg}()}).
 
 \code{simd_sign()}, \code{simd_recip()} and \code{simd_sqrt()} return
 doubles for every input, as base R does for \code{sign()} and
@@ -80,16 +85,17 @@ Integer64 input gives integer64 results (\code{NA} stays \code{NA}; see
 A vector of the length of \code{x} (for \code{simd_copysign()}, of the
 longer operand): integer for \code{simd_neg()} and \code{simd_abs()} of
 integer or logical input, complex for \code{simd_neg()} of complex input,
-otherwise double.
+otherwise double (also for \code{simd_abs()} of complex input).
 }
 \seealso{
-\code{\link{abs}}, \code{\link{sign}}, \code{\link{sqrt}},
+\code{\link{abs}}, \code{\link{Mod}}, \code{\link{sign}}, \code{\link{sqrt}},
 \code{\link{simd_add}}, \code{\link{simd_recip_approx}},
 \code{\link{simd_rsqrt}}, \link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
 simd_neg(c(1L, -2L, NA))
 simd_abs(c(-1.5, 2, -Inf))
+simd_abs(c(3 + 4i, -1i))
 simd_sign(c(-2, 0, 3))
 simd_copysign(c(1, -2, 3), c(-1, -1, 1))
 simd_recip(c(2, 0, -0))

@@ -55,9 +55,16 @@ First release.
   `simd_rsqrt_approx()` (within a relative error of 2^-22, from hardware
   estimates and Newton steps) and `simd_mul_add_approx()` (fused where the
   CPU has a fused multiply-add).
-* **Complex vectors:** `simd_add()`, `simd_sub()`, `simd_neg()`,
-  `simd_sum()` and the predicates take complex input; `simd_conj()`,
-  `simd_re()` and `simd_im()`.
+* **Complex vectors:** `simd_add()`, `simd_sub()`, `simd_mul()`,
+  `simd_div()`, `simd_neg()`, `simd_abs()` (the modulus), `simd_sum()`,
+  `simd_prod()`, `simd_mean()`, `simd_cumsum()`, `simd_cumprod()`,
+  `simd_eq()`, `simd_ne()` and the predicates take complex input;
+  `simd_conj()`, `simd_re()`, `simd_im()` and `simd_arg()`. Multiplication,
+  division, `cumsum()` and `cumprod()` are identical to base R's results,
+  special values included: base R's rounding depends on the compiler that
+  built R, so the variant is chosen when the package loads by comparing
+  with base R (`attr(simd_current(), "complex")`). `simd_vec` objects use
+  the kernels for complex `*` and `/`.
 * **64-bit integers:** `bit64::integer64` vectors are supported by the sums,
   extremes, scans, arithmetic, predicates, comparisons, bit operations and
   conversions, with exact 64-bit results and bit64's warnings;
