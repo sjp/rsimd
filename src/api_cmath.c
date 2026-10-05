@@ -24,7 +24,6 @@
 
 #include <complex.h>
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 #include <Rmath.h>
 #include "rsimd.h"
@@ -93,7 +92,8 @@ static double complex mycpow(double complex X, double complex Y) {
   if (X == 0.0) {
     if (yi == 0.0) Z = R_pow(0.0, yr);
     else Z = R_NaN + R_NaN * I;
-  } else if (yi == 0.0 && yr == (k = (int) yr) && abs(k) <= 65536) {
+  } else if (yi == 0.0 && fabs(yr) <= 65536 && yr == (k = (int) yr)) {
+    /* range check before the cast: (int) of NaN or a huge yr is UB */
     Z = R_cpow_n(X, k);
   } else {
 #ifndef _WIN32
