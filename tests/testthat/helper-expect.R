@@ -109,7 +109,8 @@ expect_simd_equal <- function(f, ..., tolerance = NULL, precision = simd_precisi
 # to equal base_fn(...): identical results unless they are double; doubles
 # within the precision-mode bound plus base R's own rounding (its sum uses
 # long double where available), and never tighter than 1e-12 relative, or
-# within relative `tolerance` if given. When x holds NA and also NaN, or
+# within relative `tolerance` if given (plus n * eps, base R's own bound for
+# a sum of positive terms, where it has no long double). When x holds NA and also NaN, or
 # both Inf and -Inf (whose sum is NaN), only is.na() is compared, since base
 # R's choice between NA and NaN depends on the order of the elements.
 expect_simd_matches_base <- function(simd_fn, base_fn, ..., tolerance = NULL,
@@ -135,7 +136,8 @@ expect_simd_matches_base <- function(simd_fn, base_fn, ..., tolerance = NULL,
         sprintf("%s vs %s", deparse1(got), deparse1(expected))
       }
     } else if (!is.null(tolerance)) {
-      double_mismatch(got, expected, 0, tolerance, nan)
+      base_tol <- if (has_wide_long_double()) 0 else max(length(x), 1) * eps
+      double_mismatch(got, expected, 0, tolerance + base_tol, nan)
     } else {
       double_mismatch(got, expected, bound, max(1e-12, 2^-50), nan)
     }

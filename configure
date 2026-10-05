@@ -43,7 +43,9 @@
 # Every tier object is also compiled with -ffp-contract=off (when the
 # compiler accepts it), so a * b + c is never fused behind the kernels' back
 # and the tiers round identically; SLEEF requires it too. With GCC the sve
-# and sve2 objects also get -fno-tree-vrp, as in SLEEF's own SVE build.
+# and sve2 objects also get -fno-tree-vrp, as in SLEEF's own SVE build. On
+# Windows the avx2 and avx512 objects are assembled with
+# -Wa,-muse-unaligned-vector-move (see below).
 #
 # Environment variables
 # ---------------------
@@ -389,6 +391,24 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled row_sleef; 
     enabled="$enabled$tier "
     objects="$objects tier_$tier.o"
     extra=
+    case "$tier" in avx2 | avx512)
+      # GCC on Windows assumes a 16-byte-aligned stack but spills 32- and
+      # 64-byte vectors with aligned moves (GCC bug 54412), which crash or
+      # not depending on the call depth. The assembler can turn every
+      # aligned vector move into an unaligned one (binutils 2.38 and later),
+      # at no cost on aligned data.
+      if [ "$os" = windows ]; then
+        printf "checking whether %s accepts -Wa,-muse-unaligned-vector-move... " "$CC"
+        if try_compile "$src" "$flags $fpflag -Wa,-muse-unaligned-vector-move"; then
+          extra=-Wa,-muse-unaligned-vector-move
+          echo yes
+        else
+          echo no
+          show_log
+        fi
+      fi
+      ;;
+    esac
     case "$tier" in sve | sve2)
       if [ "$cc_is_gcc" = yes ]; then
         printf "checking whether %s accepts -fno-tree-vrp... " "$CC"

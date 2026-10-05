@@ -326,8 +326,9 @@ test_that("mean: pairwise and compensated refine with a second pass", {
   old <- simd_precision("compensated")
   on.exit(simd_precision(old))
   res <- with_each_tier(function() simd_mean(x))
+  # The exact mean, 1002 / 1002; base R's is 0 where long double is double.
   for (tier in names(res)) {
-    expect_equal(res[[tier]], mean(x), tolerance = 1e-12, info = tier)
+    expect_equal(res[[tier]], 1, tolerance = 1e-12, info = tier)
   }
   # Integer means are exact sums divided once.
   skip_if_not(has_wide_long_double(), "no long double accumulator in base R")

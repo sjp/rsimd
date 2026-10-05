@@ -51,8 +51,9 @@ test_that("double reductions: NA wins over NaN in any order, na.rm removes both"
     expect_identical(fold(p), sum(p))
     expect_identical(fold(p, na_rm = TRUE), sum(p, na.rm = TRUE))
   }
-  # Base R is order dependent here; rsimd is not.
-  expect_identical(sum(c(NaN, NA)), NaN)
+  # Base R is order and platform dependent here (NaN on x86-64, NA on
+  # arm64 macOS); rsimd is not.
+  expect_true(is.na(sum(c(NaN, NA))))
   expect_identical(fold(c(NaN, NA)), NA_real_)
 })
 

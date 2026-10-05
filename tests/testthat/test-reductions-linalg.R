@@ -349,9 +349,12 @@ test_that("var and sd span chunks: forced small chunks match base R", {
   env <- c(callr::rcmd_safe_env(), RSIMD_DEBUG_STRIDE = "128")
   there <- callr::r(child, list(d, i, y), env = env)
   here <- child(d, i, y)
+  # Without a long double accumulator, base R's sums of 2^20 terms are only
+  # within about n * eps.
+  tol <- if (has_wide_long_double()) 1e-12 else n * eps
   for (tier in names(there)) {
     for (k in 1:3) {
-      expect_equal(there[[tier]][[k]], want, tolerance = 1e-12, info = paste(tier, k))
+      expect_equal(there[[tier]][[k]], want, tolerance = tol, info = paste(tier, k))
     }
     # Pairwise sums are independent of the chunking.
     if (tier %in% names(here)) expect_identical(there[[tier]][[2]], here[[tier]][[2]])

@@ -540,6 +540,14 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(cmath1_)(const int op, const int fast, cons
     redo = rsimd_cm1_v_(op, fast, xr, xi, &re, &im);
     redo = rsimd_mf64_or(redo, rsimd_mf64_or(rsimd_cm_nonfinite_(xr), rsimd_cm_nonfinite_(xi)));
     redo = rsimd_mf64_or(redo, rsimd_mf64_or(rsimd_vf64_is_nan(re), rsimd_vf64_is_nan(im)));
+    /* On an axis, exp and the (hyperbolic) sines and cosines give a zero
+       part whose sign C libraries choose differently (macOS's libm from
+       glibc), so those elements are base R's. */
+    if (op == RSIMD_CM_EXP || op == RSIMD_CM_SIN || op == RSIMD_CM_COS || op == RSIMD_CM_SINH ||
+        op == RSIMD_CM_COSH) {
+      redo = rsimd_mf64_or(redo, rsimd_mf64_or(rsimd_vf64_cmp_eq(xr, rsimd_vf64_zero()),
+                                               rsimd_vf64_cmp_eq(xi, rsimd_vf64_zero())));
+    }
     rsimd_cm_store_(out, i, m, re, im);
     if (rsimd_cm_lanes_(redo, lanes)) {
       for (j = 0; j < m; j++) {

@@ -168,8 +168,12 @@ test_that("every rounding variant's kernels compute its formula", {
   yw <- rand_z(3000, seed = 10L, wide = TRUE, na_frac = 0, nan_frac = 0, inf_frac = 0)
   xw <- c(xw, 1 + 0i, 0 + 1i, 1e-310 + 2i, 1e308 + 1e308i)
   yw <- c(yw, 3 + 0i, 0 - 2i, 5e-320 + 1i, 1e308 - 1e300i)
-  # Zero divisors are recovered by base R's operator, not the formula.
-  keep <- !is.nan(Re(xw / yw)) & !is.nan(Im(xw / yw)) & yw != 0
+  # Zero divisors, and NaN parts from the formula, are recovered by base
+  # R's operator, not the formula. Base R's quotient alone does not tell:
+  # it is not libgcc's when clang built R (macOS).
+  no_nan <- function(z) !is.nan(Re(z)) & !is.nan(Im(z))
+  keep <- no_nan(xw / yw) & no_nan(cdiv_ref(xw, yw, TRUE)) & no_nan(cdiv_ref(xw, yw, FALSE)) &
+    yw != 0
   xw <- xw[keep]
   yw <- yw[keep]
   fused <- cdiv_ref(xw, yw, TRUE)
@@ -225,11 +229,14 @@ test_that("prod follows the precision mode", {
   on.exit(simd_precision(old))
   z <- complex(modulus = stats::runif(20000, 0.999, 1.001), argument = stats::runif(20000, -3, 3))
   base <- prod(z)
+  # Base R multiplies in long double where it has one; without, its own
+  # product is only within about 1e-11.
+  tight <- if (has_wide_long_double()) 2^-50 else 1e-11
   for (mode in c("fast", "pairwise", "compensated")) {
     simd_precision(mode)
     res <- with_each_tier(function() simd_prod(z))
     for (tier in names(res)) {
-      expect_lt(Mod(res[[tier]] - base) / Mod(base), if (mode == "compensated") 2^-50 else 1e-11)
+      expect_lt(Mod(res[[tier]] - base) / Mod(base), if (mode == "compensated") tight else 1e-11)
     }
     # pairwise and compensated multiply in an order that does not depend on
     # the tier.

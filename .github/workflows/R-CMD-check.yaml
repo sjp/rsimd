@@ -96,6 +96,25 @@ jobs:
           sh tools/check_makevars.sh
           sh ./cleanup
 
+      # R CMD build's vignette step shows nothing when R crashes in a chunk,
+      # so on Windows weave the vignettes first, with each chunk's label
+      # printed before it runs: the last label shown is the one that crashed.
+      - name: Weave the vignettes with visible output (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p "$RUNNER_TEMP/rsimd-lib" "$RUNNER_TEMP/vignettes"
+          R CMD INSTALL --library="$RUNNER_TEMP/rsimd-lib" . 2>&1 | tee install.log
+          cp vignettes/*.Rnw "$RUNNER_TEMP/vignettes"
+          cp -r vignettes/benchmark-results "$RUNNER_TEMP/vignettes"
+          cd "$RUNNER_TEMP/vignettes"
+          export R_LIBS="$RUNNER_TEMP/rsimd-lib"
+          Rscript -e 'library(rsimd); str(simd_cpu_features()); print(simd_available()); print(simd_current())'
+          for f in *.Rnw; do
+            echo "::group::$f"
+            Rscript -e "utils::Sweave('$f')"
+            echo "::endgroup::"
+          done
+
       # One job also builds the PDF reference manual, as CRAN does.
       - uses: r-lib/actions/check-r-package@v2
         with:

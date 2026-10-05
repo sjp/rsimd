@@ -170,13 +170,16 @@ test_that("simd_next_up, simd_next_down and simd_nextafter step one ULP", {
   expect_tiers_give(up, simd_next_up, x)
   expect_tiers_give(down, simd_next_down, x)
   big <- .Machine$double.xmax
+  # The double below big, computed: R parses 1.7976931348623155e308 as Inf
+  # where long double is double (arm64 macOS).
+  below <- big - 2^971
   specials <- c(0, -0, 5e-324, -5e-324, big, -big, Inf, -Inf, NaN, NA)
   expect_tiers_give(
-    c(5e-324, 5e-324, 1e-323, -0, Inf, -1.7976931348623155e308, Inf, -big, NaN, NA),
+    c(5e-324, 5e-324, 1e-323, -0, Inf, -below, Inf, -big, NaN, NA),
     simd_next_up, specials
   )
   expect_tiers_give(
-    c(-5e-324, -5e-324, 0, -1e-323, 1.7976931348623155e308, -Inf, big, -Inf, NaN, NA),
+    c(-5e-324, -5e-324, 0, -1e-323, below, -Inf, big, -Inf, NaN, NA),
     simd_next_down, specials
   )
   expect_identical(zero_sign(simd_next_up(-5e-324)), -1)
