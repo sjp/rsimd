@@ -114,9 +114,11 @@ test_that("simd_pow() is bit-identical to base R's ^ at its special cases", {
   want <- na_merged(suppressWarnings(p$x^p$y), p$x, p$y)
   want[p$x %in% 1 | p$y %in% 0] <- 1
   # Bit-identical where base R has a special case; elsewhere both call a
-  # pow within 1 ULP.
+  # pow within 1 ULP. Base R's products for x^3 and x^4 are new in R 4.6.0;
+  # before that it calls pow there too.
+  products <- getRversion() >= "4.6.0"
   special <- is.na(p$x) | is.na(p$y) | !is.finite(p$x) | !is.finite(p$y) | p$x %in% c(0, 1) |
-    p$y %in% c(0, 2) | (p$y %in% c(3, 4) & abs(p$x) <= 11)
+    p$y %in% c(0, 2) | (products & p$y %in% c(3, 4) & abs(p$x) <= 11)
   expect_tiers_give(want[special], simd_pow, p$x[special], p$y[special])
   expect_tiers_close(simd_pow, p$x, p$y, ulps = 2)
   for (tier in tiers_to_test()) {
@@ -128,9 +130,12 @@ test_that("simd_pow() is bit-identical to base R's ^ at its special cases", {
     c(-0, -0, -0, -0, -Inf, -2, -Inf, -Inf, -Inf, -2, -2),
     c(3, -1, 0.5, -2, 0.5, Inf, 3, 2, -3, 3, 2)
   )
-  # x^2, x^3 and x^4 for |x| <= 11 are products, as base R computes them.
+  # x^2, x^3 and x^4 for |x| <= 11 are products, as base R (>= 4.6.0)
+  # computes them.
   x <- math_random(500, -11, 11)
-  for (k in 2:4) expect_tiers_give(x^k, simd_pow, x, k)
+  expect_tiers_give(x * x * x, simd_pow, x, 3)
+  expect_tiers_give(x * x * x * x, simd_pow, x, 4)
+  if (products) for (k in 2:4) expect_tiers_give(x^k, simd_pow, x, k)
   y <- math_random(500, -11, 11, seed = 2L)
   expect_tiers_give(y * y, simd_pow, y, 2)
   expect_tiers_give(c(1, 1, 1, 1), simd_pow, c(NA, NaN, Inf, 1), c(0, 0, 0, NA))

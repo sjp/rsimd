@@ -31,7 +31,9 @@ SIMD instructions. They correspond to \code{Pow}, \code{Cbrt},
 }
 \details{
 \code{simd_pow(x, y)} follows base R's \code{x^y} exactly: \code{x^2} is
-\code{x * x}, \code{x^3} and \code{x^4} are products for \code{|x| <= 11},
+\code{x * x}, \code{x^3} and \code{x^4} are products for \code{|x| <= 11}
+(as in R >= 4.6.0; older R calls \code{pow()} there, which can differ
+by 1 ULP),
 \code{1^y} and \code{x^0} are 1 for every \code{x} and \code{y}, even
 \code{NA} and \code{NaN}, \code{0^y} is \code{0} for \code{y > 0} and
 \code{Inf} for \code{y < 0} (also for \code{-0}), and infinite operands
