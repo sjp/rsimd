@@ -257,9 +257,15 @@ test_that("general powers, log with a base and atan2 are within the bounds", {
         # Windows: the polar form of base R's power calls pow, sin and cos,
         # which R.dll and this package's DLL need not take from the same
         # library, so the none tier matches base R only within the bound.
-        expect_null(cm_mismatch(none$pow, z^w, cm_tol("pow", fast) * scale, z, zeros = FALSE),
-          label = paste("none pow", acc)
-        )
+        # Nor need they keep the NA payload through those calls: for an NA
+        # power one gives NA and the other NaN.
+        nan_for_na <- function(v) {
+          na <- function(x) ifelse(is.na(x), NaN, x)
+          complex(real = na(Re(v)), imaginary = na(Im(v)))
+        }
+        tol <- cm_tol("pow", fast) * scale
+        m <- cm_mismatch(nan_for_na(none$pow), nan_for_na(z^w), tol, z, zeros = FALSE)
+        expect_null(m, label = paste("none pow", acc))
       }
       expect_true(bit_identical(none$logb, suppressWarnings(log(z, w))))
       expect_true(bit_identical(none$atan2, suppressWarnings(atan2(z, w))))
