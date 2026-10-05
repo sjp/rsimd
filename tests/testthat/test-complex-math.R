@@ -383,6 +383,14 @@ test_that("without a matching multiply or divide variant, powers stay exact", {
   w <- with_seed(34L, complex(real = stats::rnorm(length(z)), imaginary = stats::rnorm(length(z))))
   old <- .debug_c128_variants(c(-1L, -1L, 0L, -1L, -1L))
   on.exit(.debug_c128_variants(old))
+  # The operators are then the package compiler's; when that is not the
+  # compiler that built R (clang against a GCC-built R), they round
+  # differently from base R's, which the load-time probe would have noticed.
+  same_ops <- simd_with_impl(
+    "none",
+    bit_identical(simd_mul(z, w), z * w) && bit_identical(simd_div(1, z), 1 / z)
+  )
+  if (!same_ops) skip("this compiler's complex operators are not base R's")
   none <- simd_with_impl("none", list(
     logb = suppressWarnings(simd_log(z, w)), atan2 = suppressWarnings(simd_atan2(z, w))
   ))

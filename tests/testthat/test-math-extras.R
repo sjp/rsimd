@@ -267,7 +267,13 @@ test_that("the approximations are exact for special values and keep missing valu
     expect_identical(suppressWarnings(simd_rsqrt_approx(c(-1, -Inf, -5e-324))), c(NaN, NaN, NaN))
     expect_no_warning(simd_recip_approx(c(0, NA, NaN, Inf)))
   })
-  expect_tiers_give(c(0.5, NA, Inf), simd_recip_approx, c(2L, NA, 0L))
+  # 2 is in range, so only within the bound: the hardware estimates (RCPPS,
+  # FRECPE) need not be exact even for powers of two.
+  for_each_tier(function(tier) {
+    r <- simd_recip_approx(c(2L, NA, 0L))
+    expect_identical(r[2:3], c(NA, Inf), info = tier)
+    expect_true(abs(r[1] * 2 - 1) <= 2^-22, info = tier)
+  })
   # Every length, so every tail.
   for (n in edge_lengths()) {
     v <- rep_len(c(3, 1e-308, 7, -0.25), n)

@@ -9,8 +9,9 @@
  * This file is compiled with R's compiler flags rather than a tier's (in
  * particular with the compiler's default floating-point contraction), as
  * base R's own file is, so the same expressions round the same way.
- * Products in whole-number powers use the multiply chosen at load time
- * (rsimd_c128_arith), which reproduces base R's NA and NaN results.
+ * Products and quotients in whole-number powers use the multiply and divide
+ * chosen at load time (rsimd_c128_arith), as the kernels do, which
+ * reproduce base R's results whichever compiler built R.
  *
  * acosh is the exception: base R's acosh(z) is acos(z) * i, which is the
  * negative of the principal value wherever its real part is negative (the
@@ -40,19 +41,33 @@ static void from_c99(double complex z, Rcomplex *out) {
 
 /* ---- Base R's functions --------------------------------------------------- */
 
-/* z * w with base R's multiply. */
-static double complex cmul(double complex z, double complex w) {
+/* z * w and z / w with base R's operators, as the kernels compute them:
+   the load-time variant's formula (formula_c128, compiled without
+   contraction), and mul1 or div1 where that gives a NaN part. mul1 and
+   div1 alone are this compiler's operators, which round differently from
+   base R's when R was built by another compiler. */
+static double complex carith(int op, double complex z, double complex w) {
+  const rsimd_c128_arith *ar = rsimd_c128_arith_get();
+  const int v1 = op == RSIMD_EW_MUL ? ar->mul_re : ar->div;
   Rcomplex a, b, r;
   from_c99(z, &a);
   from_c99(w, &b);
-  rsimd_c128_arith_get()->mul1(&a, &b, &r);
+  if (op == RSIMD_EW_MUL ? v1 != RSIMD_CMUL_SCALAR : v1 != RSIMD_CDIV_SCALAR) {
+    rsimd_active->formula_c128(op, v1, ar->mul_im, &a, &b, 1, &r);
+    if (!isnan(r.r) && !isnan(r.i)) return to_c99(&r);
+  }
+  (op == RSIMD_EW_MUL ? ar->mul1 : ar->div1)(&a, &b, &r);
   return to_c99(&r);
+}
+
+static double complex cmul(double complex z, double complex w) {
+  return carith(RSIMD_EW_MUL, z, w);
 }
 
 static double complex R_cpow_n(double complex X, int k) {
   if (k == 0) return (double complex) 1.;
   else if (k == 1) return X;
-  else if (k < 0) return 1. / R_cpow_n(X, -k);
+  else if (k < 0) return carith(RSIMD_EW_DIV, 1., R_cpow_n(X, -k));
   else { /* k > 0 */
     double complex z = (double complex) 1.;
     while (k > 0) {
