@@ -18,6 +18,9 @@
  * Byte ops (bit_u8) act on 8-bit values and never see NA: shifts lose the
  * bits shifted out (a shift by 8 gives 0), rotates are 8-bit rotates, and
  * the counts are in 0..8. The vector tiers compute bytes in 32-bit lanes.
+ *
+ * The bit Hamming distances (hamming_bits_i32, hamming_bits_u8) add up the
+ * population counts of x ^ y, NA by its bit pattern.
  */
 
 #include "logical.inc.h"
@@ -25,6 +28,20 @@
 /* ---- Scalar forms: the none tier, and references ------------------------- */
 
 static inline int32_t rsimd_popcnt_1(uint32_t x) { return rsimd_popcount32(x); }
+
+/* The scalar bit Hamming loops over elements [i, n) (flags
+   RSIMD_EW_SCALAR(k)): the none tier's kernels and the vector tiers'
+   tails. */
+static inline void rsimd_ham_bits_i32_from(const int *x, const int *y, R_xlen_t i, R_xlen_t n,
+                                           int flags, rsimd_reduce_result *r) {
+  const R_xlen_t sx = RSIMD_LGL_SCALAR(0) ? 0 : 1, sy = RSIMD_LGL_SCALAR(1) ? 0 : 1;
+  for (; i < n; i++) r->i64 += rsimd_popcnt_1((uint32_t) x[i * sx] ^ (uint32_t) y[i * sy]);
+}
+static inline void rsimd_ham_bits_u8_from(const Rbyte *x, const Rbyte *y, R_xlen_t i, R_xlen_t n,
+                                          int flags, rsimd_reduce_result *r) {
+  const R_xlen_t sx = RSIMD_LGL_SCALAR(0) ? 0 : 1, sy = RSIMD_LGL_SCALAR(1) ? 0 : 1;
+  for (; i < n; i++) r->i64 += rsimd_popcnt_1((uint32_t) (x[i * sx] ^ y[i * sy]));
+}
 static inline int32_t rsimd_lzcnt_1(uint32_t x) {
   int32_t k = 0;
   if (x == 0) return 32;
@@ -182,6 +199,20 @@ void RSIMD_KERNEL(popcnt_sum_u8)(const Rbyte *x, R_xlen_t n, rsimd_reduce_result
 void RSIMD_KERNEL(popcnt_sum_u8)(const Rbyte *x, R_xlen_t n, rsimd_reduce_result *r) {
   R_xlen_t i;
   for (i = 0; i < n; i++) r->i64 += rsimd_popcnt_1(x[i]);
+}
+
+void RSIMD_KERNEL(hamming_bits_i32)(const int *x, const int *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r);
+void RSIMD_KERNEL(hamming_bits_i32)(const int *x, const int *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r) {
+  rsimd_ham_bits_i32_from(x, y, 0, n, flags, r);
+}
+
+void RSIMD_KERNEL(hamming_bits_u8)(const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags,
+                                   rsimd_reduce_result *r);
+void RSIMD_KERNEL(hamming_bits_u8)(const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags,
+                                   rsimd_reduce_result *r) {
+  rsimd_ham_bits_u8_from(x, y, 0, n, flags, r);
 }
 
 #else /* vector tiers */
@@ -466,6 +497,49 @@ void RSIMD_KERNEL(popcnt_sum_u8)(const Rbyte *x, R_xlen_t n, rsimd_reduce_result
     }
   }
   r->i64 += rsimd_vi32_reduce_add(acc);
+}
+
+/* The bit Hamming distance: popcounts of x ^ y in 32-bit lanes, the last
+   partial vector in scalar code. */
+RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(hamming_bits_)(const void *x, const void *y, R_xlen_t n,
+                                                     int flags, rsimd_reduce_result *r,
+                                                     const int bytes) {
+  const int sx = RSIMD_LGL_SCALAR(0), sy = RSIMD_LGL_SCALAR(1);
+  const int32_t *ix = (const int32_t *) x, *iy = (const int32_t *) y;
+  const Rbyte *bx = (const Rbyte *) x, *by = (const Rbyte *) y;
+  const rsimd_vi32 vx = rsimd_vi32_set1(bytes ? bx[0] : ix[0]),
+                   vy = rsimd_vi32_set1(bytes ? by[0] : iy[0]);
+  rsimd_vi32 acc = rsimd_vi32_zero();
+  ptrdiff_t i = 0, since = 0;
+  for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
+    rsimd_vi32 a = sx ? vx : bytes ? rsimd_vi32_loadu_u8(bx + i) : rsimd_vi32_loadu(ix + i);
+    rsimd_vi32 b = sy ? vy : bytes ? rsimd_vi32_loadu_u8(by + i) : rsimd_vi32_loadu(iy + i);
+    acc = rsimd_vi32_add(acc, rsimd_vi32_popcnt(rsimd_vi32_xor(a, b)));
+    if (++since == RSIMD_POPCNT_FLUSH) {
+      r->i64 += rsimd_vi32_reduce_add(acc);
+      acc = rsimd_vi32_zero();
+      since = 0;
+    }
+  }
+  r->i64 += rsimd_vi32_reduce_add(acc);
+  if (bytes) rsimd_ham_bits_u8_from(bx, by, i, n, flags, r);
+  else rsimd_ham_bits_i32_from(ix, iy, i, n, flags, r);
+}
+
+void RSIMD_KERNEL(hamming_bits_i32)(const int *x, const int *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r);
+void RSIMD_KERNEL(hamming_bits_i32)(const int *x, const int *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r) {
+  if (flags == 0) RSIMD_KERNEL(hamming_bits_)(x, y, n, 0, r, 0);
+  else RSIMD_KERNEL(hamming_bits_)(x, y, n, flags, r, 0);
+}
+
+void RSIMD_KERNEL(hamming_bits_u8)(const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags,
+                                   rsimd_reduce_result *r);
+void RSIMD_KERNEL(hamming_bits_u8)(const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags,
+                                   rsimd_reduce_result *r) {
+  if (flags == 0) RSIMD_KERNEL(hamming_bits_)(x, y, n, 0, r, 1);
+  else RSIMD_KERNEL(hamming_bits_)(x, y, n, flags, r, 1);
 }
 
 #undef RSIMD_POPCNT_FLUSH

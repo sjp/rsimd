@@ -39,7 +39,11 @@
  *   and, or, xor, not,       native   native   native   native   native
  *     shl, shr, rotl, rotr
  *   sar                      partial  partial  partial  partial  native
- *   popcount                 partial  partial  partial  native   native
+ *   popcount, hamming_bits   partial  partial  partial  native   native
+ *   is_normal, is_even,      SIMDe    native   native   native   native
+ *     is_odd, is_pow2,
+ *     hamming (64-bit
+ *     compares)
  *   lzcnt, tzcnt             partial  partial  partial  partial  native
  *   integer64 -> double      partial  partial  native   native   native
  *   double -> integer64      scalar   scalar   scalar   native*  native*
@@ -247,8 +251,16 @@ static inline int rsimd_cmp_i64_1(int op, int64_t a, int64_t b) {
 static inline int rsimd_pred_i64_1(int op, int64_t x) {
   switch (op) {
   case RSIMD_PRED_NA: return x == RSIMD_NA_I64;
-  case RSIMD_PRED_FINITE: return x != RSIMD_NA_I64;
+  case RSIMD_PRED_FINITE:
+  case RSIMD_PRED_WHOLE: return x != RSIMD_NA_I64;
   case RSIMD_PRED_NEGATIVE: return x < 0 && x != RSIMD_NA_I64;
+  case RSIMD_PRED_NORMAL: return x != 0 && x != RSIMD_NA_I64;
+  case RSIMD_PRED_EVEN: return x % 2 == 0 && x != RSIMD_NA_I64;
+  case RSIMD_PRED_ODD: return x % 2 != 0;
+  case RSIMD_PRED_POW2: return x > 0 && (x & (x - 1)) == 0;
+  case RSIMD_PRED_NAN:
+  case RSIMD_PRED_INFINITE:
+  case RSIMD_PRED_SUBNORMAL: return 0;
   default: return x == 0;
   }
 }
@@ -274,6 +286,28 @@ static inline int32_t rsimd_tzcnt64_1(uint64_t x) {
     k++;
   }
   return k;
+}
+
+/* The scalar Hamming loops over elements [i, n): the none tier's kernels
+   and the vector tiers' tails. rsimd_ham_i64_from returns 1 when it stops
+   at a missing pair (without na_rm). */
+static inline int rsimd_ham_i64_from(const void *x, const void *y, R_xlen_t i, R_xlen_t n,
+                                     int flags, rsimd_reduce_result *r, int na_rm) {
+  for (; i < n; i++) {
+    int64_t a = rsimd_i64_get(x, flags, 0, i, 1), b = rsimd_i64_get(y, flags, 1, i, 1);
+    if (rsimd_na2_i64(a, b)) {
+      r->saw_na = 1;
+      if (!na_rm) return 1;
+      continue;
+    }
+    r->i64 += a != b;
+  }
+  return 0;
+}
+static inline void rsimd_ham_bits_i64_from(const int64_t *x, const int64_t *y, R_xlen_t i,
+                                           R_xlen_t n, int flags, rsimd_reduce_result *r) {
+  const R_xlen_t sx = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, sy = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
+  for (; i < n; i++) r->i64 += rsimd_popcnt64_1((uint64_t) x[i * sx] ^ (uint64_t) y[i * sy]);
 }
 /* Bit op of int64 elements (uint64 patterns, SAR sign-propagating), without
    NA handling; a result pattern of 0x8000000000000000 is NA by itself. The
@@ -647,6 +681,20 @@ void RSIMD_KERNEL(popcnt_sum_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_res
     }
     r->i64 += rsimd_popcnt64_1((uint64_t) x[i]);
   }
+}
+
+void RSIMD_KERNEL(hamming_i64)(const void *x, const void *y, R_xlen_t n, int flags,
+                               rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(hamming_i64)(const void *x, const void *y, R_xlen_t n, int flags,
+                               rsimd_reduce_result *r, const rsimd_opts *o) {
+  rsimd_ham_i64_from(x, y, 0, n, flags, r, o->na_rm);
+}
+
+void RSIMD_KERNEL(hamming_bits_i64)(const int64_t *x, const int64_t *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r);
+void RSIMD_KERNEL(hamming_bits_i64)(const int64_t *x, const int64_t *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r) {
+  rsimd_ham_bits_i64_from(x, y, 0, n, flags, r);
 }
 
 /* The integer64 conversions of the convert slot (convert.inc.c). */
@@ -1260,12 +1308,27 @@ void RSIMD_KERNEL(cmp_i64)(int op, const void *x, const void *y, R_xlen_t n, int
 }
 
 RSIMD_ALWAYS_INLINE rsimd_mi64 rsimd_pred_vi64(const int op, rsimd_vi64 v) {
+  const rsimd_vi64 zero = rsimd_vi64_zero(), one = rsimd_vi64_set1(1);
   switch (op) {
   case RSIMD_PRED_NA: return rsimd_vi64_is_na(v);
-  case RSIMD_PRED_FINITE: return rsimd_mi64_not(rsimd_vi64_is_na(v));
+  case RSIMD_PRED_FINITE:
+  case RSIMD_PRED_WHOLE: return rsimd_mi64_not(rsimd_vi64_is_na(v));
   case RSIMD_PRED_NEGATIVE:
-    return rsimd_mi64_andnot(rsimd_vi64_is_na(v), rsimd_vi64_cmp_lt(v, rsimd_vi64_zero()));
-  default: return rsimd_vi64_cmp_eq(v, rsimd_vi64_zero());
+    return rsimd_mi64_andnot(rsimd_vi64_is_na(v), rsimd_vi64_cmp_lt(v, zero));
+  case RSIMD_PRED_NORMAL:
+    return rsimd_mi64_not(rsimd_mi64_or(rsimd_vi64_is_na(v), rsimd_vi64_cmp_eq(v, zero)));
+  /* NA (INT64_MIN) has the low bit of an even number. */
+  case RSIMD_PRED_EVEN:
+    return rsimd_mi64_andnot(rsimd_vi64_is_na(v),
+                             rsimd_vi64_cmp_eq(rsimd_vi64_and(v, one), zero));
+  case RSIMD_PRED_ODD: return rsimd_vi64_cmp_eq(rsimd_vi64_and(v, one), one);
+  case RSIMD_PRED_POW2:
+    return rsimd_mi64_and(rsimd_vi64_cmp_gt(v, zero),
+                          rsimd_vi64_cmp_eq(rsimd_vi64_and(v, rsimd_vi64_sub(v, one)), zero));
+  case RSIMD_PRED_NAN:
+  case RSIMD_PRED_INFINITE:
+  case RSIMD_PRED_SUBNORMAL: return rsimd_mi64_none();
+  default: return rsimd_vi64_cmp_eq(v, zero);
   }
 }
 
@@ -1298,8 +1361,16 @@ int RSIMD_KERNEL(pred_i64)(int op, const int64_t *x, R_xlen_t n, int mode, int *
 int RSIMD_KERNEL(pred_i64)(int op, const int64_t *x, R_xlen_t n, int mode, int *out) {
   switch (op) {
   case RSIMD_PRED_NA: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_NA, x, n, mode, out);
-  case RSIMD_PRED_FINITE: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_FINITE, x, n, mode, out);
+  case RSIMD_PRED_FINITE:
+  case RSIMD_PRED_WHOLE: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_FINITE, x, n, mode, out);
   case RSIMD_PRED_NEGATIVE: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_NEGATIVE, x, n, mode, out);
+  case RSIMD_PRED_NORMAL: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_NORMAL, x, n, mode, out);
+  case RSIMD_PRED_EVEN: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_EVEN, x, n, mode, out);
+  case RSIMD_PRED_ODD: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_ODD, x, n, mode, out);
+  case RSIMD_PRED_POW2: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_POW2, x, n, mode, out);
+  case RSIMD_PRED_NAN:
+  case RSIMD_PRED_INFINITE:
+  case RSIMD_PRED_SUBNORMAL: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_NAN, x, n, mode, out);
   default: return RSIMD_KERNEL(pred_i64_)(RSIMD_PRED_ZERO, x, n, mode, out);
   }
 }
@@ -1557,6 +1628,69 @@ RSIMD_INLINE int RSIMD_KERNEL(convert_i64_)(int op, int mode, const void *x, R_x
   (void) flags;
   (void) check;
   return st;
+}
+
+/* ---- Hamming distance ------------------------------------------------------ */
+
+/* Lane counters folded into r every RSIMD_HAMMING_BLOCK vectors; the
+   last partial vector in scalar code. */
+RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(hamming_i64_)(const void *x, const void *y, R_xlen_t n,
+                                                    int flags, rsimd_reduce_result *r,
+                                                    int na_rm) {
+  const rsimd_vi64 bc0 = rsimd_i64_bcast(x, flags, 0, 1), bc1 = rsimd_i64_bcast(y, flags, 1, 1);
+  ptrdiff_t i = 0;
+  while (i + RSIMD_LANES_64 <= n) {
+    const ptrdiff_t end = (n - i) / RSIMD_LANES_64 > RSIMD_HAMMING_BLOCK
+                              ? i + RSIMD_HAMMING_BLOCK * RSIMD_LANES_64
+                              : n;
+    rsimd_vi64 d = rsimd_vi64_zero(), m = rsimd_vi64_zero();
+    int64_t missing;
+    for (; i + RSIMD_LANES_64 <= end; i += RSIMD_LANES_64) {
+      rsimd_vi64 a = rsimd_i64_ld(x, flags, 0, bc0, i, 1), b = rsimd_i64_ld(y, flags, 1, bc1, i, 1);
+      rsimd_mi64 na = rsimd_vi64_na2(a, b);
+      d = rsimd_vi64_inc(d, rsimd_mi64_not(rsimd_mi64_or(rsimd_vi64_cmp_eq(a, b), na)));
+      m = rsimd_vi64_inc(m, na);
+    }
+    missing = rsimd_vi64_reduce_add(m);
+    r->i64 += rsimd_vi64_reduce_add(d);
+    if (missing > 0) {
+      r->saw_na = 1;
+      if (!na_rm) return;
+    }
+  }
+  rsimd_ham_i64_from(x, y, i, n, flags, r, na_rm);
+}
+
+void RSIMD_KERNEL(hamming_i64)(const void *x, const void *y, R_xlen_t n, int flags,
+                               rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(hamming_i64)(const void *x, const void *y, R_xlen_t n, int flags,
+                               rsimd_reduce_result *r, const rsimd_opts *o) {
+  if (flags == 0) RSIMD_KERNEL(hamming_i64_)(x, y, n, 0, r, o->na_rm);
+  else RSIMD_KERNEL(hamming_i64_)(x, y, n, flags, r, o->na_rm);
+}
+
+/* Popcounts of x ^ y summed in 64-bit lanes (which cannot overflow). */
+RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(hamming_bits_i64_)(const int64_t *x, const int64_t *y,
+                                                         R_xlen_t n, int flags,
+                                                         rsimd_reduce_result *r) {
+  const int sx = (flags & RSIMD_EW_SCALAR(0)) != 0, sy = (flags & RSIMD_EW_SCALAR(1)) != 0;
+  const rsimd_vi64 vx = rsimd_vi64_set1(x[0]), vy = rsimd_vi64_set1(y[0]);
+  rsimd_vi64 acc = rsimd_vi64_zero();
+  ptrdiff_t i = 0;
+  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
+    rsimd_vi64 a = sx ? vx : rsimd_vi64_loadu(x + i), b = sy ? vy : rsimd_vi64_loadu(y + i);
+    acc = rsimd_vi64_add(acc, rsimd_vi64_popcnt(rsimd_vi64_xor(a, b)));
+  }
+  r->i64 += rsimd_vi64_reduce_add(acc);
+  rsimd_ham_bits_i64_from(x, y, i, n, flags, r);
+}
+
+void RSIMD_KERNEL(hamming_bits_i64)(const int64_t *x, const int64_t *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r);
+void RSIMD_KERNEL(hamming_bits_i64)(const int64_t *x, const int64_t *y, R_xlen_t n, int flags,
+                                    rsimd_reduce_result *r) {
+  if (flags == 0) RSIMD_KERNEL(hamming_bits_i64_)(x, y, n, 0, r);
+  else RSIMD_KERNEL(hamming_bits_i64_)(x, y, n, flags, r);
 }
 
 #undef RSIMD_I64_LOOP

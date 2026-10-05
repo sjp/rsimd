@@ -168,8 +168,10 @@ Arithmetic & \code{simd\_add}, \code{simd\_mul}, \code{simd\_idiv},
   \code{\_wrap} forms (\code{?simd\_add}, \code{?simd\_fma},
   \code{?simd\_pmin}, \code{?simd\_round}) \\
 Predicates, logic & \code{simd\_is\_na}, \code{simd\_is\_finite},
-  \code{simd\_eq}, \code{simd\_lt}, \code{simd\_and}, \code{simd\_any}
-  (\code{?simd\_is\_na}, \code{?simd\_eq}, \code{?simd\_and}) \\
+  \code{simd\_is\_whole}, \code{simd\_is\_pow2}, \code{simd\_eq},
+  \code{simd\_lt}, \code{simd\_hamming}, \code{simd\_and},
+  \code{simd\_any} (\code{?simd\_is\_na}, \code{?simd\_eq},
+  \code{?simd\_hamming}, \code{?simd\_and}) \\
 Bits & \code{simd\_bit\_and}, \code{simd\_shl}, \code{simd\_popcount}
   (\code{?simd\_bit\_and}, \code{?simd\_popcount}) \\
 Conversions & \code{simd\_as\_double}, \code{simd\_as\_integer},
@@ -279,7 +281,8 @@ two parts separately:
 \item the predicates \code{simd\_is\_na()}, \code{simd\_is\_nan()},
   \code{simd\_is\_finite()} and \code{simd\_is\_infinite()}, with their
   \code{\_any} and \code{\_all} forms, and \code{simd\_any\_na()},
-  \code{simd\_count\_na()} and \code{simd\_which\_na()}.
+  \code{simd\_count\_na()} and \code{simd\_which\_na()};
+\item \code{simd\_hamming()}, where a pair differs when either part does.
 \end{itemize}
 
 A double, integer or logical operand of \code{simd\_add()} or

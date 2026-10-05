@@ -47,6 +47,8 @@ SEXP C_simd_round_digits(SEXP x, SEXP digits);
 /* predicates and comparisons */
 SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode);
 SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op);
+SEXP C_simd_hamming(SEXP x, SEXP y, SEXP na_rm);
+SEXP C_simd_hamming_bits(SEXP x, SEXP y);
 
 /* logical and bitwise ops */
 SEXP C_simd_logic(SEXP x, SEXP y, SEXP op);

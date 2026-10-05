@@ -16,7 +16,8 @@
  * logical, bitwise and conversion kernels (src/kernels/predicates.inc.c,
  * compare.inc.c, bitwise.inc.c, convert.inc.c), against the scalar forms
  * those files define for the none tier, and so are the complex kernels
- * (src/kernels/complex.inc.c). On tiers built with SLEEF the
+ * (src/kernels/complex.inc.c) and the Hamming kernels (compare.inc.c,
+ * bitwise.inc.c, int64.inc.c, complex.inc.c, against plain loops). On tiers built with SLEEF the
  * elementary-function wrappers (accurate and fast) are compared with long
  * double libm, and the elementary-function kernels (src/kernels/math.inc.c,
  * in both accuracy modes) with the scalar forms that file defines for the
@@ -27,8 +28,10 @@
 
 #include <float.h>
 #include <stdio.h>
-/* Flush the lane counts of count_na_i32_() every two iterations. */
+/* Flush the lane counts of count_na_i32_() every two iterations, and
+   those of the Hamming kernels every two vectors. */
 #define RSIMD_COUNT_BLOCK 2
+#define RSIMD_HAMMING_BLOCK 2
 #include "kernels/common.inc.h"
 #include "kernels/reduce.inc.c"
 #include "kernels/scan.inc.c"
@@ -2368,8 +2371,10 @@ static double fcv[N + 1];                /* boundaries of the conversions */
 static int32_t icv[N + 1];               /* around 0..255, with NA */
 static uint8_t ua[N + 1], ub[N + 1], uout[N + 1], uref[N + 1];
 static int32_t pa[N + 1];                /* any/all decided by the last element */
+static int32_t pk[N + 1];                /* number classes: powers of two, odd, even */
 #ifndef RSIMD_NO_F64_SIMD
 static double pf[N + 1];
+static double pcl[N + 1];                /* number classes: subnormal, whole, 2^k ... */
 #endif
 
 static void init_logical_inputs(void) {
@@ -2380,6 +2385,17 @@ static void init_logical_inputs(void) {
     from_bits(UINT64_C(0x7FF8000000000000)), from_bits(UINT64_C(0x7FF00000000007A2)),
     4.9e-324, -4.9e-324, 65535.5, -255.5, 2.5, 3e9, 2147483904.0, -2147483904.0, 6442450944.0};
   const int nc = (int) (sizeof cvals / sizeof cvals[0]);
+  const int32_t kvals[] = {0, 1, -1, 2, -2, RSIMD_NA_I32, INT32_MAX, -INT32_MAX, 1 << 30, 6, 7,
+                           3, 4, 8, 12, 16, -16, 1 << 20, (1 << 20) + 1, 64};
+  const int nk = (int) (sizeof kvals / sizeof kvals[0]);
+#ifndef RSIMD_NO_F64_SIMD
+  const double clvals[] = {1, 2, 0.5, 3, -4, 4.9e-324, DBL_MIN, DBL_MIN / 2, 0.0, -0.0,
+                           HUGE_VAL, -HUGE_VAL, rsimd_na_real(), from_bits(UINT64_C(0x7FF8000000000000)),
+                           0x1p1023, 0x1p53, 0x1p53 + 2, 1.5, -4.9e-324, DBL_MAX, -3, 7,
+                           0x1p52 + 1, 0x1p52 + 0.5, -0x1p-1022, 0x1p-1060, 0x1.8p-1060, 1024,
+                           -1024, 0.25, 6, 2.5, 0x1.fffffffffffffp52, 1e300, 0x1p-1074 * 3};
+  const int ncl = (int) (sizeof clvals / sizeof clvals[0]);
+#endif
   int i;
   for (i = 0; i < N; i++) {
     if (i < 2 * nc) {
@@ -2389,6 +2405,10 @@ static void init_logical_inputs(void) {
       fcv[i] = ldexp(m, (int) (next_rand() % 72));
     }
     icv[i] = i % 11 == 5 ? RSIMD_NA_I32 : (int32_t) (next_rand() % 400) - 70;
+    pk[i] = kvals[(i * 5) % nk];
+#ifndef RSIMD_NO_F64_SIMD
+    pcl[i] = clvals[(i * 7) % ncl];
+#endif
     ua[i] = (uint8_t) (i * 37 + 11);
     ub[i] = i % 9 == 0 ? 0 : (uint8_t) next_rand();
   }
@@ -2437,10 +2457,9 @@ static void test_logical(ptrdiff_t n) {
   /* Predicates, on inputs whose any/all is decided by the last element
      too (one NA or zero at the end of non-missing, non-zero values). */
   for (j = 0; j < n; j++) pa[j] = j + 1 == n ? (n % 2 ? RSIMD_NA_I32 : 0) : 3;
-  for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_ZERO; op++) {
-    if (op == RSIMD_PRED_NAN || op == RSIMD_PRED_INFINITE) continue;
-    for (f = 0; f < 2; f++) {
-      const int32_t *x = f ? pa : ia;
+  for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_POW2; op++) {
+    for (f = 0; f < 3; f++) {
+      const int32_t *x = f == 0 ? ia : f == 1 ? pa : pk;
       for (j = 0; j < n; j++) iref[j] = rsimd_pred_i32_1(op, x[j]);
       for (mode = RSIMD_PRED_ELT; mode <= RSIMD_PRED_ALL; mode++) {
         reset_out();
@@ -2455,9 +2474,9 @@ static void test_logical(ptrdiff_t n) {
   for (j = 0; j < n; j++) {
     pf[j] = j + 1 == n ? (n % 3 == 0 ? rsimd_na_real() : n % 3 == 1 ? -0.0 : HUGE_VAL) : 2.5;
   }
-  for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_ZERO; op++) {
-    for (f = 0; f < 3; f++) {
-      const double *x = f == 0 ? fa : f == 1 ? fcv : pf;
+  for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_POW2; op++) {
+    for (f = 0; f < 4; f++) {
+      const double *x = f == 0 ? fa : f == 1 ? fcv : f == 2 ? pf : pcl;
       for (j = 0; j < n; j++) iref[j] = rsimd_pred_f64_1(op, x[j]);
       for (mode = RSIMD_PRED_ELT; mode <= RSIMD_PRED_ALL; mode++) {
         reset_out();
@@ -3072,7 +3091,7 @@ static void test_int64(ptrdiff_t n) {
         check_i32(what, n, iout, iref);
       }
     }
-    for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_ZERO; op++) {
+    for (op = RSIMD_PRED_NA; op <= RSIMD_PRED_POW2; op++) {
       int pm;
       if (op == RSIMD_PRED_NAN || op == RSIMD_PRED_INFINITE) continue;
       for (pm = RSIMD_PRED_ELT; pm <= RSIMD_PRED_ALL; pm++) {
@@ -3155,11 +3174,160 @@ static void test_int64(ptrdiff_t n) {
   }
 }
 
+/* ---- Hamming distances ----------------------------------------------------- */
+
+/* Operands from few values, so that pairs are often equal: clean (no
+   missing value) and dirty (about one in 13 missing) variants. */
+static double hf[2][2][N + 1];
+static int32_t hi[2][2][N + 1];
+static int64_t hl[2][2][N + 1];
+static Rcomplex hz[2][2][N + 1];
+
+static void init_hamming_inputs(void) {
+  const double fv[] = {1.0, 2.0, -0.0, 0.0, 3.5};
+  const int32_t iv[] = {1, 2, 0, -1, 7};
+  const int64_t lv[] = {1, 2, 0, INT64_MAX, -INT64_MAX};
+  int d, k, i;
+  for (d = 0; d < 2; d++) {
+    for (k = 0; k < 2; k++) {
+      for (i = 0; i <= N; i++) {
+        unsigned r = (unsigned) (next_rand() % 65), a = r % 5;
+        int miss = d && r % 13 == 0;
+        double nan = r % 2 ? rsimd_na_real() : from_bits(UINT64_C(0x7FF8000000000000));
+        hf[d][k][i] = miss ? nan : fv[a];
+        hi[d][k][i] = miss ? RSIMD_NA_I32 : iv[a];
+        hl[d][k][i] = miss ? RSIMD_NA_I64 : lv[a];
+        hz[d][k][i].r = miss && r % 3 == 0 ? nan : fv[a];
+        hz[d][k][i].i = miss && r % 3 != 0 ? nan : fv[(r / 5) % 2];
+      }
+    }
+  }
+}
+
+/* r against the reference count (want, missing): the missing flag
+   always, the count unless the kernel may have stopped at a missing
+   pair. */
+static void check_hamming(const char *what, ptrdiff_t n, const rsimd_reduce_result *r, long want,
+                          int missing, int na_rm) {
+  check_int(what, n, 0, r->saw_na, missing);
+  if (!missing || na_rm) check_int(what, n, 1, (long) r->i64, want);
+}
+
+static void test_hamming(ptrdiff_t n) {
+  static const rsimd_opts keep = {0, 1, 0}, rm = {1, 1, 0};
+  rsimd_reduce_result r;
+  char what[96];
+  ptrdiff_t j;
+  int d, f, narm;
+  if (n == 0) return;
+  for (d = 0; d < 2; d++) {
+    for (narm = 0; narm < 2; narm++) {
+      const rsimd_opts *o = narm ? &rm : &keep;
+      /* int32 operands, each broadcast or not */
+      for (f = 0; f < 3; f++) {
+        long want = 0;
+        int miss = 0;
+        for (j = 0; j < n; j++) {
+          int32_t a = hi[d][0][f & 1 ? 0 : j], b = hi[d][1][f & 2 ? 0 : j];
+          if (a == RSIMD_NA_I32 || b == RSIMD_NA_I32) miss = 1;
+          else want += a != b;
+        }
+        memset(&r, 0, sizeof r);
+        RSIMD_KERNEL(hamming_i32)(hi[d][0], hi[d][1], n, f, &r, o);
+        snprintf(what, sizeof what, "hamming_i32 flags %d input %d na_rm %d", f, d, narm);
+        check_hamming(what, n, &r, want, miss, narm);
+      }
+      /* doubles, with int32 operands (flags bits 3-4) */
+#ifndef RSIMD_SKIP_hamming_f64
+      for (f = 0; f < 32; f++) {
+        const int sc = f & 3, ti = f >> 3;
+        const void *x = ti & 1 ? (const void *) hi[d][0] : (const void *) hf[d][0];
+        const void *y = ti & 2 ? (const void *) hi[d][1] : (const void *) hf[d][1];
+        long want = 0;
+        int miss = 0;
+        if (sc == 3 || (f & 4)) continue;
+        for (j = 0; j < n; j++) {
+          double a = ew_get(x, ti & 1, sc & 1, j), b = ew_get(y, ti & 2, sc & 2, j);
+          if (isnan(a) || isnan(b)) miss = 1;
+          else want += a != b;
+        }
+        memset(&r, 0, sizeof r);
+        RSIMD_KERNEL(hamming_f64)(x, y, n, f, &r, o);
+        snprintf(what, sizeof what, "hamming_f64 flags %d input %d na_rm %d", f, d, narm);
+        check_hamming(what, n, &r, want, miss, narm);
+      }
+#endif
+      /* integer64, with int32 operands */
+      for (f = 0; f < 32; f++) {
+        const int sc = f & 3, ti = f >> 3;
+        const void *x = ti & 1 ? (const void *) hi[d][0] : (const void *) hl[d][0];
+        const void *y = ti & 2 ? (const void *) hi[d][1] : (const void *) hl[d][1];
+        long want = 0;
+        int miss = 0;
+        if (sc == 3 || (f & 4)) continue;
+        for (j = 0; j < n; j++) {
+          int64_t a = rsimd_i64_get(x, f, 0, j, 1), b = rsimd_i64_get(y, f, 1, j, 1);
+          if (a == RSIMD_NA_I64 || b == RSIMD_NA_I64) miss = 1;
+          else want += a != b;
+        }
+        memset(&r, 0, sizeof r);
+        RSIMD_KERNEL(hamming_i64)(x, y, n, f, &r, o);
+        snprintf(what, sizeof what, "hamming_i64 flags %d input %d na_rm %d", f, d, narm);
+        check_hamming(what, n, &r, want, miss, narm);
+      }
+      /* complex */
+#ifndef RSIMD_SKIP_hamming_c128
+      for (f = 0; f < 3; f++) {
+        long want = 0;
+        int miss = 0;
+        for (j = 0; j < n; j++) {
+          Rcomplex a = hz[d][0][f & 1 ? 0 : j], b = hz[d][1][f & 2 ? 0 : j];
+          if (isnan(a.r) || isnan(a.i) || isnan(b.r) || isnan(b.i)) miss = 1;
+          else want += a.r != b.r || a.i != b.i;
+        }
+        memset(&r, 0, sizeof r);
+        RSIMD_KERNEL(hamming_c128)(hz[d][0], hz[d][1], n, f, &r, o);
+        snprintf(what, sizeof what, "hamming_c128 flags %d input %d na_rm %d", f, d, narm);
+        check_hamming(what, n, &r, want, miss, narm);
+      }
+#endif
+    }
+  }
+  /* bytes and bit distances, each operand broadcast or not */
+  for (f = 0; f < 3; f++) {
+    long want = 0, wb = 0, wi = 0, wl = 0;
+    for (j = 0; j < n; j++) {
+      uint8_t a = ua[f & 1 ? 0 : j], b = ub[f & 2 ? 0 : j];
+      want += a != b;
+      wb += rsimd_popcount32((uint32_t) (a ^ b));
+      wi += rsimd_popcount32((uint32_t) ia[f & 1 ? 0 : j] ^ (uint32_t) ib[f & 2 ? 0 : j]);
+      wl += rsimd_popcnt64_1((uint64_t) la[f & 1 ? 0 : j] ^ (uint64_t) lb[f & 2 ? 0 : j]);
+    }
+    snprintf(what, sizeof what, "hamming_u8 flags %d", f);
+    memset(&r, 0, sizeof r);
+    RSIMD_KERNEL(hamming_u8)(ua, ub, n, f, &r);
+    check_hamming(what, n, &r, want, 0, 0);
+    snprintf(what, sizeof what, "hamming_bits_u8 flags %d", f);
+    memset(&r, 0, sizeof r);
+    RSIMD_KERNEL(hamming_bits_u8)(ua, ub, n, f, &r);
+    check_hamming(what, n, &r, wb, 0, 0);
+    snprintf(what, sizeof what, "hamming_bits_i32 flags %d", f);
+    memset(&r, 0, sizeof r);
+    RSIMD_KERNEL(hamming_bits_i32)(ia, ib, n, f, &r);
+    check_hamming(what, n, &r, wi, 0, 0);
+    snprintf(what, sizeof what, "hamming_bits_i64 flags %d", f);
+    memset(&r, 0, sizeof r);
+    RSIMD_KERNEL(hamming_bits_i64)(la, lb, n, f, &r);
+    check_hamming(what, n, &r, wl, 0, 0);
+  }
+}
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
   init_logical_inputs();
   init_i64_inputs();
+  init_hamming_inputs();
 #ifndef RSIMD_NO_F64_SIMD
   init_mod_inputs();
 #endif
@@ -3183,6 +3351,7 @@ int main(void) {
 #ifndef RSIMD_NO_F64_SIMD
     test_complex(n);
 #endif
+    test_hamming(n);
   }
   test_bytes_exhaustive();
 #ifndef RSIMD_NO_F64_SIMD

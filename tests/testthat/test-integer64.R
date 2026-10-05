@@ -158,6 +158,89 @@ test_that("predicates of integer64", {
   }
 })
 
+test_that("number classes of integer64 follow their values; NA is in none", {
+  is_na <- function(x) i64_str(x) %in% NA
+  ref <- function(x) {
+    b <- i64_bits(x)
+    na <- is_na(x)
+    nz <- colSums(b) > 0
+    list(
+      normal = nz & !na, subnormal = rep(FALSE, length(x)), whole = !na,
+      even = b[1, ] == 0 & !na, odd = b[1, ] == 1,
+      pow2 = colSums(b) == 1 & b[64, ] == 0
+    )
+  }
+  x <- i64_dec(c(
+    "0", "1", "-1", "2", "-2", NA, "9223372036854775807", "-9223372036854775807",
+    "4611686018427387904", "4294967296", "4294967297", "6", "7", "-4611686018427387904"
+  ))
+  r <- ref(x)
+  expect_identical(r$pow2, c(FALSE, TRUE, FALSE, TRUE, rep(FALSE, 4), TRUE, TRUE, rep(FALSE, 4)))
+  for (op in names(r)) {
+    f <- get(paste0("simd_is_", op))
+    expect_tiers_give(r[[op]], f, x)
+    expect_tiers_give(any(r[[op]]), get(paste0("simd_is_", op, "_any")), x)
+    expect_tiers_give(all(r[[op]]), get(paste0("simd_is_", op, "_all")), x)
+  }
+  for (n in lens) {
+    x <- rand_i64(n, seed = n + 11L)
+    r <- ref(x)
+    for (op in names(r)) {
+      expect_tiers_give(r[[op]], get(paste0("simd_is_", op)), x)
+      expect_simd_identical(get(paste0("simd_is_", op, "_any")), x)
+      expect_simd_identical(get(paste0("simd_is_", op, "_all")), x)
+    }
+  }
+})
+
+test_that("Hamming distances of integer64", {
+  # Pairs differ when their bit patterns do; NA pairs are missing.
+  # The length-1 broadcast rule: a length-0 operand gives no pairs.
+  pairs <- function(x, y) if (min(length(x), length(y)) == 0) 0 else max(length(x), length(y))
+  ref <- function(x, y, na.rm = FALSE) {
+    n <- pairs(x, y)
+    x <- i64_at(x, rep_len(seq_along(x), n))
+    y <- i64_at(y, rep_len(seq_along(y), n))
+    miss <- i64_str(x) %in% NA | i64_str(y) %in% NA
+    if (any(miss) && !na.rm) {
+      return(NA_real_)
+    }
+    as.double(sum((colSums(i64_bits(x) != i64_bits(y)) > 0)[!miss]))
+  }
+  bits <- function(x, y) {
+    n <- pairs(x, y)
+    as.double(sum(i64_bits(i64_at(x, rep_len(seq_along(x), n))) !=
+      i64_bits(i64_at(y, rep_len(seq_along(y), n)))))
+  }
+  for (n in lens) {
+    x <- rand_i64(n, kind = "small", seed = n + 12L)
+    y <- i64_at(x, rev(seq_len(n)))
+    if (n > 2) y <- i64c(i64_at(x, 1:2), i64_at(y, 3:n))
+    for (rm in c(FALSE, TRUE)) {
+      expect_tiers_give(ref(x, y, rm), simd_hamming, x, y, na.rm = rm)
+      expect_tiers_give(ref(x, i64(1), rm), simd_hamming, x, i64(1), na.rm = rm)
+    }
+    expect_tiers_give(bits(x, y), simd_hamming_bits, x, y)
+    expect_tiers_give(bits(x, max64), simd_hamming_bits, x, max64)
+  }
+  # integer and logical operands are compared as integer64, without a warning.
+  x <- i64_dec(c("1", "4294967298", NA, "-3"))
+  expect_tiers_give(1, simd_hamming, x, c(1L, 2L, 5L, -3L), na.rm = TRUE)
+  expect_tiers_give(NA_real_, simd_hamming, x, c(1L, 2L, 5L, -3L))
+  expect_tiers_give(1, simd_hamming, c(FALSE, NA, TRUE), i64(c(1, 1, 1)), na.rm = TRUE)
+  expect_tiers_give(64, simd_hamming_bits, i64(-1), i64(0))
+  expect_tiers_give(1, simd_hamming_bits, na64, i64(0))
+  # With a double or complex operand they are converted to double first.
+  expect_warning(
+    expect_identical(simd_hamming(x, c(1, 4294967298, 0, -3.5), na.rm = TRUE), 1),
+    "integer64 coerced to double"
+  )
+  expect_warning(
+    expect_identical(simd_hamming(x, c(1, 2, 3, -3) + 0i, na.rm = TRUE), 1),
+    "integer64 coerced to double"
+  )
+})
+
 test_that("any and all of integer64 read non-zero as TRUE, without a warning", {
   x <- i64(c(0, 5, NA))
   expect_tier_warnings(character(0), simd_any, x)

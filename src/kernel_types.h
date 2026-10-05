@@ -200,15 +200,26 @@ enum { RSIMD_SOFTMAX_EXP_SUM = 0, RSIMD_SOFTMAX_SUM, RSIMD_SOFTMAX_DIV, RSIMD_SO
 
 /* Predicates (kernels/predicates.inc.c): is.na (NA or NaN), is.nan (NaN
    but not NA), is.finite, is.infinite, negative (sign bit set and not
-   NaN; for integers x < 0 and not NA) and zero (x == 0, so also -0).
-   pred_i32 takes NA, FINITE (not NA), NEGATIVE and ZERO. */
+   NaN; for integers x < 0 and not NA), zero (x == 0, so also -0), normal
+   (a finite non-zero double that is not subnormal; an integer that is not
+   0 or NA), subnormal (never for integers), whole (finite and an integer
+   value; an integer that is not NA), even and odd (whole, and so is x / 2
+   or not), and pow2 (2^k for an integer k, k >= 0 for integers). None is
+   true for NA or NaN. pred_i32 and pred_i64 take every op but NAN and
+   INFINITE. */
 enum {
   RSIMD_PRED_NA = 0,
   RSIMD_PRED_NAN,
   RSIMD_PRED_FINITE,
   RSIMD_PRED_INFINITE,
   RSIMD_PRED_NEGATIVE,
-  RSIMD_PRED_ZERO
+  RSIMD_PRED_ZERO,
+  RSIMD_PRED_NORMAL,
+  RSIMD_PRED_SUBNORMAL,
+  RSIMD_PRED_WHOLE,
+  RSIMD_PRED_EVEN,
+  RSIMD_PRED_ODD,
+  RSIMD_PRED_POW2
 };
 /* What a predicate kernel computes: the logical vector, or whether any or
    all elements satisfy it. */

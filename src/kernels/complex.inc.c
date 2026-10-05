@@ -29,6 +29,24 @@ static inline int rsimd_pred_c128_1(int op, Rcomplex z) {
   return op == RSIMD_PRED_FINITE ? a && b : a || b;
 }
 
+/* The scalar Hamming loop over complex elements [i, n) (flags
+   RSIMD_EW_SCALAR(k)): the none tier's kernel and the vector tiers' tail.
+   Returns 1 when it stops at a missing pair (without na_rm). */
+static inline int rsimd_ham_c128_from(const Rcomplex *x, const Rcomplex *y, R_xlen_t i, R_xlen_t n,
+                                      int flags, rsimd_reduce_result *r, int na_rm) {
+  const R_xlen_t sx = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, sy = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
+  for (; i < n; i++) {
+    Rcomplex a = x[i * sx], b = y[i * sy];
+    if (isnan(a.r) || isnan(a.i) || isnan(b.r) || isnan(b.i)) {
+      r->saw_na = 1;
+      if (!na_rm) return 1;
+      continue;
+    }
+    r->i64 += a.r != b.r || a.i != b.i;
+  }
+  return 0;
+}
+
 /* Complex numbers per block of sum_c128: the parts of a block are split
    into two stack buffers and folded by sum_f64. A multiple of
    RSIMD_PAIRWISE_LEAF, so pairwise leaves line up with those of a double
@@ -79,6 +97,13 @@ int RSIMD_KERNEL(pred_c128)(int op, const Rcomplex *x, R_xlen_t n, int mode, int
     else if (mode == RSIMD_PRED_ALL && !v) return 0;
   }
   return mode == RSIMD_PRED_ALL;
+}
+
+void RSIMD_KERNEL(hamming_c128)(const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
+                                rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(hamming_c128)(const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
+                                rsimd_reduce_result *r, const rsimd_opts *o) {
+  rsimd_ham_c128_from(x, y, 0, n, flags, r, o->na_rm);
 }
 
 void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
@@ -249,6 +274,53 @@ int RSIMD_KERNEL(pred_c128)(int op, const Rcomplex *x, R_xlen_t n, int mode, int
   }
 }
 
+/* A pair differs where cmp_ne is true for either part, which includes
+   every pair with a NaN part, so the differing non-missing pairs are the
+   ne lanes less the missing ones. Lane counters are folded every
+   RSIMD_HAMMING_BLOCK vectors. */
+RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(hamming_c128_)(const Rcomplex *x, const Rcomplex *y,
+                                                     R_xlen_t n, int flags,
+                                                     rsimd_reduce_result *r, int na_rm) {
+  const ptrdiff_t W = RSIMD_LANES_64;
+  const int sx = (flags & RSIMD_EW_SCALAR(0)) != 0, sy = (flags & RSIMD_EW_SCALAR(1)) != 0;
+  const rsimd_vf64 sxr = rsimd_vf64_set1(x[0].r), sxi = rsimd_vf64_set1(x[0].i),
+                   syr = rsimd_vf64_set1(y[0].r), syi = rsimd_vf64_set1(y[0].i);
+  ptrdiff_t i = 0;
+  while (i + W <= n) {
+    const ptrdiff_t end = (n - i) / RSIMD_LANES_64 > RSIMD_HAMMING_BLOCK
+                              ? i + RSIMD_HAMMING_BLOCK * RSIMD_LANES_64
+                              : n;
+    rsimd_vi64 ne = rsimd_vi64_zero(), m = rsimd_vi64_zero();
+    int64_t missing;
+    for (; i + W <= end; i += W) {
+      rsimd_vf64 xr = sxr, xi = sxi, yr = syr, yi = syi;
+      rsimd_mf64 nan;
+      if (!sx) rsimd_c128_load_(x, i, &xr, &xi);
+      if (!sy) rsimd_c128_load_(y, i, &yr, &yi);
+      nan = rsimd_mf64_or(rsimd_mf64_or(rsimd_vf64_is_nan(xr), rsimd_vf64_is_nan(xi)),
+                          rsimd_mf64_or(rsimd_vf64_is_nan(yr), rsimd_vf64_is_nan(yi)));
+      ne = rsimd_vi64_inc(ne, rsimd_mf64_to_mi64(rsimd_mf64_or(rsimd_vf64_cmp_ne(xr, yr),
+                                                               rsimd_vf64_cmp_ne(xi, yi))));
+      m = rsimd_vi64_inc(m, rsimd_mf64_to_mi64(nan));
+    }
+    missing = rsimd_vi64_reduce_add(m);
+    r->i64 += rsimd_vi64_reduce_add(ne) - missing;
+    if (missing > 0) {
+      r->saw_na = 1;
+      if (!na_rm) return;
+    }
+  }
+  rsimd_ham_c128_from(x, y, i, n, flags, r, na_rm);
+}
+
+void RSIMD_KERNEL(hamming_c128)(const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
+                                rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(hamming_c128)(const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
+                                rsimd_reduce_result *r, const rsimd_opts *o) {
+  if (flags == 0) RSIMD_KERNEL(hamming_c128_)(x, y, n, 0, r, o->na_rm);
+  else RSIMD_KERNEL(hamming_c128_)(x, y, n, flags, r, o->na_rm);
+}
+
 void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
                            rsimd_reduce_result *r);
 void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
@@ -286,6 +358,7 @@ void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off
 #define RSIMD_SKIP_sum_c128 1
 #define RSIMD_SKIP_pred_c128 1
 #define RSIMD_SKIP_na_c128 1
+#define RSIMD_SKIP_hamming_c128 1
 #endif
 
 #if RSIMD_TIER_IS(none) || !defined(RSIMD_NO_F64_SIMD)

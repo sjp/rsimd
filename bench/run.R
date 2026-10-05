@@ -124,6 +124,22 @@ ops <- list(
   list(
     op = "as_integer", type = "double", simd = quote(simd_as_integer(xc, mode = "truncating")),
     base = quote(as.integer(xc)), bound = FALSE
+  ),
+  list(
+    op = "hamming", type = "double", simd = quote(simd_hamming(x, xh)), base = quote(sum(x != xh)),
+    bound = TRUE
+  ),
+  list(
+    op = "hamming", type = "integer", simd = quote(simd_hamming(xi, xih)),
+    base = quote(sum(xi != xih)), bound = TRUE
+  ),
+  list(
+    op = "is_whole", type = "double", simd = quote(simd_is_whole(xw)),
+    base = quote(xw == trunc(xw)), bound = FALSE
+  ),
+  list(
+    op = "is_pow2", type = "double", simd = quote(simd_is_pow2(xw)),
+    base = quote(xw > 0 & log2(abs(xw)) == trunc(log2(abs(xw)))), bound = FALSE
   )
 )
 
@@ -185,6 +201,13 @@ make_inputs <- function(n) {
   # Drawn last so that the inputs above stay the same as in older runs.
   env$xp <- 10^stats::runif(n, -3, 3)
   env$xt <- stats::runif(n, -5, 5)
+  # Half the pairs equal (Hamming); half whole numbers, some powers of two.
+  half <- stats::runif(n) < 0.5
+  env$xh <- ifelse(half, env$x, env$y)
+  env$xih <- ifelse(half, env$xi, env$yi)
+  env$xw <- ifelse(stats::runif(n) < 0.5, round(env$x), env$x)
+  p2 <- stats::runif(n) < 0.1
+  env$xw[p2] <- 2^sample(-20:20, sum(p2), replace = TRUE)
   env
 }
 

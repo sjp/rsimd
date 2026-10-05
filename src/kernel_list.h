@@ -200,6 +200,29 @@ RSIMD_OP(cmp_i32, void,
 RSIMD_OP(cmp_u8, void,
          (int op, const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, int *out))
 
+/* Hamming distance: the number of pairs x[i] != y[i] (operands as for
+   the comparisons: hamming_f64 reads doubles or int32 elements per
+   RSIMD_EW_I32(k), RSIMD_EW_SCALAR(k) broadcasts element 0) is added to
+   r->i64, counting only pairs where neither operand is missing (NA or
+   NaN; NA_integer_). A pair with a missing operand sets r->saw_na; then,
+   without o->na_rm, the kernel may stop early and r->i64 is meaningless.
+   Bytes are never missing. */
+RSIMD_OP(hamming_f64, void,
+         (const void *x, const void *y, R_xlen_t n, int flags, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+RSIMD_OP(hamming_i32, void,
+         (const int *x, const int *y, R_xlen_t n, int flags, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+RSIMD_OP(hamming_u8, void,
+         (const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, rsimd_reduce_result *r))
+/* Bit Hamming distance: the number of differing bits, the population
+   count of x[i] ^ y[i] (bit patterns, NA included), added to r->i64;
+   flags as for hamming_i32. */
+RSIMD_OP(hamming_bits_i32, void,
+         (const int *x, const int *y, R_xlen_t n, int flags, rsimd_reduce_result *r))
+RSIMD_OP(hamming_bits_u8, void,
+         (const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, rsimd_reduce_result *r))
+
 /* Three-valued logic on operands read as logical values (non-zero TRUE,
    0 FALSE, NA or NaN NA): logic_f64 with operand flags as cmp_f64,
    logic_i32 on int32 elements. RSIMD_LOGIC_NOT reads only x. */
@@ -245,6 +268,11 @@ RSIMD_OP(part_c128, void, (int im, const Rcomplex *x, R_xlen_t n, double *out))
 RSIMD_OP(sum_c128, void,
          (const Rcomplex *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
 RSIMD_OP(pred_c128, int, (int op, const Rcomplex *x, R_xlen_t n, int mode, int *out))
+/* hamming_f64 for complex elements: a pair differs when either part does,
+   and is missing when any of its four parts is NA or NaN. */
+RSIMD_OP(hamming_c128, void,
+         (const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags, rsimd_reduce_result *r,
+          const rsimd_opts *o))
 
 /* Type conversion `op` (RSIMD_CVT_*) of n elements of x into out, in
    `mode` for conversions to integer, integer64 and raw; returns the status
@@ -268,7 +296,10 @@ RSIMD_OP(convert, int, (int op, int mode, const void *x, R_xlen_t n, void *out))
      cannot occur) and SIGN; ew2_i64 the int32 binary ops, with %/% and %%
      returning RSIMD_EW_DIV_ZERO for a zero divisor; ew3_i64 MUL_ADD,
      ADD_MUL and CLAMP. A checked result equal to INT64_MIN overflows;
-   - pred_i64 takes NA, FINITE, NEGATIVE and ZERO;
+   - pred_i64 takes every op but NAN and INFINITE (SUBNORMAL is never
+     true);
+   - hamming_i64 also takes int32 operands (RSIMD_EW_I32(k)), with
+     NA_integer_ missing; hamming_bits_i64 takes integer64 operands only;
    - bit_i64 shift counts are 0..63 and rotate counts 0..63; a result of
      0x8000000000000000 reads as NA; the counts (0..64) are written as
      int32. */
@@ -296,3 +327,8 @@ RSIMD_OP(bit_i64, void,
           const rsimd_opts *o))
 RSIMD_OP(popcnt_sum_i64, void,
          (const int64_t *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(hamming_i64, void,
+         (const void *x, const void *y, R_xlen_t n, int flags, rsimd_reduce_result *r,
+          const rsimd_opts *o))
+RSIMD_OP(hamming_bits_i64, void,
+         (const int64_t *x, const int64_t *y, R_xlen_t n, int flags, rsimd_reduce_result *r))

@@ -119,6 +119,23 @@ test_that("comparisons and predicates match bit64", {
   }
   expect_like_bit64(function(x) as.logical(!is.na(x) & x < 0), simd_is_negative, x)
   expect_like_bit64(function(x) as.logical(!is.na(x) & x == 0), simd_is_zero, x)
+  expect_like_bit64(function(x) as.logical(!is.na(x) & x %% 2L == 0L), simd_is_even, x)
+  expect_like_bit64(function(x) as.logical(!is.na(x) & x %% 2L == 1L), simd_is_odd, x)
+  expect_like_bit64(function(x) as.logical(!is.na(x) & x != 0L), simd_is_normal, x)
+  p2 <- as.integer64(c(1, 2, 3, 4, 0, -4, NA, 1024, 1023)) * as.integer64(2)^40L
+  expect_like_bit64(function(x) c(TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE, TRUE, FALSE),
+    simd_is_pow2, p2)
+})
+
+test_that("Hamming distances match bit64's sum(x != y)", {
+  x <- rand_b64(1000, seed = 22, bound = 3)
+  y <- rand_b64(1000, seed = 23, bound = 3)
+  for (rm in c(FALSE, TRUE)) {
+    expect_like_bit64(function(x, y) as.double(sum(x != y, na.rm = rm)),
+      function(x, y) simd_hamming(x, y, na.rm = rm), x, y)
+    expect_like_bit64(function(x, y) as.double(sum(x != y, na.rm = rm)),
+      function(x, y) simd_hamming(x, y, na.rm = rm), x, 2L)
+  }
 })
 
 test_that("conversions match bit64", {

@@ -137,6 +137,8 @@ test_that("different pins are an error, and the next call is unaffected", {
   expect_error(simd_dot(a, b), msg, fixed = TRUE)
   expect_error(c(a, b), msg, fixed = TRUE)
   expect_error(sum(a, b), msg, fixed = TRUE)
+  expect_error(simd_hamming(a, b), msg, fixed = TRUE)
+  expect_error(simd_hamming(a, simd_vec(c(1i, 2i), impl = tiers[[2L]])), msg, fixed = TRUE)
   # The failed call switched the table to the first pin; the next unpinned
   # call runs on the selection again.
   simd_with_impl(tiers[[2L]], {
@@ -155,6 +157,13 @@ test_that("a pin to an unavailable or invalid tier is an error when used", {
   expect_error(sum(x), msg, fixed = TRUE)
   expect_error(exp(x), msg, fixed = TRUE)
   expect_error(c(x, 1), msg, fixed = TRUE)
+  expect_error(simd_is_even(x), msg, fixed = TRUE)
+  expect_error(simd_hamming(x, 1), msg, fixed = TRUE)
+  expect_error(simd_hamming(1i, x), sub("'x'", "'y'", msg), fixed = TRUE)
+  expect_error(
+    simd_hamming_bits(structure(1L, class = "simd_vec", rsimd_impl = t_na), 1L), msg,
+    fixed = TRUE
+  )
   simd_impl(x) <- NULL
   expect_identical(bare(x + 1), c(2, 3))
 })
@@ -205,6 +214,12 @@ test_that("value results of simd_ functions are simd_vecs, others are plain", {
   expect_identical(simd_and(simd_vec(c(TRUE, NA)), TRUE), c(TRUE, NA))
   expect_identical(simd_var(x), var(c(0.5, -1, 2)))
   expect_identical(simd_which_na(simd_vec(c(1, NA))), 2L)
+  expect_identical(simd_is_whole(x), c(FALSE, TRUE, TRUE))
+  expect_identical(simd_is_pow2_any(x), TRUE)
+  expect_identical(simd_hamming(x, c(0.5, 1, 2)), 1)
+  expect_identical(simd_hamming(x, 1i), 3)
+  expect_identical(simd_hamming(simd_vec(as.raw(1:3)), 2L), 2)
+  expect_identical(simd_hamming_bits(simd_vec(c(1L, 2L)), 3L), 2)
 })
 
 test_that("the input is not modified", {

@@ -29,8 +29,12 @@ First release.
   friends). Operands must have equal lengths or length one.
 * **Predicates, comparisons, logic, bits and conversions:** `simd_is_na()`,
   `simd_is_nan()`, `simd_is_finite()`, `simd_is_infinite()`,
-  `simd_is_negative()` and `simd_is_zero()` with `_any` and `_all` forms;
-  `simd_eq()` to `simd_ge()`; `simd_and()`, `simd_or()`, `simd_xor()`,
+  `simd_is_negative()`, `simd_is_zero()` and the number classes
+  `simd_is_normal()`, `simd_is_subnormal()`, `simd_is_whole()`,
+  `simd_is_even()`, `simd_is_odd()` and `simd_is_pow2()`, with `_any` and
+  `_all` forms; `simd_eq()` to `simd_ge()`; the Hamming distances
+  `simd_hamming()` (`sum(x != y)` without a logical vector) and
+  `simd_hamming_bits()`; `simd_and()`, `simd_or()`, `simd_xor()`,
   `simd_not()`; `simd_bit_and()` and the other bitwise operations, shifts,
   rotations and bit counts; `simd_as_integer()`, `simd_as_double()`,
   `simd_as_logical()` and `simd_as_raw()` with `"checked"`, `"saturating"`

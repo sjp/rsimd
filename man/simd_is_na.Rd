@@ -17,7 +17,25 @@
 \alias{simd_is_zero}
 \alias{simd_is_zero_any}
 \alias{simd_is_zero_all}
-\title{Missing, Finite, Negative and Zero Values}
+\alias{simd_is_normal}
+\alias{simd_is_normal_any}
+\alias{simd_is_normal_all}
+\alias{simd_is_subnormal}
+\alias{simd_is_subnormal_any}
+\alias{simd_is_subnormal_all}
+\alias{simd_is_whole}
+\alias{simd_is_whole_any}
+\alias{simd_is_whole_all}
+\alias{simd_is_even}
+\alias{simd_is_even_any}
+\alias{simd_is_even_all}
+\alias{simd_is_odd}
+\alias{simd_is_odd_any}
+\alias{simd_is_odd_all}
+\alias{simd_is_pow2}
+\alias{simd_is_pow2_any}
+\alias{simd_is_pow2_all}
+\title{Missing, Finite, Negative and Zero Values, and Number Classes}
 \usage{
 simd_is_na(x)
 simd_is_na_any(x)
@@ -42,19 +60,47 @@ simd_is_negative_all(x)
 simd_is_zero(x)
 simd_is_zero_any(x)
 simd_is_zero_all(x)
+
+simd_is_normal(x)
+simd_is_normal_any(x)
+simd_is_normal_all(x)
+
+simd_is_subnormal(x)
+simd_is_subnormal_any(x)
+simd_is_subnormal_all(x)
+
+simd_is_whole(x)
+simd_is_whole_any(x)
+simd_is_whole_all(x)
+
+simd_is_even(x)
+simd_is_even_any(x)
+simd_is_even_all(x)
+
+simd_is_odd(x)
+simd_is_odd_any(x)
+simd_is_odd_all(x)
+
+simd_is_pow2(x)
+simd_is_pow2_any(x)
+simd_is_pow2_all(x)
 }
 \arguments{
 \item{x}{A double, integer, logical, raw, complex or \pkg{bit64}
-\code{integer64} vector (neither raw nor complex for
-\code{simd_is_negative} and \code{simd_is_zero}).}
+\code{integer64} vector. Only \code{simd_is_na}, \code{simd_is_nan},
+\code{simd_is_finite} and \code{simd_is_infinite} take raw and complex
+vectors.}
 }
 \description{
 \code{is.na(x)}, \code{is.nan(x)}, \code{is.finite(x)} and
-\code{is.infinite(x)}, and tests for negative and zero values, computed with
-SIMD instructions. Each test comes in three forms: elementwise, \code{_any}
-(is it true for any element?) and \code{_all} (is it true for every
-element?). They correspond to \code{IsNaN}, \code{IsFinite},
-\code{IsInfinity}, \code{IsNegative} and \code{IsZero} and their
+\code{is.infinite(x)}, tests for negative and zero values, and tests of
+number classes (normal, subnormal, whole, even, odd, power of two),
+computed with SIMD instructions. Each test comes in three forms:
+elementwise, \code{_any} (is it true for any element?) and \code{_all}
+(is it true for every element?). They correspond to \code{IsNaN},
+\code{IsFinite}, \code{IsInfinity}, \code{IsNegative}, \code{IsZero},
+\code{IsNormal}, \code{IsSubnormal}, \code{IsInteger},
+\code{IsEvenInteger}, \code{IsOddInteger} and \code{IsPow2} and their
 \code{All}/\code{Any} forms in .NET's \code{TensorPrimitives}.
 }
 \details{
@@ -68,6 +114,28 @@ that are neither missing nor infinite. \code{simd_is_zero()} is
 \code{TensorPrimitives.IsNegative} and IEEE 754's \code{isSignMinus} do: it
 is \code{TRUE} for \code{-0} and \code{-Inf}, and \code{FALSE} for
 \code{NA} and \code{NaN}, so it differs from \code{x < 0} for \code{-0}.
+
+The number classes are never \code{TRUE} for \code{NA}, \code{NaN} or
+an infinity:
+\itemize{
+\item \code{simd_is_normal()}: a finite, non-zero double whose magnitude
+is at least \code{.Machine$double.xmin}; an integer that is not 0;
+\item \code{simd_is_subnormal()}: a non-zero double smaller in magnitude
+than \code{.Machine$double.xmin}, such as \code{5e-324}; never an
+integer;
+\item \code{simd_is_whole()}: \code{x == trunc(x)}, without tolerance;
+every integer;
+\item \code{simd_is_even()} and \code{simd_is_odd()}: whole numbers
+with \code{x \%\% 2} equal to 0 or 1 (so negative numbers too, and
+\code{-0} is even). Every double of magnitude \eqn{2^{53}} or more is
+even;
+\item \code{simd_is_pow2()}: \eqn{2^k} for an integer \eqn{k}, which for
+doubles includes 0.5 and the subnormal \eqn{2^{-1074}}; never zero or
+negative.
+}
+\code{simd_is_whole()} is named so because base R's \code{is.integer()}
+tests the storage type. Logical values are tested as the integers 0 and 1,
+so \code{TRUE} is normal, odd and a power of two.
 
 A complex number is \code{NA} (\code{simd_is_na()}) when either part is
 \code{NA} or \code{NaN}, \code{NaN} (\code{simd_is_nan()}) when either
@@ -91,7 +159,7 @@ All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double and complex tests use the scalar \code{"none"}
 code. \pkg{bit64} \code{integer64} input is tested like integers: it is
 \code{NA} when it is \eqn{-2^{63}}, never \code{NaN} or infinite (see
-\link{rsimd-integer64}).
+\link{rsimd-integer64}); it is never subnormal.
 }
 \value{
 A logical vector of the length of \code{x}, without \code{NA}, or a single
@@ -109,4 +177,8 @@ simd_is_finite(x)
 simd_is_negative(x)
 simd_is_zero_any(x)
 simd_is_finite_all(numeric(0))
+simd_is_subnormal(c(5e-324, 2.2e-308, 1))
+simd_is_whole(c(2, 2.5, -0, Inf))
+simd_is_even(c(-4L, 3L, NA))
+simd_is_pow2(c(0.25, 1, 3, 1024))
 }

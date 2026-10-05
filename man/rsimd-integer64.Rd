@@ -33,10 +33,15 @@ double, as \pkg{bit64}'s \code{/} does.}
 \item{Predicates and comparisons}{\code{\link{simd_is_na}},
 \code{\link{simd_is_nan}} (always \code{FALSE}), \code{\link{simd_is_finite}}
 (not \code{NA}), \code{\link{simd_is_infinite}} (always \code{FALSE}),
-\code{\link{simd_is_negative}}, \code{\link{simd_is_zero}}, each with its
-\code{_any} and \code{_all} forms; \code{\link{simd_eq}},
-\code{\link{simd_ne}}, \code{\link{simd_lt}}, \code{\link{simd_le}},
-\code{\link{simd_gt}} and \code{\link{simd_ge}} (logical).}
+\code{\link{simd_is_negative}}, \code{\link{simd_is_zero}},
+\code{\link{simd_is_normal}} (not 0), \code{\link{simd_is_subnormal}}
+(always \code{FALSE}), \code{\link{simd_is_whole}} (not \code{NA}),
+\code{\link{simd_is_even}}, \code{\link{simd_is_odd}},
+\code{\link{simd_is_pow2}}, each with its \code{_any} and \code{_all}
+forms; \code{\link{simd_eq}}, \code{\link{simd_ne}}, \code{\link{simd_lt}},
+\code{\link{simd_le}}, \code{\link{simd_gt}} and \code{\link{simd_ge}}
+(logical); \code{\link{simd_hamming}} and \code{\link{simd_hamming_bits}}
+(double).}
 \item{Bit operations}{\code{\link{simd_bit_and}}, \code{\link{simd_bit_or}},
 \code{\link{simd_bit_xor}}, \code{\link{simd_bit_not}}, \code{\link{simd_shl}},
 \code{\link{simd_shr}}, \code{\link{simd_sar}}, \code{\link{simd_rotl}},
@@ -137,7 +142,8 @@ idiv, mod, mul_add, add_mul \tab scalar \tab scalar \tab scalar \tab scalar \tab
 cumsum, cummin, cummax \tab scalar \tab scalar \tab scalar \tab scalar \tab scalar \cr
 and, or, xor, not, shl, shr, rotl, rotr \tab native \tab native \tab native \tab native \tab native \cr
 sar \tab partial \tab partial \tab partial \tab partial \tab native \cr
-popcount \tab partial \tab partial \tab partial \tab native \tab native \cr
+popcount, hamming_bits \tab partial \tab partial \tab partial \tab native \tab native \cr
+is_normal, is_even, is_odd, is_pow2, hamming \tab SIMDe \tab native \tab native \tab native \tab native \cr
 lzcnt, tzcnt \tab partial \tab partial \tab partial \tab partial \tab native \cr
 integer64 to double \tab partial \tab partial \tab native \tab native \tab native \cr
 double to integer64 \tab scalar \tab scalar \tab scalar \tab native* \tab native* \cr

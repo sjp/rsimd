@@ -3,11 +3,13 @@
 # (complex, and raw where it is not taken) and calls the entry point with
 # the op's name.
 
-# mode: 0 elementwise, 1 any, 2 all. negative and zero take neither raw
-# nor complex input.
+# mode: 0 elementwise, 1 any, 2 all. Only na, nan, finite and infinite
+# take raw and complex input.
 .pred <- function(x, op, mode, fun) {
   .sync_impl()
-  if (op %in% c("negative", "zero")) .check_supported(x, fun, c("complex", "raw"), character())
+  if (!op %in% c("na", "nan", "finite", "infinite")) {
+    .check_supported(x, fun, c("complex", "raw"), character())
+  }
   .Call(C_simd_pred, x, op, mode)
 }
 
@@ -34,6 +36,30 @@ simd_is_negative_all <- function(x) .pred(x, "negative", 2L, "simd_is_negative_a
 simd_is_zero <- function(x) .pred(x, "zero", 0L, "simd_is_zero")
 simd_is_zero_any <- function(x) .pred(x, "zero", 1L, "simd_is_zero_any")
 simd_is_zero_all <- function(x) .pred(x, "zero", 2L, "simd_is_zero_all")
+
+simd_is_normal <- function(x) .pred(x, "normal", 0L, "simd_is_normal")
+simd_is_normal_any <- function(x) .pred(x, "normal", 1L, "simd_is_normal_any")
+simd_is_normal_all <- function(x) .pred(x, "normal", 2L, "simd_is_normal_all")
+
+simd_is_subnormal <- function(x) .pred(x, "subnormal", 0L, "simd_is_subnormal")
+simd_is_subnormal_any <- function(x) .pred(x, "subnormal", 1L, "simd_is_subnormal_any")
+simd_is_subnormal_all <- function(x) .pred(x, "subnormal", 2L, "simd_is_subnormal_all")
+
+simd_is_whole <- function(x) .pred(x, "whole", 0L, "simd_is_whole")
+simd_is_whole_any <- function(x) .pred(x, "whole", 1L, "simd_is_whole_any")
+simd_is_whole_all <- function(x) .pred(x, "whole", 2L, "simd_is_whole_all")
+
+simd_is_even <- function(x) .pred(x, "even", 0L, "simd_is_even")
+simd_is_even_any <- function(x) .pred(x, "even", 1L, "simd_is_even_any")
+simd_is_even_all <- function(x) .pred(x, "even", 2L, "simd_is_even_all")
+
+simd_is_odd <- function(x) .pred(x, "odd", 0L, "simd_is_odd")
+simd_is_odd_any <- function(x) .pred(x, "odd", 1L, "simd_is_odd_any")
+simd_is_odd_all <- function(x) .pred(x, "odd", 2L, "simd_is_odd_all")
+
+simd_is_pow2 <- function(x) .pred(x, "pow2", 0L, "simd_is_pow2")
+simd_is_pow2_any <- function(x) .pred(x, "pow2", 1L, "simd_is_pow2_any")
+simd_is_pow2_all <- function(x) .pred(x, "pow2", 2L, "simd_is_pow2_all")
 
 # A raw operand compared with a non-raw one is converted as base R does: to
 # logical when the other is logical, else to integer. Raw with raw compares

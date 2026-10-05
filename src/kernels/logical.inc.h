@@ -22,6 +22,13 @@
 
 #define RSIMD_LGL_SCALAR(k) ((flags & RSIMD_EW_SCALAR(k)) != 0)
 
+/* Vectors between the folds of the Hamming kernels' lane counters into
+   the result (and their checks for missing pairs): few enough for 32-bit
+   lane counters. Tests set it smaller. */
+#ifndef RSIMD_HAMMING_BLOCK
+#define RSIMD_HAMMING_BLOCK ((ptrdiff_t) 1 << 12)
+#endif
+
 #if !RSIMD_TIER_IS(none)
 
 RSIMD_INLINE rsimd_vi32 rsimd_lgl_vi32(rsimd_mi32 t, rsimd_mi32 na) {

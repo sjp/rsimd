@@ -1,7 +1,8 @@
 /* .Call entry points of the predicates (is.na, is.nan, is.finite,
-   is.infinite, negative, zero; elementwise or as any/all) and of the
-   elementwise comparisons. Results are bare logical vectors, or a single
-   logical value for any/all. */
+   is.infinite, negative, zero, and the number classes normal, subnormal,
+   whole, even, odd and pow2; elementwise or as any/all), of the
+   elementwise comparisons and of the Hamming distances. Results are bare
+   logical vectors, a single logical value for any/all, or a double count. */
 
 #include <string.h>
 #include "rsimd.h"
@@ -33,16 +34,19 @@ static SEXP constant_false(R_xlen_t n, int mode) {
 }
 
 /* Predicate `op` by name: "na" (NA or NaN), "nan" (NaN, not NA), "finite",
-   "infinite", "negative" (sign bit set, not NaN; for integers < 0) and
-   "zero", of a double, integer, logical or raw vector, for mode 0
-   (elementwise), 1 (any) or 2 (all). Integers and logicals are never NaN
-   or infinite; raw bytes are never NA, NaN, finite or infinite (as base
-   R's is.finite says), and "negative" and "zero" do not take them.
-   Complex elements take the first four, with base R's either-part rules
-   (finite: both parts). integer64 elements are like integers (NA is
-   INT64_MIN). Empty input gives FALSE for any and TRUE for all. */
+   "infinite", "negative" (sign bit set, not NaN; for integers < 0),
+   "zero", "normal", "subnormal", "whole", "even", "odd" and "pow2" (see
+   RSIMD_PRED_* in kernel_types.h), of a double, integer, logical or raw
+   vector, for mode 0 (elementwise), 1 (any) or 2 (all). Integers and
+   logicals are never NaN, infinite or subnormal; raw bytes are never NA,
+   NaN, finite or infinite (as base R's is.finite says), and "negative" and
+   the ops after it do not take them. Complex elements take the first
+   four, with base R's either-part rules (finite: both parts). integer64
+   elements are like integers (NA is INT64_MIN). Empty input gives FALSE
+   for any and TRUE for all. */
 static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
-  static const char *const names[] = {"na", "nan", "finite", "infinite", "negative", "zero"};
+  static const char *const names[] = {"na",   "nan",  "finite", "infinite",  "negative", "zero",
+                                      "normal", "subnormal", "whole", "even", "odd", "pow2"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   int m = rsimd_arg_int1(mode, "mode"), res = m == RSIMD_PRED_ALL;
   SEXP out = R_NilValue;
@@ -56,15 +60,15 @@ static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
   case RSIMD_I32:
   case RSIMD_LGL:
   case RSIMD_I64:
-    if (code == RSIMD_PRED_NAN || code == RSIMD_PRED_INFINITE) return constant_false(in.n, m);
+    if (code == RSIMD_PRED_NAN || code == RSIMD_PRED_INFINITE || code == RSIMD_PRED_SUBNORMAL) {
+      return constant_false(in.n, m);
+    }
     break;
   case RSIMD_U8:
-    if (code == RSIMD_PRED_NEGATIVE || code == RSIMD_PRED_ZERO) {
-      Rf_error("invalid 'type' (raw) of argument");
-    }
+    if (code >= RSIMD_PRED_NEGATIVE) Rf_error("invalid 'type' (raw) of argument");
     return constant_false(in.n, m);
   case RSIMD_C128:
-    if (code == RSIMD_PRED_NEGATIVE || code == RSIMD_PRED_ZERO) {
+    if (code >= RSIMD_PRED_NEGATIVE) {
       Rf_error("invalid 'type' (complex) of argument");
     }
     break;
@@ -171,4 +175,119 @@ static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
 SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
   rsimd_entry();
   return simd_cmp_impl(x, y, op);
+}
+
+/* The number of pairs with x != y (simd_hamming), as a double: NA when a
+   pair has a missing operand, unless na.rm = TRUE skips those pairs.
+   Operands follow the comparison rules of simd_cmp_impl (the R side has
+   already converted raw with non-raw, integer64 with double, and anything
+   with complex); complex pairs differ when either part does. */
+static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
+  static const char *const args[] = {"x", "y"};
+  rsimd_reduce_result r;
+  rsimd_opts o;
+  SEXP sargs[2];
+  rsimd_etype tx, ty;
+  int stop = 0;
+
+  rsimd_opts_init(&o, na_rm, R_NilValue, R_NilValue, 0);
+  memset(&r, 0, sizeof r);
+  if (TYPEOF(x) == CPLXSXP || TYPEOF(y) == CPLXSXP) {
+    rsimd_bin b;
+    int flags;
+    rsimd_bin_init(&b, x, y);
+    if (b.x.type != RSIMD_C128 || b.y.type != RSIMD_C128) {
+      Rf_error("internal error: complex Hamming distance of %s and %s",
+               rsimd_etype_names[b.x.type], rsimd_etype_names[b.y.type]);
+    }
+    flags = (b.x_scalar ? RSIMD_EW_SCALAR(0) : 0) | (b.y_scalar ? RSIMD_EW_SCALAR(1) : 0);
+    RSIMD_FOREACH_CHUNK2(&b, Rcomplex, px, py, len, off, {
+      rsimd_active->hamming_c128(px, py, len, flags, &r, &o);
+      if (r.saw_na && !o.na_rm) break;
+    });
+  } else {
+    rsimd_ew e;
+    sargs[0] = x;
+    sargs[1] = y;
+    rsimd_ew_init(&e, 2, sargs, args);
+    tx = e.in[0].type;
+    ty = e.in[1].type;
+    if (tx == RSIMD_U8 && ty == RSIMD_U8) {
+      RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+        rsimd_active->hamming_u8((const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags, &r);
+      });
+    } else if ((tx == RSIMD_I64 || ty == RSIMD_I64) && (tx == RSIMD_I64 || is_int_like(tx)) &&
+               (ty == RSIMD_I64 || is_int_like(ty))) {
+      int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                  (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+      RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+        if (!stop) rsimd_active->hamming_i64(p[0], p[1], len, flags, &r, &o);
+        stop = r.saw_na && !o.na_rm;
+      });
+    } else if (is_int_like(tx) && is_int_like(ty)) {
+      RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+        if (!stop) {
+          rsimd_active->hamming_i32((const int *) p[0], (const int *) p[1], len, e.flags, &r, &o);
+        }
+        stop = r.saw_na && !o.na_rm;
+      });
+    } else if ((tx == RSIMD_F64 || is_int_like(tx)) && (ty == RSIMD_F64 || is_int_like(ty))) {
+      int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                  (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+      RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+        if (!stop) rsimd_active->hamming_f64(p[0], p[1], len, flags, &r, &o);
+        stop = r.saw_na && !o.na_rm;
+      });
+    } else {
+      Rf_error("Hamming distance of these types is not implemented");
+    }
+  }
+  return Rf_ScalarReal(r.saw_na && !o.na_rm ? NA_REAL : (double) r.i64);
+}
+
+SEXP C_simd_hamming(SEXP x, SEXP y, SEXP na_rm) {
+  rsimd_entry();
+  return simd_hamming_impl(x, y, na_rm);
+}
+
+/* The number of differing bits of x and y (simd_hamming_bits), as a
+   double: the population count of x ^ y over the pairs, NA elements by
+   their bit pattern. Both operands are integer or logical, both raw or
+   both integer64 (the R side checks). */
+static SEXP simd_hamming_bits_impl(SEXP x, SEXP y) {
+  static const char *const args[] = {"x", "y"};
+  rsimd_reduce_result r;
+  SEXP sargs[2];
+  rsimd_etype tx, ty;
+  rsimd_ew e;
+
+  memset(&r, 0, sizeof r);
+  sargs[0] = x;
+  sargs[1] = y;
+  rsimd_ew_init(&e, 2, sargs, args);
+  tx = e.in[0].type;
+  ty = e.in[1].type;
+  if (tx == RSIMD_U8 && ty == RSIMD_U8) {
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      rsimd_active->hamming_bits_u8((const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags, &r);
+    });
+  } else if (is_int_like(tx) && is_int_like(ty)) {
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      rsimd_active->hamming_bits_i32((const int *) p[0], (const int *) p[1], len, e.flags, &r);
+    });
+  } else if (tx == RSIMD_I64 && ty == RSIMD_I64) {
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      rsimd_active->hamming_bits_i64((const int64_t *) p[0], (const int64_t *) p[1], len, e.flags,
+                                     &r);
+    });
+  } else {
+    Rf_error("internal error: bit Hamming distance of %s and %s", rsimd_etype_names[tx],
+             rsimd_etype_names[ty]);
+  }
+  return Rf_ScalarReal((double) r.i64);
+}
+
+SEXP C_simd_hamming_bits(SEXP x, SEXP y) {
+  rsimd_entry();
+  return simd_hamming_bits_impl(x, y);
 }

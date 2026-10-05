@@ -327,7 +327,8 @@ Odd functions of \code{-0} &
   Exactness. No workaround needed. \\
 Complex numbers &
   Only addition, subtraction, negation, sums, \code{Re}, \code{Im},
-  \code{Conj} and the predicates; other functions are an error. &
+  \code{Conj}, the missing-value predicates and \code{simd\_hamming};
+  other functions are an error. &
   The other operations mix the parts. Use base R for them. \\
 \code{integer64} with a double &
   The result is double, with the warning ``integer64 coerced to double'';
