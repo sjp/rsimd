@@ -126,7 +126,23 @@ ops <- list(
     base = quote(as.integer(xc)), bound = FALSE
   )
 )
-op_names <- unique(vapply(ops, `[[`, "", "op"))
+
+# Elementary functions timed in both accuracy modes (simd_math_accuracy())
+# at the largest size: the "math" table. Not in the main table.
+math_ops <- list(
+  list(op = "sin", type = "double", simd = quote(simd_sin(x)), base = quote(sin(x))),
+  list(op = "log", type = "double", simd = quote(simd_log(xp)), base = quote(log(xp))),
+  list(op = "tanh", type = "double", simd = quote(simd_tanh(xt)), base = quote(tanh(xt))),
+  list(
+    op = "atan2", type = "double", simd = quote(simd_atan2(y, x)), base = quote(atan2(y, x))
+  ),
+  list(
+    op = "hypot", type = "double", simd = quote(simd_hypot(x, y)),
+    base = quote(sqrt(x * x + y * y))
+  )
+)
+math_modes <- c("accurate", "fast")
+op_names <- unique(vapply(c(ops, math_ops), `[[`, "", "op"))
 
 if (!is.null(opts$ops)) {
   unknown <- setdiff(opts$ops, op_names)
@@ -137,6 +153,7 @@ if (!is.null(opts$ops)) {
     )
   }
   ops <- Filter(function(o) o$op %in% opts$ops, ops)
+  math_ops <- Filter(function(o) o$op %in% opts$ops, math_ops)
 }
 
 sizes <- opts$sizes
@@ -165,6 +182,9 @@ make_inputs <- function(n) {
   env$xc <- stats::runif(n, -1e6, 1e6)
   env$xi <- sample.int(2e6L, n, replace = TRUE) - 1000000L
   env$yi <- sample.int(2e6L, n, replace = TRUE) - 1000000L
+  # Drawn last so that the inputs above stay the same as in older runs.
+  env$xp <- 10^stats::runif(n, -3, 3)
+  env$xt <- stats::runif(n, -5, 5)
   env
 }
 
@@ -220,9 +240,11 @@ record <- function(table, spec, mode, n, impl, m) {
   )
 }
 
-run_spec <- function(table, spec, env, n, mode = "fast") {
-  old <- simd_precision(mode)
-  on.exit(simd_precision(old))
+# Times spec on every tier and base R with `mode` set by `setter`
+# (simd_precision() or simd_math_accuracy()).
+run_spec <- function(table, spec, env, n, mode = "fast", setter = simd_precision) {
+  old <- setter(mode)
+  on.exit(setter(old))
   for (tier in tiers) {
     record(table, spec, mode, n, tier, time_expr(spec$simd, env, n, tier))
   }
@@ -250,6 +272,13 @@ for (n in sizes) {
     message(sprintf("n = %s: precision-mode table", fmt_n(n)))
     for (spec in prec_specs) {
       for (mode in precision_modes) run_spec("precision", spec, env, n, mode)
+    }
+  }
+
+  if (n == max(sizes) && length(math_ops) > 0L) {
+    message(sprintf("n = %s: math accuracy table", fmt_n(n)))
+    for (spec in math_ops) {
+      for (mode in math_modes) run_spec("math", spec, env, n, mode, simd_math_accuracy)
     }
   }
 }
@@ -432,11 +461,11 @@ md_table <- function(sub, row_key) {
   c(head, body)
 }
 
-base_names <- vapply(ops, function(o) {
+base_names <- vapply(c(ops, math_ops), function(o) {
   ref <- if (is.null(o$ref)) "" else sprintf("; %s: `%s`", o$ref_name, deparse(o$ref))
   sprintf("`%s` vs base `%s`%s", deparse(o$simd), deparse(o$base), ref)
 }, "")
-names(base_names) <- vapply(ops, function(o) paste(o$op, o$type), "")
+names(base_names) <- vapply(c(ops, math_ops), function(o) paste(o$op, o$type), "")
 
 md_section <- function(table, title, row_key) {
   sub_all <- res[res$table == table, , drop = FALSE]
@@ -486,7 +515,8 @@ md <- c(
   meta_lines,
   md_section("main", "Main table (precision \"fast\", no NAs)", "n"),
   md_section("na", "Inputs with 1% NA (precision \"fast\")", "n"),
-  md_section("precision", sprintf("Precision modes (n = %s)", fmt_n(max(sizes))), "mode")
+  md_section("precision", sprintf("Precision modes (n = %s)", fmt_n(max(sizes))), "mode"),
+  md_section("math", sprintf("Math accuracy modes (n = %s)", fmt_n(max(sizes))), "mode")
 )
 writeLines(md, file.path(out_dir, paste0(stem, ".md")), useBytes = TRUE)
 invisible(file.copy(

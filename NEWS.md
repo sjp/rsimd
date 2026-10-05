@@ -38,8 +38,11 @@ First release.
 * **Elementary functions:** exponentials, logarithms, powers, roots,
   trigonometric, pi-scaled and hyperbolic functions (`simd_exp()` to
   `simd_atanh()`), vectorised with the bundled SLEEF 3.9.0 headers on the
-  SIMD tiers and the C math library on `"none"`. Machine-learning helpers
-  `simd_sigmoid()`, `simd_softmax()` and `simd_log_softmax()`.
+  SIMD tiers and the C math library on `"none"`. `simd_math_accuracy("fast")`
+  (option `rsimd.math_accuracy`) switches the SIMD tiers to SLEEF's faster
+  3.5-ULP variants where they exist, with the same missing values, special
+  values and warnings. Machine-learning helpers `simd_sigmoid()`,
+  `simd_softmax()` and `simd_log_softmax()`.
 * **Complex vectors:** `simd_add()`, `simd_sub()`, `simd_neg()`,
   `simd_sum()` and the predicates take complex input; `simd_conj()`,
   `simd_re()` and `simd_im()`.

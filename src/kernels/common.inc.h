@@ -380,10 +380,17 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
  *   rsimd_sleef_sincos(v, &s, &c), rsimd_sleef_sincospi(v, &s, &c)
  *                        store the sine and cosine through pointers (SVE
  *                        vectors cannot be struct members)
+ *   rsimd_sleef_<f>_fast  the same functions in fast mode (option
+ *                        rsimd.math_accuracy = "fast")
  *
  * Accuracy policy: every function uses SLEEF's 1.0-ULP (_u10) variant,
  * except sinpi, cospi, sincospi and hypot, which use the 0.5-ULP (_u05)
- * one; the 3.5-ULP (_u35) variants are never used. SLEEF's functions
+ * one. The _fast wrappers use the 3.5-ULP (_u35) variant where SLEEF has
+ * one and it is faster: sin cos tan asin acos atan atan2 log log2 cbrt
+ * sinh cosh tanh hypot sincos sincospi, and sinpi and cospi as one half of
+ * sincospi_u35. The others (exp expm1 log10 log1p pow asinh acosh atanh,
+ * which have no _u35, and exp2 and exp10, whose _u35 is no faster) are
+ * the accurate wrappers under the _fast name. SLEEF's functions
  * handle the special values (NaN, infinities, signed zeros) as C99 does but
  * do not carry R's NA payload through, so kernels blend NA back in. The none
  * tier never uses SLEEF: its math kernels call C99 libm, as base R does, and
@@ -497,6 +504,59 @@ RSIMD_SLEEF_DEF2(hypot, u05)
 RSIMD_SLEEF_DEFSC(sincos, u10)
 RSIMD_SLEEF_DEFSC(sincospi, u05)
 
+/* Fast mode. RSIMD_SLEEF_DEF*_FAST(f) defines rsimd_sleef_f_fast with
+   SLEEF's _u35 variant. */
+#define RSIMD_SLEEF_DEF1_FAST(f)                                                           \
+  RSIMD_INLINE rsimd_vf64 rsimd_sleef_##f##_fast(rsimd_vf64 a) {                           \
+    return RSIMD_SLEEF_OUT(RSIMD_SLEEF_FN(f, u35)(RSIMD_SLEEF_IN(a)));                     \
+  }
+#define RSIMD_SLEEF_DEF2_FAST(f)                                                           \
+  RSIMD_INLINE rsimd_vf64 rsimd_sleef_##f##_fast(rsimd_vf64 a, rsimd_vf64 b) {             \
+    return RSIMD_SLEEF_OUT(RSIMD_SLEEF_FN(f, u35)(RSIMD_SLEEF_IN(a), RSIMD_SLEEF_IN(b)));  \
+  }
+#define RSIMD_SLEEF_DEFSC_FAST(f)                                                          \
+  RSIMD_INLINE void rsimd_sleef_##f##_fast(rsimd_vf64 a, rsimd_vf64 *s, rsimd_vf64 *c) {   \
+    RSIMD_SLEEF_PAIR r = RSIMD_SLEEF_FN(f, u35)(RSIMD_SLEEF_IN(a));                        \
+    *s = RSIMD_SLEEF_OUT(RSIMD_SLEEF_FIRST(r));                                            \
+    *c = RSIMD_SLEEF_OUT(RSIMD_SLEEF_SECOND(r));                                           \
+  }
+
+RSIMD_SLEEF_DEF1_FAST(log)
+RSIMD_SLEEF_DEF1_FAST(log2)
+RSIMD_SLEEF_DEF1_FAST(cbrt)
+RSIMD_SLEEF_DEF1_FAST(sin)
+RSIMD_SLEEF_DEF1_FAST(cos)
+RSIMD_SLEEF_DEF1_FAST(tan)
+RSIMD_SLEEF_DEF1_FAST(asin)
+RSIMD_SLEEF_DEF1_FAST(acos)
+RSIMD_SLEEF_DEF1_FAST(atan)
+RSIMD_SLEEF_DEF1_FAST(sinh)
+RSIMD_SLEEF_DEF1_FAST(cosh)
+RSIMD_SLEEF_DEF1_FAST(tanh)
+RSIMD_SLEEF_DEF2_FAST(atan2)
+RSIMD_SLEEF_DEF2_FAST(hypot)
+RSIMD_SLEEF_DEFSC_FAST(sincos)
+RSIMD_SLEEF_DEFSC_FAST(sincospi)
+
+/* SLEEF has no sinpi_u35 or cospi_u35. */
+RSIMD_INLINE rsimd_vf64 rsimd_sleef_sinpi_fast(rsimd_vf64 a) {
+  return RSIMD_SLEEF_OUT(RSIMD_SLEEF_FIRST(RSIMD_SLEEF_FN(sincospi, u35)(RSIMD_SLEEF_IN(a))));
+}
+RSIMD_INLINE rsimd_vf64 rsimd_sleef_cospi_fast(rsimd_vf64 a) {
+  return RSIMD_SLEEF_OUT(RSIMD_SLEEF_SECOND(RSIMD_SLEEF_FN(sincospi, u35)(RSIMD_SLEEF_IN(a))));
+}
+
+#define rsimd_sleef_exp_fast rsimd_sleef_exp
+#define rsimd_sleef_exp2_fast rsimd_sleef_exp2
+#define rsimd_sleef_exp10_fast rsimd_sleef_exp10
+#define rsimd_sleef_expm1_fast rsimd_sleef_expm1
+#define rsimd_sleef_log10_fast rsimd_sleef_log10
+#define rsimd_sleef_log1p_fast rsimd_sleef_log1p
+#define rsimd_sleef_asinh_fast rsimd_sleef_asinh
+#define rsimd_sleef_acosh_fast rsimd_sleef_acosh
+#define rsimd_sleef_atanh_fast rsimd_sleef_atanh
+#define rsimd_sleef_pow_fast rsimd_sleef_pow
+
 #define RSIMD_SLEEF_EXP rsimd_sleef_exp
 #define RSIMD_SLEEF_EXP2 rsimd_sleef_exp2
 #define RSIMD_SLEEF_EXP10 rsimd_sleef_exp10
@@ -525,6 +585,34 @@ RSIMD_SLEEF_DEFSC(sincospi, u05)
 #define RSIMD_SLEEF_HYPOT rsimd_sleef_hypot
 #define RSIMD_SLEEF_SINCOS rsimd_sleef_sincos
 #define RSIMD_SLEEF_SINCOSPI rsimd_sleef_sincospi
+#define RSIMD_SLEEF_EXP_FAST rsimd_sleef_exp_fast
+#define RSIMD_SLEEF_EXP2_FAST rsimd_sleef_exp2_fast
+#define RSIMD_SLEEF_EXP10_FAST rsimd_sleef_exp10_fast
+#define RSIMD_SLEEF_EXPM1_FAST rsimd_sleef_expm1_fast
+#define RSIMD_SLEEF_LOG_FAST rsimd_sleef_log_fast
+#define RSIMD_SLEEF_LOG2_FAST rsimd_sleef_log2_fast
+#define RSIMD_SLEEF_LOG10_FAST rsimd_sleef_log10_fast
+#define RSIMD_SLEEF_LOG1P_FAST rsimd_sleef_log1p_fast
+#define RSIMD_SLEEF_CBRT_FAST rsimd_sleef_cbrt_fast
+#define RSIMD_SLEEF_SIN_FAST rsimd_sleef_sin_fast
+#define RSIMD_SLEEF_COS_FAST rsimd_sleef_cos_fast
+#define RSIMD_SLEEF_TAN_FAST rsimd_sleef_tan_fast
+#define RSIMD_SLEEF_ASIN_FAST rsimd_sleef_asin_fast
+#define RSIMD_SLEEF_ACOS_FAST rsimd_sleef_acos_fast
+#define RSIMD_SLEEF_ATAN_FAST rsimd_sleef_atan_fast
+#define RSIMD_SLEEF_SINH_FAST rsimd_sleef_sinh_fast
+#define RSIMD_SLEEF_COSH_FAST rsimd_sleef_cosh_fast
+#define RSIMD_SLEEF_TANH_FAST rsimd_sleef_tanh_fast
+#define RSIMD_SLEEF_ASINH_FAST rsimd_sleef_asinh_fast
+#define RSIMD_SLEEF_ACOSH_FAST rsimd_sleef_acosh_fast
+#define RSIMD_SLEEF_ATANH_FAST rsimd_sleef_atanh_fast
+#define RSIMD_SLEEF_SINPI_FAST rsimd_sleef_sinpi_fast
+#define RSIMD_SLEEF_COSPI_FAST rsimd_sleef_cospi_fast
+#define RSIMD_SLEEF_POW_FAST rsimd_sleef_pow_fast
+#define RSIMD_SLEEF_ATAN2_FAST rsimd_sleef_atan2_fast
+#define RSIMD_SLEEF_HYPOT_FAST rsimd_sleef_hypot_fast
+#define RSIMD_SLEEF_SINCOS_FAST rsimd_sleef_sincos_fast
+#define RSIMD_SLEEF_SINCOSPI_FAST rsimd_sleef_sincospi_fast
 #endif /* RSIMD_HAVE_SLEEF */
 
 #endif /* RSIMD_KERNELS_COMMON_INC_H */

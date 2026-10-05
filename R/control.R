@@ -99,6 +99,59 @@ simd_precision <- function(mode) {
   match(.precision_mode(), .precision_modes) - 1L
 }
 
+simd_math_accuracy <- function(mode) {
+  old <- .math_accuracy_mode()
+  if (missing(mode)) {
+    return(old)
+  }
+  problem <- .math_accuracy_problem(mode)
+  if (!is.null(problem)) {
+    stop(problem, call. = FALSE)
+  }
+  options(rsimd.math_accuracy = mode)
+  invisible(old)
+}
+
+.math_accuracy_modes <- c("accurate", "fast")
+
+# For a candidate value of rsimd.math_accuracy: NULL if valid, else the
+# error.
+.math_accuracy_problem <- function(mode) {
+  if (!is.character(mode) || length(mode) != 1L || is.na(mode) ||
+    !mode %in% .math_accuracy_modes) {
+    return(paste0(
+      "math accuracy mode must be one of ",
+      paste0("\"", .math_accuracy_modes, "\"", collapse = ", ")
+    ))
+  }
+  NULL
+}
+
+# The math accuracy mode in effect: the rsimd.math_accuracy option, which
+# the user may have set directly, validated.
+.math_accuracy_mode <- function() {
+  mode <- getOption("rsimd.math_accuracy", "accurate")
+  problem <- .math_accuracy_problem(mode)
+  if (!is.null(problem)) {
+    stop("invalid option rsimd.math_accuracy: ", problem, call. = FALSE)
+  }
+  mode
+}
+
+# The math accuracy mode as the integer code the C side takes (0 accurate,
+# 1 fast). Called by every elementary function, so the valid values are
+# checked first.
+.math_accuracy_code <- function() {
+  mode <- getOption("rsimd.math_accuracy")
+  if (is.null(mode) || identical(mode, "accurate")) {
+    return(0L)
+  }
+  if (identical(mode, "fast")) {
+    return(1L)
+  }
+  match(.math_accuracy_mode(), .math_accuracy_modes) - 1L
+}
+
 simd_with_impl <- function(impl, expr) {
   old <- simd_use(impl)
   on.exit(simd_use(old))

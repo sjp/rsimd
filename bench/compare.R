@@ -67,7 +67,7 @@ if (nrow(both) == 0L) {
   cat("The runs have no op x type x size x implementation in common.\n")
   quit(status = 0L)
 }
-table_order <- c("main", "na", "precision")
+table_order <- c("main", "na", "precision", "math")
 both <- both[order(
   match(both$table, table_order), both$op, both$type, both$mode, both$n, both$impl
 ), ]

@@ -13,6 +13,10 @@ directly takes effect on the next call of an \pkg{rsimd} function.}
 \item{\code{rsimd.precision}}{How floating-point sums are accumulated:
 \code{"fast"} (the default), \code{"pairwise"} or \code{"compensated"}. See
 \code{\link{simd_precision}()}.}
+\item{\code{rsimd.math_accuracy}}{Which variants of the SLEEF library the
+SIMD implementations of the elementary functions use: \code{"accurate"}
+(the default) or \code{"fast"}, which is faster and less accurate in the
+last bits. See \code{\link{simd_math_accuracy}()}.}
 \item{\code{rsimd.na_check}}{\code{TRUE} (the default) or \code{FALSE}. The
 default for the \code{na_check} argument: \code{FALSE} promises that inputs
 contain no missing values, so functions skip looking for them. See
@@ -43,5 +47,6 @@ of this size, so a small value exercises that splitting. The default is
 }
 \seealso{
 \code{\link{simd_use}()}, \code{\link{simd_precision}()},
+\code{\link{simd_math_accuracy}()},
 \code{\link{simd_cpu_features}()}.
 }

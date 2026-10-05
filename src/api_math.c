@@ -2,7 +2,9 @@
    (double, integer or logical, read lane-wise by the kernels), apply the
    length-1 broadcast rule to the two-operand functions, run the kernel
    chunk by chunk through the active implementation and warn "NaNs
-   produced" as base R does. Results are bare double vectors. */
+   produced" as base R does. `accuracy` is the code of option
+   rsimd.math_accuracy (0 accurate, 1 fast). Results are bare double
+   vectors. */
 
 #include <math.h>
 #include <stdint.h>
@@ -39,6 +41,13 @@ static int check_operands(const rsimd_ew *e, const char *msg) {
   return f;
 }
 
+/* RSIMD_MATH_FAST for accuracy code 1 (fast), 0 for 0 (accurate). */
+static int accuracy_bit(SEXP accuracy) {
+  int a = rsimd_arg_int1(accuracy, "accuracy");
+  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
+  return a ? RSIMD_MATH_FAST : 0;
+}
+
 static void warn_nan(int st) {
   if (st & RSIMD_EW_NAN_PRODUCED) Rf_warning("NaNs produced");
 }
@@ -48,7 +57,8 @@ static void warn_nan(int st) {
    everywhere. */
 enum { MATH1_WARN, MATH1_QUIET, MATH1_ALL_NA };
 
-/* math1_f64 op `code` (with the LOGB divisor p) over x. */
+/* math1_f64 op `code` (with the LOGB divisor p, and RSIMD_MATH_FAST in
+   fast mode) over x. */
 static SEXP run_math1(SEXP x, int code, double p, int mode) {
   int flags, st = 0;
   SEXP out;
@@ -74,19 +84,19 @@ static SEXP run_math1(SEXP x, int code, double p, int mode) {
 
 /* Unary functions by name (the RSIMD_MATH_* order of kernel_types.h,
    without LOGB). */
-static SEXP simd_math1_impl(SEXP x, SEXP op) {
+static SEXP simd_math1_impl(SEXP x, SEXP op, SEXP accuracy) {
   static const char *const names[] = {
     "exp",  "exp2", "exp10", "expm1", "log",   "log2",  "log10", "log1p", "",
     "cbrt", "sin",  "cos",   "tan",   "asin",  "acos",  "atan",  "sinpi", "cospi",
     "tanpi", "sinh", "cosh", "tanh",  "asinh", "acosh", "atanh", "sigmoid"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   if (code == RSIMD_MATH_LOGB) Rf_error("internal error: unknown op ''");
-  return run_math1(x, code, 1.0, MATH1_WARN);
+  return run_math1(x, code | accuracy_bit(accuracy), 1.0, MATH1_WARN);
 }
 
-SEXP C_simd_math1(SEXP x, SEXP op) {
+SEXP C_simd_math1(SEXP x, SEXP op, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_math1_impl(x, op), 0);
+  return rsimd_sv_result(simd_math1_impl(x, op, accuracy), 0);
 }
 
 /* log(x, base) for a single double, integer or logical base, as base R's
@@ -94,7 +104,8 @@ SEXP C_simd_math1(SEXP x, SEXP op) {
    10, log2 for base 2, otherwise log(x) / log(base) with log(base) NaN for
    a negative base; with base NA every result is NA, with base NaN every
    result is NaN except NA where x is NA, and neither warns. */
-static SEXP simd_log_impl(SEXP x, SEXP base) {
+static SEXP simd_log_impl(SEXP x, SEXP base, SEXP accuracy) {
+  int fast = accuracy_bit(accuracy);
   double b;
   switch (TYPEOF(base)) {
   case REALSXP:
@@ -107,21 +118,23 @@ static SEXP simd_log_impl(SEXP x, SEXP base) {
   /* log(x) / NaN is NaN, and the input's NaN where x is NA or NaN. */
   if (ISNA(b)) return run_math1(x, RSIMD_MATH_LOGB, b, MATH1_ALL_NA);
   if (ISNAN(b)) return run_math1(x, RSIMD_MATH_LOGB, b, MATH1_QUIET);
-  if (b == 10) return run_math1(x, RSIMD_MATH_LOG10, 1.0, MATH1_WARN);
-  if (b == 2) return run_math1(x, RSIMD_MATH_LOG2, 1.0, MATH1_WARN);
-  return run_math1(x, RSIMD_MATH_LOGB, b > 0 ? log(b) : b == 0 ? R_NegInf : R_NaN, MATH1_WARN);
+  if (b == 10) return run_math1(x, RSIMD_MATH_LOG10 | fast, 1.0, MATH1_WARN);
+  if (b == 2) return run_math1(x, RSIMD_MATH_LOG2 | fast, 1.0, MATH1_WARN);
+  return run_math1(x, RSIMD_MATH_LOGB | fast, b > 0 ? log(b) : b == 0 ? R_NegInf : R_NaN,
+                   MATH1_WARN);
 }
 
-SEXP C_simd_log(SEXP x, SEXP base) {
+SEXP C_simd_log(SEXP x, SEXP base, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_log_impl(x, base), 0);
+  return rsimd_sv_result(simd_log_impl(x, base, accuracy), 0);
 }
 
 /* Binary functions by name: pow(x, y), atan2(y, x), hypot(x, y). */
-static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op) {
+static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
   static const char *const names[] = {"pow", "atan2", "hypot"};
   static const char *const xy[] = {"x", "y"}, *const yx[] = {"y", "x"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), flags, st = 0;
+  int fast = accuracy_bit(accuracy);
   SEXP sargs[2], out;
   double *po;
   rsimd_ew e;
@@ -135,21 +148,21 @@ static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op) {
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, e.n));
   po = (double *) rsimd_out_ptr(out);
   RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
-    st |= rsimd_active->math2_f64(code, p[0], p[1], len, flags, po + off);
+    st |= rsimd_active->math2_f64(code | fast, p[0], p[1], len, flags, po + off);
   });
   warn_nan(st);
   UNPROTECT(1);
   return out;
 }
 
-SEXP C_simd_math2(SEXP x, SEXP y, SEXP op) {
+SEXP C_simd_math2(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_math2_impl(x, y, op), 0);
+  return rsimd_sv_result(simd_math2_impl(x, y, op, accuracy), 0);
 }
 
 /* list(sin = sin(x), cos = cos(x)), one warning for both. */
-static SEXP simd_sincos_impl(SEXP x) {
-  int flags, st = 0;
+static SEXP simd_sincos_impl(SEXP x, SEXP accuracy) {
+  int flags, st = 0, op = RSIMD_MATH_SIN | accuracy_bit(accuracy);
   SEXP s, c, out, names;
   double *ps, *pc;
   rsimd_ew e;
@@ -161,7 +174,7 @@ static SEXP simd_sincos_impl(SEXP x) {
   ps = (double *) rsimd_out_ptr(s);
   pc = (double *) rsimd_out_ptr(c);
   RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
-    st |= rsimd_active->sincos_f64(p[0], len, flags, ps + off, pc + off);
+    st |= rsimd_active->sincos_f64(op, p[0], len, flags, ps + off, pc + off);
   });
   out = PROTECT(Rf_allocVector(VECSXP, 2));
   SET_VECTOR_ELT(out, 0, s);
@@ -175,10 +188,10 @@ static SEXP simd_sincos_impl(SEXP x) {
   return out;
 }
 
-SEXP C_simd_sincos(SEXP x) {
+SEXP C_simd_sincos(SEXP x, SEXP accuracy) {
   SEXP out;
   rsimd_entry();
-  out = PROTECT(simd_sincos_impl(x));
+  out = PROTECT(simd_sincos_impl(x, accuracy));
   SET_VECTOR_ELT(out, 0, rsimd_sv_result(VECTOR_ELT(out, 0), 0));
   SET_VECTOR_ELT(out, 1, rsimd_sv_result(VECTOR_ELT(out, 1), 0));
   UNPROTECT(1);

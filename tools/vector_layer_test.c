@@ -17,9 +17,10 @@
  * compare.inc.c, bitwise.inc.c, convert.inc.c), against the scalar forms
  * those files define for the none tier, and so are the complex kernels
  * (src/kernels/complex.inc.c). On tiers built with SLEEF the
- * elementary-function wrappers are compared with long double libm, and the
- * elementary-function kernels (src/kernels/math.inc.c) with the scalar
- * forms that file defines for the none tier, and the softmax passes
+ * elementary-function wrappers (accurate and fast) are compared with long
+ * double libm, and the elementary-function kernels (src/kernels/math.inc.c,
+ * in both accuracy modes) with the scalar forms that file defines for the
+ * none tier, and the softmax passes
  * (src/kernels/ml.inc.c) with libm and the scalar folds. Prints a
  * summary and exits non-zero on any mismatch.
  */
@@ -450,8 +451,9 @@ static void test_int(ptrdiff_t n) {
 
 #ifdef RSIMD_HAVE_SLEEF
 /* The SLEEF wrappers of common.inc.h, through the predicated loop, against
-   SLEEF's documented error bounds: 1.0 ULP for the _u10 functions and 0.5
-   ULP for the _u05 ones, measured against the long double libm function
+   SLEEF's documented error bounds: 1.0 ULP for the _u10 functions, 0.5
+   ULP for the _u05 ones and 3.5 ULP for the _u35 ones (the _fast
+   wrappers that have one), measured against the long double libm function
    (quad precision on aarch64, x87 extended on x86), with a little slack for
    the reference's own error. Results whose reference rounds to NaN, an
    infinity or zero must match exactly, sign included. Inputs are random
@@ -470,13 +472,14 @@ static double ulp_of(double x) {
 }
 
 static int sleef_any_zero = 0; /* 1: a zero result matches either zero */
-static double sleef_worst[2] = {0, 0};
-static const char *sleef_worst_name[2] = {"", ""};
+/* The worst errors seen at bounds 1, 0.5 and 3.5. */
+static double sleef_worst[3] = {0, 0, 0};
+static const char *sleef_worst_name[3] = {"", "", ""};
 
 static void check_ulp(const char *what, ptrdiff_t n, const double *got, double bound) {
   ptrdiff_t i;
   char buf[200];
-  const int k = bound < 1;
+  const int k = bound < 1 ? 1 : bound > 1 ? 2 : 0;
   for (i = 0; i < n; i++) {
     double g = got[i], w = (double) ldref[i];
     int ok;
@@ -540,6 +543,26 @@ static rsimd_vf64 sleef_sincospi_s(rsimd_vf64 x) {
 static rsimd_vf64 sleef_sincospi_c(rsimd_vf64 x) {
   rsimd_vf64 s, c;
   rsimd_sleef_sincospi(x, &s, &c);
+  return c;
+}
+static rsimd_vf64 sleef_sincos_fast_s(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincos_fast(x, &s, &c);
+  return s;
+}
+static rsimd_vf64 sleef_sincos_fast_c(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincos_fast(x, &s, &c);
+  return c;
+}
+static rsimd_vf64 sleef_sincospi_fast_s(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincospi_fast(x, &s, &c);
+  return s;
+}
+static rsimd_vf64 sleef_sincospi_fast_c(rsimd_vf64 x) {
+  rsimd_vf64 s, c;
+  rsimd_sleef_sincospi_fast(x, &s, &c);
   return c;
 }
 
@@ -641,6 +664,35 @@ static void test_sleef(void) {
     SLEEF2("sleef pow", rsimd_sleef_pow, powl, 1, -3, 3, 1, 1);
     SLEEF2("sleef atan2", rsimd_sleef_atan2, atan2l, 1, -300, 300, 1, 1);
     SLEEF2("sleef hypot", rsimd_sleef_hypot, hypotl, 0.5, -300, 300, 1, 1);
+    /* Fast mode: the _u35 functions over the same domains. */
+    SLEEF1("fast log", rsimd_sleef_log_fast, logl, 3.5, -320, 308, 1, 0);
+    SLEEF1("fast log negative", rsimd_sleef_log_fast, logl, 3.5, -10, 10, 1, 1);
+    SLEEF1("fast log2", rsimd_sleef_log2_fast, log2l, 3.5, -320, 308, 1, 0);
+    SLEEF1("fast cbrt", rsimd_sleef_cbrt_fast, cbrtl, 3.5, -320, 308, 1, 1);
+    SLEEF1("fast sin", rsimd_sleef_sin_fast, sinl, 3.5, -1e4, 1e4, 0, 0);
+    SLEEF1("fast sin wide", rsimd_sleef_sin_fast, sinl, 3.5, -300, 300, 1, 1);
+    SLEEF1("fast cos", rsimd_sleef_cos_fast, cosl, 3.5, -1e4, 1e4, 0, 0);
+    SLEEF1("fast cos wide", rsimd_sleef_cos_fast, cosl, 3.5, -300, 300, 1, 1);
+    SLEEF1("fast tan", rsimd_sleef_tan_fast, tanl, 3.5, -1e4, 1e4, 0, 0);
+    SLEEF1("fast tan wide", rsimd_sleef_tan_fast, tanl, 3.5, -300, 300, 1, 1);
+    SLEEF1("fast sincos sin", sleef_sincos_fast_s, sinl, 3.5, -300, 300, 1, 1);
+    SLEEF1("fast sincos cos", sleef_sincos_fast_c, cosl, 3.5, -300, 300, 1, 1);
+    SLEEF1("fast asin", rsimd_sleef_asin_fast, asinl, 3.5, -1.01, 1.01, 0, 0);
+    SLEEF1("fast acos", rsimd_sleef_acos_fast, acosl, 3.5, -1.01, 1.01, 0, 0);
+    SLEEF1("fast atan", rsimd_sleef_atan_fast, atanl, 3.5, -300, 300, 1, 1);
+    SLEEF1("fast sinh", rsimd_sleef_sinh_fast, sinhl, 3.5, -709, 709, 0, 0);
+    SLEEF1("fast cosh", rsimd_sleef_cosh_fast, coshl, 3.5, -709, 709, 0, 0);
+    SLEEF1("fast tanh", rsimd_sleef_tanh_fast, tanhl, 3.5, -20, 20, 0, 0);
+    sleef_any_zero = 1;
+    SLEEF1("fast sinpi", rsimd_sleef_sinpi_fast, ref_sinpi, 3.5, -2.5e8, 2.5e8, 0, 0);
+    SLEEF1("fast sinpi small", rsimd_sleef_sinpi_fast, ref_sinpi, 3.5, -4, 4, 0, 0);
+    SLEEF1("fast cospi", rsimd_sleef_cospi_fast, ref_cospi, 3.5, -2.5e8, 2.5e8, 0, 0);
+    SLEEF1("fast cospi small", rsimd_sleef_cospi_fast, ref_cospi, 3.5, -4, 4, 0, 0);
+    SLEEF1("fast sincospi sin", sleef_sincospi_fast_s, ref_sinpi, 3.5, -100, 100, 0, 0);
+    SLEEF1("fast sincospi cos", sleef_sincospi_fast_c, ref_cospi, 3.5, -100, 100, 0, 0);
+    sleef_any_zero = 0;
+    SLEEF2("fast atan2", rsimd_sleef_atan2_fast, atan2l, 3.5, -300, 300, 1, 1);
+    SLEEF2("fast hypot", rsimd_sleef_hypot_fast, hypotl, 3.5, -300, 300, 1, 1);
   }
 }
 
@@ -686,7 +738,8 @@ static void test_pi_oracle(void) {
 }
 
 /* The elementary-function kernels against the scalar forms of math.inc.c
-   (libm, as the none tier): within 2 ULP (4 for cbrt), with NaN kinds (NA or NaN),
+   (libm, as the none tier): within 2 ULP (4 for cbrt), or 2.5 ULP more in
+   fast mode (RSIMD_MATH_FAST), with NaN kinds (NA or NaN),
    infinities, signed zeros and the status bit exactly equal; pow exactly
    equal at base R's special cases. Each op runs over every short length
    and N, with double and int32 operands and every broadcast. */
@@ -708,9 +761,11 @@ static double math_ref2(int op, double a, double b) {
   if (isnan(r) && !isnan(a) && !isnan(b)) math_ref_status = RSIMD_EW_NAN_PRODUCED;
   return r;
 }
+/* Base R's exact cases of x ^ y (rsimd_rpow_f64): y = 3 and 4 are
+   products only for |x| <= 11. */
 static int math_exact_pow(double a, double b) {
-  return b == 0 || b == 2 || b == 3 || b == 4 || a == 0 || a == 1 || !isfinite(a) ||
-         !isfinite(b);
+  return b == 0 || b == 2 || ((b == 3 || b == 4) && fabs(a) <= 11) || a == 0 || a == 1 ||
+         !isfinite(a) || !isfinite(b);
 }
 static void check_math(const char *what, ptrdiff_t n, const double *got, const double *want,
                        const double *a, const double *b, int exact_pow, double bound) {
@@ -851,35 +906,39 @@ static void test_softmax(void) {
 }
 
 /* log2 and exp2 of the powers of 2 and integers, log10 and exp10 of
-   10^(0:22) and 0:22: exact, as in base R. */
+   10^(0:22) and 0:22: exact, as in base R, in both accuracy modes. */
 static void test_math_exact(void) {
   static double xs[2100], got[2100], want[2100];
   static const struct { int op, lo, hi, pow; } cases[] = {
     {RSIMD_MATH_LOG2, -1074, 1023, 2}, {RSIMD_MATH_EXP2, -1074, 1023, 0},
     {RSIMD_MATH_LOG10, 0, 22, 10}, {RSIMD_MATH_EXP10, 0, 22, 0}};
   size_t c;
-  int k, m;
+  int k, m, fast;
   char buf[96];
-  for (c = 0; c < sizeof cases / sizeof cases[0]; c++) {
-    for (m = 0, k = cases[c].lo; k <= cases[c].hi; k++, m++) {
-      double p = cases[c].op == RSIMD_MATH_LOG10 || cases[c].op == RSIMD_MATH_EXP10
-                   ? pow(10.0, k) : ldexp(1.0, k);
-      xs[m] = cases[c].pow ? p : (double) k;
-      want[m] = cases[c].pow ? (double) k : p;
-    }
-    RSIMD_KERNEL(math1_f64)(cases[c].op, xs, m, 0, 1.0, got);
-    for (k = 0; k < m; k++) {
-      n_checks++;
-      if (bits(got[k]) != bits(want[k])) {
-        snprintf(buf, sizeof buf, "input %a: got %a want %a", xs[k], got[k], want[k]);
-        fail("math exact powers", m, k, buf);
+  for (fast = 0; fast < 2; fast++) {
+    for (c = 0; c < sizeof cases / sizeof cases[0]; c++) {
+      for (m = 0, k = cases[c].lo; k <= cases[c].hi; k++, m++) {
+        double p = cases[c].op == RSIMD_MATH_LOG10 || cases[c].op == RSIMD_MATH_EXP10
+                     ? pow(10.0, k) : ldexp(1.0, k);
+        xs[m] = cases[c].pow ? p : (double) k;
+        want[m] = cases[c].pow ? (double) k : p;
+      }
+      RSIMD_KERNEL(math1_f64)(cases[c].op | (fast ? RSIMD_MATH_FAST : 0), xs, m, 0, 1.0, got);
+      for (k = 0; k < m; k++) {
+        n_checks++;
+        if (bits(got[k]) != bits(want[k])) {
+          snprintf(buf, sizeof buf, "input %a: got %a want %a", xs[k], got[k], want[k]);
+          fail(fast ? "math exact powers fast" : "math exact powers", m, k, buf);
+        }
       }
     }
   }
 }
 
-static void test_math(void) {
+static void test_math_mode(int fast) {
   static const ptrdiff_t lens[] = {1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 33, 65, N};
+  const int bit = fast ? RSIMD_MATH_FAST : 0;
+  const double extra = fast ? 2.5 : 0;
   int op, f, st;
   size_t li;
   ptrdiff_t j, n;
@@ -891,15 +950,15 @@ static void test_math(void) {
       math_inputs(op, ma, mia, n);
       for (f = 0; f < 2; f++) {
         reset_out();
-        st = RSIMD_KERNEL(math1_f64)(op, f ? (const void *) mia : ma, n,
+        st = RSIMD_KERNEL(math1_f64)(op | bit, f ? (const void *) mia : ma, n,
                                      f ? RSIMD_EW_I32(0) : 0, p, fout);
         math_ref_status = 0;
         for (j = 0; j < n; j++) {
           mref[j] = math_ref1(op, f ? (mia[j] == RSIMD_NA_I32 ? rsimd_na_real() : mia[j]) : ma[j], p);
         }
-        snprintf(what, sizeof what, "math1 op %d int32 %d", op, f);
+        snprintf(what, sizeof what, "math1 op %d int32 %d fast %d", op, f, fast);
         /* glibc's cbrt is up to 3 ULP from the exact value on aarch64. */
-        check_math(what, n, fout, mref, ma, NULL, 0, op == RSIMD_MATH_CBRT ? 4 : 2);
+        check_math(what, n, fout, mref, ma, NULL, 0, (op == RSIMD_MATH_CBRT ? 4 : 2) + extra);
         check_int(what, n, 0, st, math_ref_status);
       }
     }
@@ -930,7 +989,7 @@ static void test_math(void) {
                     ((f & 4) ? RSIMD_EW_I32(0) : 0) | ((f & 8) ? RSIMD_EW_I32(1) : 0);
         double *xa = mref2, *yb = mout2;
         reset_out();
-        st = RSIMD_KERNEL(math2_f64)(op, x, y, n, flags, fout);
+        st = RSIMD_KERNEL(math2_f64)(op | bit, x, y, n, flags, fout);
         math_ref_status = 0;
         for (j = 0; j < n; j++) {
           ptrdiff_t jx = (f & 1) ? 0 : j, jy = (f & 2) ? 0 : j;
@@ -938,8 +997,8 @@ static void test_math(void) {
           yb[j] = (f & 8) ? (mib[jy] == RSIMD_NA_I32 ? rsimd_na_real() : mib[jy]) : mb[jy];
           mref[j] = math_ref2(op, xa[j], yb[j]);
         }
-        snprintf(what, sizeof what, "math2 op %d flags %d", op, f);
-        check_math(what, n, fout, mref, xa, yb, op == RSIMD_MATH_POW, 2);
+        snprintf(what, sizeof what, "math2 op %d flags %d fast %d", op, f, fast);
+        check_math(what, n, fout, mref, xa, yb, op == RSIMD_MATH_POW, 2 + extra);
         check_int(what, n, 0, st, math_ref_status);
       }
     }
@@ -948,16 +1007,21 @@ static void test_math(void) {
     if (n > 9) ma[9] = rsimd_na_real();
     reset_out();
     for (j = 0; j <= n; j++) mout2[j] = SENTINEL_F64;
-    st = RSIMD_KERNEL(sincos_f64)(ma, n, 0, fout, mout2);
+    st = RSIMD_KERNEL(sincos_f64)(RSIMD_MATH_SIN | bit, ma, n, 0, fout, mout2);
     math_ref_status = 0;
     for (j = 0; j < n; j++) {
       mref[j] = math_ref1(RSIMD_MATH_SIN, ma[j], 1);
       mref2[j] = math_ref1(RSIMD_MATH_COS, ma[j], 1);
     }
-    check_math("sincos sin", n, fout, mref, ma, NULL, 0, 2);
-    check_math("sincos cos", n, mout2, mref2, ma, NULL, 0, 2);
+    check_math("sincos sin", n, fout, mref, ma, NULL, 0, 2 + extra);
+    check_math("sincos cos", n, mout2, mref2, ma, NULL, 0, 2 + extra);
     check_int("sincos status", n, 0, st, math_ref_status);
   }
+}
+
+static void test_math(void) {
+  test_math_mode(0);
+  test_math_mode(1);
 }
 #endif /* RSIMD_HAVE_SLEEF */
 
@@ -3140,8 +3204,9 @@ int main(void) {
   printf("tier %s: lanes64=%ld lanes32=%ld, %ld checks, %ld failures", RSIMD_TIER_STRING,
          (long) RSIMD_LANES_64, (long) RSIMD_LANES_32, n_checks, n_fail);
 #ifdef RSIMD_HAVE_SLEEF
-  printf("; SLEEF worst %.3f ULP (%s), %.3f ULP (%s)", sleef_worst[0], sleef_worst_name[0],
-         sleef_worst[1], sleef_worst_name[1]);
+  printf("; SLEEF worst %.3f ULP (%s), %.3f ULP (%s), %.3f ULP (%s)", sleef_worst[0],
+         sleef_worst_name[0], sleef_worst[1], sleef_worst_name[1], sleef_worst[2],
+         sleef_worst_name[2]);
   printf("; none sinpi/cospi/tanpi worst %.3f/%.3f/%.3f ULP", pi_oracle_worst[0],
          pi_oracle_worst[1], pi_oracle_worst[2]);
 #endif

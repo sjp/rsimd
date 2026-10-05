@@ -314,8 +314,9 @@ Attributes &
   vectors of them. \\
 Elementary functions &
   May differ from base R in the last bit. &
-  The SIMD tiers use SLEEF, within 1 ULP of the exact result (see
-  below); the \code{"none"} tier uses the C library as base R does. \\
+  The SIMD tiers use SLEEF, within 1 ULP of the exact result, or 3.5 ULP
+  in fast mode (see below); the \code{"none"} tier uses the C library as
+  base R does. \\
 Odd functions of \code{-0} &
   \code{simd\_sin(-0)} and similar return \code{-0}; base R since 4.6.0
   returns \code{0}. &
@@ -401,5 +402,30 @@ table(ulp_diff(simd_sin(x), sin(x)))
 \noindent The table counts the elements by how many ULP apart the two
 results are. Run on the \code{"none"} tier, it would show only zeros
 where the C library is the same one base R uses.
+
+\subsection{Fast mode}
+
+\code{simd\_math\_accuracy("fast")}, or option
+\code{rsimd.math\_accuracy = "fast"}, makes the SIMD tiers use SLEEF's
+3.5-ULP variants instead, which are typically 1.5 to 3 times as fast (6
+times for \code{simd\_hypot()}). It affects the trigonometric, inverse
+trigonometric and hyperbolic functions (not the inverse hyperbolic ones),
+\code{simd\_log()}, \code{simd\_log2()}, \code{simd\_cbrt()},
+\code{simd\_hypot()}, \code{simd\_atan2()} and the pi-scaled functions.
+SLEEF has no faster variant of the exponentials, \code{simd\_pow()},
+\code{simd\_log10()}, \code{simd\_log1p()} and the inverse hyperbolic
+functions, so they, and the machine-learning helpers built on
+\code{exp}, give the same results in both modes. Only the last bits of
+finite results change: \code{NA} and \code{NaN}, infinities, signs of
+zero, exact cases and warnings stay the same. The mode is global and
+applies to every tier (\code{"none"} always uses the C library).
+\code{?simd\_math\_accuracy} lists the bound of each function in both
+modes.
+
+<<fast>>=
+old <- simd_math_accuracy("fast")
+table(ulp_diff(simd_sin(x), sin(x)))
+simd_math_accuracy(old)
+@
 
 \end{document}

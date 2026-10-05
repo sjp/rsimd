@@ -70,7 +70,10 @@ exponential of the bundled SLEEF library, and \code{"none"} the C math
 library's \code{exp()}, as base R does; it is the reference the others are
 tested against. An implementation built without SLEEF (see
 \code{\link{simd_available}}) uses the next lower one that has it,
-ultimately \code{"none"}. Integer and logical input is converted to
+ultimately \code{"none"}. SLEEF has no faster, less accurate exponential,
+so option \code{rsimd.math_accuracy} (see
+\code{\link{simd_math_accuracy}()}) makes no difference to these
+functions. Integer and logical input is converted to
 double, an integer \code{NA} becoming \code{NA_real_}; complex and
 \code{integer64} input is not supported.
 

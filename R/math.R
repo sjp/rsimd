@@ -1,7 +1,8 @@
 # Elementary functions. Each function rejects complex and integer64 input,
 # which the C side cannot name the function for, and calls one of the
-# entry points with the function's name; the C side reads integer and
-# logical input as doubles, applies the broadcast rule and warns.
+# entry points with the function's name and the code of option
+# rsimd.math_accuracy; the C side reads integer and logical input as
+# doubles, applies the broadcast rule and warns.
 
 .math_check <- function(fun, args) {
   for (arg in names(args)) {
@@ -13,7 +14,7 @@
 .math1 <- function(x, op) {
   .sync_impl()
   .math_check(paste0("simd_", op), list(x = x))
-  .Call(C_simd_math1, x, op)
+  .Call(C_simd_math1, x, op, .math_accuracy_code())
 }
 
 .math2 <- function(x, y, op, names = c("x", "y")) {
@@ -21,7 +22,7 @@
   args <- list(x, y)
   names(args) <- names
   .math_check(paste0("simd_", op), args)
-  .Call(C_simd_math2, x, y, op)
+  .Call(C_simd_math2, x, y, op, .math_accuracy_code())
 }
 
 simd_exp <- function(x) .math1(x, "exp")
@@ -38,7 +39,7 @@ simd_log <- function(x, base = exp(1)) {
   }
   .sync_impl()
   .math_check("simd_log", list(x = x))
-  .Call(C_simd_log, x, base)
+  .Call(C_simd_log, x, base, .math_accuracy_code())
 }
 
 simd_log2 <- function(x) .math1(x, "log2")
@@ -62,7 +63,7 @@ simd_tan <- function(x) .math1(x, "tan")
 simd_sincos <- function(x) {
   .sync_impl()
   .math_check("simd_sincos", list(x = x))
-  .Call(C_simd_sincos, x)
+  .Call(C_simd_sincos, x, .math_accuracy_code())
 }
 
 simd_asin <- function(x) .math1(x, "asin")

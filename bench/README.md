@@ -39,7 +39,7 @@ and once as the base R equivalent:
 | is_na | `simd_is_na(x)` | `is.na(x)` | double |
 | as_integer | `simd_as_integer(x, mode = "truncating")` | `as.integer(x)` | double |
 
-There are three tables:
+There are four tables:
 
 - **Main**: every op at every size, precision mode `"fast"`, no missing values.
 - **1% NA**: `sum` and `any_na` with 1% of the elements set to `NA`, which exercises the
@@ -47,10 +47,15 @@ There are three tables:
   integer `sum()` does too), so those rows measure call overhead, not throughput.
 - **Precision modes**: `sum` and `dot` under `"fast"`, `"pairwise"` and `"compensated"`
   at the largest size, showing what the more accurate modes cost.
+- **Math accuracy modes**: `sin`, `log`, `tanh`, `atan2` and `hypot` under
+  `simd_math_accuracy()` `"accurate"` and `"fast"` at the largest size, showing what
+  SLEEF's 3.5-ULP variants gain. The `none` tier and base R have no modes, so their rows
+  differ only by noise. Base R's `hypot` is `sqrt(x * x + y * y)`, which can overflow.
 
 Inputs are generated once per size with `set.seed(20261003)`: doubles from
 `runif(n, -100, 100)` (`x`, `y`, `z` independent), `exp` on `runif(n, -50, 50)`,
-`as_integer` on `runif(n, -1e6, 1e6)`, integers from `sample.int(2e6, n, TRUE) - 1e6`.
+`as_integer` on `runif(n, -1e6, 1e6)`, integers from `sample.int(2e6, n, TRUE) - 1e6`,
+`log` on `10^runif(n, -3, 3)` and `tanh` on `runif(n, -5, 5)`.
 Each timing is `bench::mark(check = FALSE, filter_gc = TRUE, memory = FALSE)` with at least
 20 and at most 200 iterations and a minimum time of 0.1 s, 0.2 s or 0.5 s for
 n < 1e5, < 1e7 and ≥ 1e7. `check = FALSE` because results legitimately differ in the last
@@ -68,7 +73,7 @@ markdown to `latest.md`:
   machine key used by `compare.R`, the sizes and the run time.
 - `.csv`: the flat table: `table, op, type, mode, n, impl, median_us, itr_sec, n_itr,
   speedup_none, speedup_base, flag, rsimd_version, timestamp, machine`.
-- `.md`: a metadata header and one table per op, rows for sizes (or precision modes),
+- `.md`: a metadata header and one table per op, rows for sizes (or modes),
   columns for tiers then base R.
 
 ## Reading `latest.md`

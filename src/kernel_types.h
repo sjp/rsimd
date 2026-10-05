@@ -180,6 +180,13 @@ enum {
   RSIMD_MATH_SIGMOID
 };
 enum { RSIMD_MATH_POW = 0, RSIMD_MATH_ATAN2, RSIMD_MATH_HYPOT };
+/* OR-ed into an op code of math1_f64, math2_f64 or sincos_f64 (whose
+   only op is RSIMD_MATH_SIN): fast mode (option rsimd.math_accuracy =
+   "fast"), in which the SIMD tiers use SLEEF's 3.5-ULP functions where
+   they have them (the rsimd_sleef_<f>_fast wrappers of common.inc.h).
+   Missing values, special values and the status are as without it; the
+   none tier ignores it. */
+#define RSIMD_MATH_FAST 0x100
 
 /* The passes of softmax and log-softmax (kernels/ml.inc.c), op codes of
    softmax_f64 over x, which may be the same buffer as out:

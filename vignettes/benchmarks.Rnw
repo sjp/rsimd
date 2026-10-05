@@ -45,8 +45,8 @@ snapshots <- lapply(csv_files, read.csv, stringsAsFactors = FALSE)
 
 tier_order <- c("avx512", "avx2", "sse2", "sve2", "sve", "neon", "none")
 op_order <- c("sum", "mean", "dot", "add", "fma", "pmax", "exp", "any_na",
-  "is_na", "as_integer")
-mode_order <- c("fast", "pairwise", "compensated")
+  "is_na", "as_integer", "sin", "log", "tanh", "atan2", "hypot")
+mode_order <- c("accurate", "fast", "pairwise", "compensated")
 
 tex_escape <- function(s) {
   s <- gsub("\\", "\\textbackslash{}", s, fixed = TRUE)
@@ -183,7 +183,9 @@ table says otherwise.
 There are three tables per machine: the main table, without missing
 values; a table for inputs with 1\% missing values, which exercises the
 code that handles them; and the cost of the precision modes for
-\code{sum} and \code{dot} at $10^7$ elements.
+\code{sum} and \code{dot} at $10^7$ elements. Newer runs add a fourth,
+\code{sin}, \code{log}, \code{tanh}, \code{atan2} and \code{hypot} in both
+math accuracy modes (\code{?simd\_math\_accuracy}) at $10^7$ elements.
 
 \subsection*{Reading the tables}
 
@@ -303,6 +305,25 @@ for (d in snapshots) {
       c("Operation", "Type", "Mode"), intersect(impls, pr$impl),
       function(r) sprintf("%s (%s)", fmt_time(r$median_us),
         fmt_ratio(r$median_us / r$fast_us)))
+    cat("\\end{minipage}\n\n")
+  }
+
+  ma <- d[d$table == "math", ]
+  if (nrow(ma) > 0L) {
+    acc <- ma[ma$mode == "accurate", c("op", "type", "impl", "median_us")]
+    names(acc)[4L] <- "accurate_us"
+    ma <- merge(ma, acc, sort = FALSE)
+    cat("\\noindent\\begin{minipage}{\\textwidth}\n")
+    cat(sprintf(paste("\\subsection*{Math accuracy modes at $n = 10^{%d}$}\n",
+      "Median time per call, with the speed-up over \\code{\"accurate\"}",
+      "on the same implementation in parentheses (\\code{none} and base R",
+      "have no modes, so their rows differ only by noise).\n"),
+      as.integer(round(log10(ma$n[1L])))))
+    write_table(ma, c("op", "type", "mode"),
+      function(r) c(row_label(r), sprintf("\\code{%s}", r$mode)),
+      c("Operation", "Type", "Mode"), intersect(impls, ma$impl),
+      function(r) sprintf("%s (%s)", fmt_time(r$median_us),
+        fmt_ratio(r$accurate_us / r$median_us)))
     cat("\\end{minipage}\n\n")
   }
 }

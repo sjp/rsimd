@@ -38,7 +38,7 @@ Infinite arguments give \code{NaN} with a warning.
 
 Elsewhere \code{simd_sinpi()} and \code{simd_cospi()} are within 0.5 ULP of
 the exact value (SLEEF's \code{_u05} variants) and \code{simd_tanpi()},
-their ratio, within about 1.5 ULP. The \code{"none"} implementation reduces
+their ratio, within about 2 ULP. The \code{"none"} implementation reduces
 the same way and then calls the C library's \code{sin()}, \code{cos()} and
 \code{tan()} on a small argument, within about 1 ULP. Base R calls the
 platform's \code{sinpi()} and \code{cospi()} where there are any (and its

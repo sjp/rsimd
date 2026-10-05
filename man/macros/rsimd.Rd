@@ -100,7 +100,10 @@ implementations use the vectorised functions of the bundled SLEEF library:
 its 1-ULP (\code{_u10}) variants, and its 0.5-ULP (\code{_u05}) variants for
 \code{sinpi}, \code{cospi} and \code{hypot}. Results are within 1 ULP (unit
 in the last place) of the exact value (0.5 ULP for the \code{_u05}
-functions), and so may differ from base R in the last bit. The \code{"none"}
+functions), and so may differ from base R in the last bit. Option
+\code{rsimd.math_accuracy = "fast"} trades accuracy for speed with SLEEF's
+3.5-ULP variants: see \code{\link{simd_math_accuracy}()} for the bounds of
+each function in both modes. The \code{"none"}
 implementation calls the C math library, as base R does, and is the
 reference the others are tested against (within 2 ULP). An implementation
 built without SLEEF (see \code{\link{simd_available}}) uses the next lower

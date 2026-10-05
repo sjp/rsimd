@@ -2,6 +2,9 @@
   if (is.null(getOption("rsimd.precision"))) {
     options(rsimd.precision = "fast")
   }
+  if (is.null(getOption("rsimd.math_accuracy"))) {
+    options(rsimd.math_accuracy = "accurate")
+  }
   if (is.null(getOption("rsimd.na_check"))) {
     options(rsimd.na_check = TRUE)
   }
