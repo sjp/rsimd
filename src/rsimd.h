@@ -74,6 +74,8 @@ SEXP C_simd_log_softmax(SEXP x, SEXP precision);
    points are in api_complex.h) */
 SEXP C_simd_cplx(SEXP z, SEXP op);
 SEXP C_simd_cmath(SEXP z, SEXP op, SEXP accuracy);
+SEXP C_simd_cmath1(SEXP z, SEXP op, SEXP accuracy);
+SEXP C_simd_cmath2(SEXP x, SEXP y, SEXP op, SEXP accuracy, SEXP name);
 SEXP C_simd_c128_probe_inputs(void);
 SEXP C_simd_c128_probe(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp);
 SEXP C_simd_c128_variants(void);

@@ -156,7 +156,13 @@ simd_copysign <- function(x, sign, na_check = getOption("rsimd.na_check", TRUE))
 
 simd_recip <- function(x) .ew1(x, "recip", "simd_recip")
 
-simd_sqrt <- function(x) .ew1(x, "sqrt", "simd_sqrt")
+simd_sqrt <- function(x) {
+  if (is.complex(x)) {
+    .sync_impl()
+    return(.Call(C_simd_cmath1, x, "sqrt", .math_accuracy_code()))
+  }
+  .ew1(x, "sqrt", "simd_sqrt")
+}
 
 simd_fma <- function(x, y, z, na_check = getOption("rsimd.na_check", TRUE)) {
   .ew3(x, y, z, "fma", "simd_fma", na_check)

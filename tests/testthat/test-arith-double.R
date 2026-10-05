@@ -222,7 +222,7 @@ test_that("complex and integer64 operands are rejected where not taken", {
     fixed = TRUE
   )
   expect_error(simd_fma(1, 1, 1i), "'z' of type complex", fixed = TRUE)
-  expect_error(simd_sqrt(1i), "simd_sqrt() does not support 'x' of type complex",
+  expect_error(simd_recip(1i), "simd_recip() does not support 'x' of type complex",
     fixed = TRUE
   )
   x64 <- structure(0, class = "integer64")

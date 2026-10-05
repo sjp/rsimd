@@ -311,6 +311,23 @@ RSIMD_OP(cmp_c128, void,
    elements and libm for the others, so special values match base R on
    every platform. */
 RSIMD_OP(math1_c128, void, (int op, const Rcomplex *x, R_xlen_t n, double *out))
+/* The complex elementary function `op` (RSIMD_CM_*, OR-ed with
+   RSIMD_MATH_FAST in fast mode). The none tier is base R (b's functions
+   for every element, after base R's NA rule); the vector tiers compute
+   finite elements with SLEEF-based formulas and leave the others, and the
+   regions their formulas cannot handle, to b. Returns 1 when an element
+   without a NaN part gives a NaN part (base R's warning). */
+RSIMD_OP(cmath1_c128, int,
+         (int op, const Rcomplex *x, R_xlen_t n, Rcomplex *out, const rsimd_cmath_base *b))
+/* x^y (RSIMD_CM2_POW), log(x, base = y) (LOGB) or atan2(x, y) (ATAN2),
+   with RSIMD_EW_SCALAR(k) broadcasts and RSIMD_MATH_FAST as for
+   cmath1_c128. Whole-number powers multiply (and divide) as base R does,
+   by `a`. LOGB and ATAN2 give NA where all four parts are NA, and return
+   1 when they produce a NaN part from operands without one; POW returns
+   0. */
+RSIMD_OP(cmath2_c128, int,
+         (int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags, Rcomplex *out,
+          const rsimd_cmath_base *b, const rsimd_c128_arith *a))
 /* Internal: x * y (RSIMD_EW_MUL) by the rounding variants v1 (real part)
    and v2 (imaginary part), or x / y (RSIMD_EW_DIV) by libgcc's algorithm
    with v1 = RSIMD_CDIV_FMA or RSIMD_CDIV_UNFUSED, the formulas alone (no

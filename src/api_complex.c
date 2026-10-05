@@ -114,6 +114,8 @@ static void cumprod_step(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
 static rsimd_c128_arith c128_arith = {RSIMD_CMUL_SCALAR, RSIMD_CMUL_SCALAR, RSIMD_CDIV_SCALAR,
                                       RSIMD_CMUL_SCALAR, RSIMD_CMUL_SCALAR, c99_mul_xy, c99_div,
                                       cumprod_step};
+const rsimd_c128_arith *rsimd_c128_arith_get(void) { return &c128_arith; }
+
 /* What the probe chose, for simd_current(): mul, div and cumprod. */
 static char c128_names[3][96] = {"scalar", "scalar", "scalar"};
 

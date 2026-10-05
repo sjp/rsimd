@@ -200,7 +200,7 @@ Ops.simd_vec <- function(e1, e2) {
     "/" = simd_div(e1, e2),
     "%%" = if (cplx) .sv_ops_fallback(gen, e1, e2) else simd_mod(e1, e2),
     "%/%" = if (cplx) .sv_ops_fallback(gen, e1, e2) else simd_idiv(e1, e2),
-    "^" = if (cplx || i64) .sv_ops_fallback(gen, e1, e2) else simd_pow(e1, e2),
+    "^" = if (i64) .sv_ops_fallback(gen, e1, e2) else simd_pow(e1, e2),
     "==" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_eq(e1, e2),
     "!=" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_ne(e1, e2),
     "<" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_lt(e1, e2),
@@ -239,11 +239,18 @@ Ops.simd_vec <- function(e1, e2) {
 # Math functions that take integer64 input in rsimd.
 .sv_math_i64 <- c("abs", "sign", "cumsum", "cummax", "cummin")
 
+# Math functions that take complex input in rsimd (log too).
+.sv_math_complex <- c(
+  "sqrt", "exp", "log2", "log10", "cos", "sin", "tan", "acos", "asin", "atan", "cosh", "sinh",
+  "tanh", "acosh", "asinh", "atanh"
+)
+
 Math.simd_vec <- function(x, ...) {
   gen <- .Generic
   type <- .sv_type(x)
   kernel <- type %in% c("double", "integer", "logical", "raw") ||
-    (type == "integer64" && gen %in% .sv_math_i64)
+    (type == "integer64" && gen %in% .sv_math_i64) ||
+    (type == "complex" && gen %in% c(.sv_math_complex, "log"))
   if (kernel && gen == "round") {
     return(simd_round(x, ...))
   }

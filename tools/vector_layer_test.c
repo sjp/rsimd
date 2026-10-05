@@ -1169,7 +1169,8 @@ static void check_rootn_ulp(const char *what, ptrdiff_t n, ptrdiff_t i, double x
   if (LDBL_MANT_DIG < 64 || isnan(got) || isinf(got) || got == 0) return;
   ref = ref_rootn(x, nn);
   w = (double) ref;
-  err = (double) (fabsl((long double) got - ref) / ldexp(1.0, ilogb(w) - 52));
+  /* The ULP of a subnormal is the smallest subnormal. */
+  err = (double) (fabsl((long double) got - ref) / fmax(ldexp(1.0, ilogb(w) - 52), DBL_TRUE_MIN));
   n_checks++;
   if (err > rootn_worst) rootn_worst = err;
   if (!(err <= ROOTN_BOUND)) {
@@ -3588,6 +3589,486 @@ static void test_cmath(ptrdiff_t n) {
 #endif
 #endif
 
+/* ---- Complex elementary functions (cmath.inc.c) ------------------------- */
+
+#ifndef RSIMD_NO_F64_SIMD
+#include <complex.h>
+#include <stdlib.h>
+
+/* The base functions the kernels call for the elements they leave out: C99
+   libm, and base R's algorithms for whole-number powers, log with a base
+   and atan2 (with the multiply and divide of the current variant). */
+/* The division variant matches this platform's __divdc3 (h_div1), which
+   the base functions call: libgcc is built with fused multiply-adds on
+   aarch64 and without on x86-64. */
+#if defined(__aarch64__)
+#define CM_DIV RSIMD_CDIV_FMA
+#elif defined(__i386__)
+/* i686 libgcc divides in x87 extended precision: no variant matches. */
+#define CM_DIV RSIMD_CDIV_SCALAR
+#else
+#define CM_DIV RSIMD_CDIV_UNFUSED
+#endif
+static rsimd_c128_arith cm_arith = {RSIMD_CMUL_FMA1, RSIMD_CMUL_FMA1, CM_DIV, 0, 0,
+                                    h_mul1, h_div1, h_cp1};
+
+static double complex cm_c99(Rcomplex z) { return CMPLX(z.r, z.i); }
+static void cm_out(double complex z, Rcomplex *out) {
+  out->r = creal(z);
+  out->i = cimag(z);
+}
+
+#define CM_H1(name, f)                                                                       \
+  static void name(const Rcomplex *x, Rcomplex *out) { cm_out(f(cm_c99(*x)), out); }
+/* Base R's own code (src/main/complex.c) for tan, asin, acos, atan and the
+   inverse hyperbolic sine and tangent. */
+static double complex z_tan(double complex z) {
+  double y = cimag(z);
+  double complex r = ctan(z);
+  if (isfinite(y) && fabs(y) > 25.0) r = CMPLX(creal(r), y < 0 ? -1.0 : 1.0);
+  return r;
+}
+static double complex z_asin(double complex z) {
+  if (cimag(z) == 0 && fabs(creal(z)) > 1) {
+    double alpha, t1, t2, x = creal(z), ri;
+    t1 = 0.5 * fabs(x + 1);
+    t2 = 0.5 * fabs(x - 1);
+    alpha = t1 + t2;
+    ri = log(alpha + sqrt(alpha * alpha - 1));
+    if (x > 1) ri *= -1;
+    return asin(t1 - t2) + ri * I;
+  }
+  return casin(z);
+}
+static double complex z_acos(double complex z) {
+  if (cimag(z) == 0 && fabs(creal(z)) > 1) return M_PI_2 - z_asin(z);
+  return cacos(z);
+}
+static double complex z_atan(double complex z) {
+  if (creal(z) == 0 && fabs(cimag(z)) > 1) {
+    double y = cimag(z), rr, ri;
+    rr = (y > 0) ? M_PI_2 : -M_PI_2;
+    ri = 0.25 * log(((y + 1) * (y + 1)) / ((y - 1) * (y - 1)));
+    return rr + ri * I;
+  }
+  return catan(z);
+}
+static double complex z_asinh(double complex z) { return -I * z_asin(z * I); }
+static double complex z_atanh(double complex z) { return -I * z_atan(z * I); }
+
+CM_H1(h_csqrt, csqrt)
+CM_H1(h_cexp, cexp)
+CM_H1(h_clog, clog)
+CM_H1(h_csin, csin)
+CM_H1(h_ccos, ccos)
+CM_H1(h_ctan, z_tan)
+CM_H1(h_csinh, csinh)
+CM_H1(h_ccosh, ccosh)
+CM_H1(h_ctanh, ctanh)
+CM_H1(h_casin, z_asin)
+CM_H1(h_cacos, z_acos)
+CM_H1(h_catan, z_atan)
+CM_H1(h_casinh, z_asinh)
+CM_H1(h_cacosh, cacosh)
+CM_H1(h_catanh, z_atanh)
+
+/* x^k by base R's binary powering, with the variant's multiply/divide. */
+static Rcomplex h_ipow(Rcomplex x, int k) {
+  Rcomplex z, one;
+  int m = k < 0 ? -k : k;
+  z.r = one.r = 1.0;
+  z.i = one.i = 0.0;
+  if (m == 0) return z;
+  if (m == 1) z = x;
+  else {
+    while (m > 0) {
+      if (m & 1) z = rsimd_cmul_1_(&cm_arith, z, x);
+      if (m == 1) break;
+      m >>= 1;
+      x = rsimd_cmul_1_(&cm_arith, x, x);
+    }
+  }
+  return k < 0 ? rsimd_cdiv_1_(&cm_arith, one, z) : z;
+}
+
+static int cm_whole(Rcomplex y) {
+  return y.i == 0 && y.r == trunc(y.r) && fabs(y.r) <= 65536;
+}
+
+static void h_cpow(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  if (x->r == 0 && x->i == 0) {
+    if (y->i == 0) {
+      out->r = pow(0.0, y->r);
+      out->i = 0.0;
+    } else {
+      out->r = out->i = NAN;
+    }
+  } else if (cm_whole(*y)) {
+    *out = h_ipow(*x, (int) y->r);
+  } else {
+    cm_out(cpow(cm_c99(*x), cm_c99(*y)), out);
+  }
+}
+static void h_clogb(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  Rcomplex a, b;
+  cm_out(clog(cm_c99(*x)), &a);
+  cm_out(clog(cm_c99(*y)), &b);
+  h_div1(&a, &b, out);
+}
+static void h_catan2(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  Rcomplex q;
+  double complex d;
+  if (y->r == 0 && y->i == 0) {
+    if (x->r == 0 && x->i == 0) {
+      out->r = out->i = from_bits(UINT64_C(0x7FF00000000007A2));
+      return;
+    }
+    out->r = isnan(x->r) ? x->r : x->r >= 0 ? M_PI_2 : -M_PI_2;
+    out->i = 0.0;
+    return;
+  }
+  h_div1(x, y, &q);
+  d = catan(cm_c99(q));
+  if (y->r < 0) d += M_PI;
+  if (creal(d) > M_PI) d -= 2 * M_PI;
+  cm_out(d, out);
+}
+
+static const rsimd_cmath_base cm_base = {
+  {h_csqrt, h_cexp, h_clog, h_csin, h_ccos, h_ctan, h_csinh, h_ccosh, h_ctanh, h_casin, h_cacos,
+   h_catan, h_casinh, h_cacosh, h_catanh},
+  {h_cpow, h_clogb, h_catan2}};
+
+static const char *const cm_names[RSIMD_CM_COUNT + RSIMD_CM2_COUNT] = {
+  "sqrt", "exp", "log", "sin", "cos", "tan", "sinh", "cosh", "tanh", "asin",
+  "acos", "atan", "asinh", "acosh", "atanh", "pow", "logb", "atan2"};
+
+/* The exact value (long double) of op at x (and y). */
+static long double complex cm_ref(int op, Rcomplex x, Rcomplex y) {
+  const long double complex z = CMPLXL(x.r, x.i), w = CMPLXL(y.r, y.i);
+  long double complex d;
+  switch (op) {
+  case RSIMD_CM_SQRT: return csqrtl(z);
+  case RSIMD_CM_EXP: return cexpl(z);
+  case RSIMD_CM_LOG: return clogl(z);
+  case RSIMD_CM_SIN: return csinl(z);
+  case RSIMD_CM_COS: return ccosl(z);
+  case RSIMD_CM_TAN: return ctanl(z);
+  case RSIMD_CM_SINH: return csinhl(z);
+  case RSIMD_CM_COSH: return ccoshl(z);
+  case RSIMD_CM_TANH: return ctanhl(z);
+  case RSIMD_CM_ASIN: return casinl(z);
+  case RSIMD_CM_ACOS: return cacosl(z);
+  case RSIMD_CM_ATAN: return catanl(z);
+  case RSIMD_CM_ASINH: return casinhl(z);
+  case RSIMD_CM_ACOSH: return cacoshl(z);
+  case RSIMD_CM_ATANH: return catanhl(z);
+  case RSIMD_CM_COUNT + RSIMD_CM2_POW: return cpowl(z, w);
+  case RSIMD_CM_COUNT + RSIMD_CM2_LOGB: return clogl(z) / clogl(w);
+  default: {
+    /* Base R rounds the quotient before catan, so that is the input. */
+    Rcomplex q = rsimd_cdiv_1_(&cm_arith, x, y);
+    /* And adjusts by M_PI, deciding on the rounded double sum. */
+    double t;
+    d = catanl(CMPLXL(q.r, q.i));
+    t = (double) creall(d);
+    if (y.r < 0) {
+      d += (long double) M_PI;
+      t += M_PI;
+    }
+    if (t > M_PI) d -= 2 * (long double) M_PI;
+    return d;
+  }
+  }
+}
+
+static double cm_ulp(double x) {
+  int e;
+  if (x == 0 || !isfinite(x)) return DBL_TRUE_MIN;
+  frexp(x, &e);
+  return fmax(ldexp(1.0, e - 53), DBL_TRUE_MIN);
+}
+
+/* The error of part g against the exact r, in ULPs of r or, for a part
+   much smaller than the whole result, of |result| (mod), whichever is
+   smaller. */
+static double cm_err(double g, long double r, long double mod) {
+  long double d;
+  double ec, em;
+  if (!isfinite(g) || !isfinite((double) r)) return (double) g == (double) r ? 0 : HUGE_VAL;
+  d = fabsl((long double) g - r);
+  if (d == 0) return 0;
+  ec = (double) (d / cm_ulp((double) r));
+  em = (double) (d / cm_ulp((double) mod));
+  return ec < em ? ec : em;
+}
+
+#define CM_M 2048
+static Rcomplex cmx[CM_M + 1], cmy[CM_M + 1], cmo[CM_M + 1];
+/* Worst errors: [op][fast][0 rsimd's formulas, 1 the base functions]. */
+static double cm_worst[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2][2];
+static Rcomplex cm_worst_at[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2][2];
+/* The worst pow error divided by 1 + |y log x|. */
+static double cm_pow_scaled[2];
+
+static double cm_rand_part(int kind) {
+  uint64_t r = next_rand();
+  double u = (double) (r >> 11) * 0x1.0p-53, s = r & 1 ? -1.0 : 1.0;
+  switch (kind) {
+  case 0: return s * u * 4; /* moderate */
+  case 1: return carith_double(-1074, 1023); /* the whole range */
+  case 2: return s * ldexp(1.0 + u, (int) (next_rand() % 60) - 30);
+  default: return s * ldexp(1.0 + u, (int) (next_rand() % 20) - 10);
+  }
+}
+
+/* Inputs of kind k: 0 moderate, 1 the whole exponent range, 2 modulus near
+   1, 3 near the branch points +-1 and +-i, 4 on and near the axes (signed
+   zeros and tiny parts), 5 a mix of specials (NA, NaN, infinities, zeros),
+   6 magnitudes 2^-30..2^30, 7 near the overflow and underflow edges of the
+   formulas (|parts| around 20, 25, 708, 710, 2^500). */
+static void cm_fill(Rcomplex *v, ptrdiff_t n, int kind) {
+  static const double edges[] = {20.0, 25.0, 708.0, 709.5, 710.0, 0x1p500, 0x1p-500, 0x1p-1000,
+                                 0x1p1020, 1.0, 0.5};
+  static const double sp[] = {0.0, -0.0, 1.0, -1.0, 2.0, -0.5, HUGE_VAL, -HUGE_VAL, NAN};
+  const double na = from_bits(UINT64_C(0x7FF00000000007A2));
+  ptrdiff_t i;
+  for (i = 0; i < n; i++) {
+    uint64_t r = next_rand();
+    double u = (double) (r >> 11) * 0x1.0p-53, t = 2 * M_PI * u - M_PI;
+    switch (kind) {
+    case 0: v[i].r = cm_rand_part(0); v[i].i = cm_rand_part(0); break;
+    case 1: v[i].r = cm_rand_part(1); v[i].i = cm_rand_part(1); break;
+    case 2: {
+      double m = 1.0 + ldexp(cm_rand_part(0), -(int) (next_rand() % 50));
+      v[i].r = m * cos(t);
+      v[i].i = m * sin(t);
+      break;
+    }
+    case 3: {
+      double e1 = ldexp(cm_rand_part(0), -(int) (next_rand() % 60)),
+             e2 = ldexp(cm_rand_part(0), -(int) (next_rand() % 60));
+      if (r & 2) {
+        v[i].r = (r & 4 ? 1.0 : -1.0) + e1;
+        v[i].i = r & 8 ? e2 : 0.0;
+      } else {
+        v[i].r = r & 8 ? e1 : 0.0;
+        v[i].i = (r & 4 ? 1.0 : -1.0) + e2;
+      }
+      break;
+    }
+    case 4:
+      v[i].r = r & 2 ? (r & 4 ? -0.0 : 0.0) : cm_rand_part(r & 8 ? 0 : 1);
+      v[i].i = r & 2 ? cm_rand_part(r & 8 ? 0 : 1) : (r & 4 ? -0.0 : 0.0);
+      if (r & 16) v[i].i = ldexp(cm_rand_part(0), -1000 - (int) (next_rand() % 70));
+      break;
+    case 5:
+      v[i].r = r % 11 == 0 ? na : sp[(r >> 8) % 9];
+      v[i].i = (r >> 4) % 11 == 0 ? na : sp[(r >> 16) % 9];
+      if ((r >> 24) % 3 == 0) v[i].r = cm_rand_part(0);
+      if ((r >> 28) % 3 == 0) v[i].i = cm_rand_part(0);
+      break;
+    case 6: v[i].r = cm_rand_part(2); v[i].i = cm_rand_part(2); break;
+    default:
+      v[i].r = (r & 2 ? -1 : 1) * edges[(r >> 4) % 11] * (1 + ldexp(u - 0.5, -(int) (next_rand() % 40)));
+      v[i].i = (r & 64 ? -1 : 1) * edges[(r >> 12) % 11] * (1 + ldexp(u - 0.5, -(int) (next_rand() % 40)));
+      if (r & 128) v[i].i = cm_rand_part(0);
+      break;
+    }
+  }
+}
+
+/* Exponents for pow: kind 0 whole numbers in -70..70 (some +-65536,
+   65537), 1 moderate complex, 2 moderate real, 3 the base kinds. */
+static void cm_fill_pow(Rcomplex *v, ptrdiff_t n, int kind) {
+  ptrdiff_t i;
+  for (i = 0; i < n; i++) {
+    uint64_t r = next_rand();
+    if (kind == 0) {
+      static const double big[] = {65536, -65536, 65537, 2, -1, 1, 0, -2};
+      v[i].r = r % 9 == 0 ? big[(r >> 8) % 8] : (double) ((int) ((r >> 8) % 141) - 70);
+      v[i].i = 0.0;
+    } else if (kind == 1) {
+      v[i].r = cm_rand_part(0);
+      v[i].i = cm_rand_part(0);
+    } else if (kind == 2) {
+      v[i].r = cm_rand_part(0);
+      v[i].i = r & 2 ? -0.0 : 0.0;
+    } else {
+      cm_fill(v + i, 1, (int) (r % 8));
+    }
+  }
+}
+
+static int cm_same(Rcomplex a, Rcomplex b) {
+  return same_or_nan(a.r, b.r) && same_or_nan(a.i, b.i) &&
+         rsimd_is_na_f64(a.r) == rsimd_is_na_f64(b.r) && rsimd_is_na_f64(a.i) == rsimd_is_na_f64(b.i);
+}
+
+/* Runs op (cm_names index) over n elements of cmx (and cmy, broadcast as
+   flags say) and checks every element: what the base functions give, under
+   base R's NA rules, wherever a part is not finite or the result is not
+   finite or zero; within `bound` of the exact value elsewhere (bound < 0:
+   bit-identical, for whole-number powers), and records the worst errors. */
+static void cm_check(int op, int fast, ptrdiff_t n, int flags, double bound) {
+  const int two = op >= RSIMD_CM_COUNT, o2 = two ? op - RSIMD_CM_COUNT : -1;
+  const int sx = (flags & RSIMD_EW_SCALAR(0)) != 0, sy = (flags & RSIMD_EW_SCALAR(1)) != 0;
+  static char what[64];
+  char buf[260];
+  ptrdiff_t i;
+  cmo[n].r = cmo[n].i = SENTINEL_F64;
+  if (two) {
+    RSIMD_KERNEL(cmath2_c128)(o2 | (fast ? RSIMD_MATH_FAST : 0), cmx, cmy, n, flags, cmo, &cm_base, &cm_arith);
+  } else {
+    RSIMD_KERNEL(cmath1_c128)(op | (fast ? RSIMD_MATH_FAST : 0), cmx, n, cmo, &cm_base);
+  }
+  snprintf(what, sizeof what, "cmath %s fast%d flags%d", cm_names[op], fast, flags);
+  for (i = 0; i < n; i++) {
+    const Rcomplex x = cmx[sx ? 0 : i], y = cmy[sy ? 0 : i];
+    Rcomplex b;
+    int is_base, special;
+    n_checks++;
+    if (two) rsimd_cmath2_1(&cm_base, o2, &x, &y, &b);
+    else rsimd_cmath1_1(&cm_base, op, &x, &b);
+    is_base = cm_same(cmo[i], b);
+    special = !isfinite(x.r) || !isfinite(x.i) || (two && (!isfinite(y.r) || !isfinite(y.i))) ||
+              !isfinite(b.r) || !isfinite(b.i);
+    if (special || bound < 0 || (o2 == RSIMD_CM2_POW && cm_whole(y))) {
+      if (!is_base) {
+        snprintf(buf, sizeof buf, "input %a%+ai, %a%+ai: got %a%+ai want %a%+ai", x.r, x.i, y.r,
+                 y.i, cmo[i].r, cmo[i].i, b.r, b.i);
+        fail(what, n, i, buf);
+      }
+      continue;
+    }
+    {
+      const long double complex r = cm_ref(op, x, y);
+      const long double mod = cabsl(r);
+      const double e = fmax(cm_err(cmo[i].r, creall(r), mod), cm_err(cmo[i].i, cimagl(r), mod));
+      const double eb = fmax(cm_err(b.r, creall(r), mod), cm_err(b.i, cimagl(r), mod));
+      double lim = bound;
+      if (op == RSIMD_CM_COUNT + RSIMD_CM2_POW) {
+        /* The error of exp(y log x) grows with |y log x|. */
+        const long double complex w = CMPLXL(y.r, y.i) * clogl(CMPLXL(x.r, x.i));
+        const double s = (double) (1 + cabsl(w));
+        lim = bound * s;
+        if (!is_base && e / s > cm_pow_scaled[fast]) cm_pow_scaled[fast] = e / s;
+      }
+      if (!isfinite((double) creall(r)) || !isfinite((double) cimagl(r))) continue;
+      if (!is_base && e > cm_worst[op][fast][0]) {
+        cm_worst[op][fast][0] = e;
+        cm_worst_at[op][fast][0] = x;
+      }
+      /* Base R's values on the axes follow its own branch-cut code, not
+         C99's. */
+      if (eb > cm_worst[op][fast][1] && x.r != 0 && x.i != 0) {
+        cm_worst[op][fast][1] = eb;
+        cm_worst_at[op][fast][1] = x;
+      }
+      /* Zero parts must have the base functions' sign (a part that is a
+         subnormal instead of zero is an error like any other), except in
+         general powers, where it depends on how the C library rounds y log
+         x. */
+      if (!is_base && op != RSIMD_CM_COUNT + RSIMD_CM2_POW &&
+          ((b.r == 0 && cmo[i].r == 0 && bits(cmo[i].r) != bits(b.r)) ||
+           (b.i == 0 && cmo[i].i == 0 && bits(cmo[i].i) != bits(b.i)))) {
+        snprintf(buf, sizeof buf, "input %a%+ai, %a%+ai: got %a%+ai want zero signs of %a%+ai",
+                 x.r, x.i, y.r, y.i, cmo[i].r, cmo[i].i, b.r, b.i);
+        fail(what, n, i, buf);
+      } else if (!is_base && e > lim) {
+        snprintf(buf, sizeof buf, "input %a%+ai, %a%+ai: got %a%+ai want %La%+Lai (%.2f ULP)",
+                 x.r, x.i, y.r, y.i, cmo[i].r, cmo[i].i, creall(r), cimagl(r), e);
+        fail(what, n, i, buf);
+      }
+    }
+  }
+  n_checks++;
+  if (bits(cmo[n].r) != bits(SENTINEL_F64)) fail(what, n, n, "wrote past the end");
+}
+
+/* rsimd's bound per function in ULPs (accurate, fast), for the parts the
+   formulas compute (the measured worst cases over every tier, rounded up);
+   pow's is per 1 + |y log x|. The ?simd_exp complex section states them. */
+static const double cm_bound[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2] = {
+  {2, 3},     /* sqrt */
+  {2.5, 3},   /* exp */
+  {3, 5},     /* log */
+  {3, 4},     /* sin */
+  {3, 4},     /* cos */
+  {4.5, 6},   /* tan */
+  {3, 4},     /* sinh */
+  {3, 4},     /* cosh */
+  {5, 6},     /* tanh */
+  {3.5, 4.5}, /* asin */
+  {3.5, 4.5}, /* acos */
+  {3, 3.5},   /* atan */
+  {3.5, 4.5}, /* asinh */
+  {3.5, 4.5}, /* acosh */
+  {3, 3.5},   /* atanh */
+  {3, 5},     /* pow, per 1 + |y log x| */
+  {4.5, 6.5}, /* log with a base */
+  {3.5, 4}};  /* atan2 */
+
+/* Every function on every input kind at length n (tails), in both modes. */
+static void test_cmath_fns(ptrdiff_t n) {
+  int op, fast, kind, k2;
+  for (kind = 0; kind < 8; kind++) {
+    for (op = 0; op < RSIMD_CM_COUNT + RSIMD_CM2_COUNT; op++) {
+      for (fast = 0; fast < 2; fast++) {
+        if (op < RSIMD_CM_COUNT) {
+          cm_fill(cmx, n, kind);
+          cm_check(op, fast, n, 0, cm_bound[op][fast]);
+        } else if (op == RSIMD_CM_COUNT + RSIMD_CM2_POW) {
+          for (k2 = 0; k2 < 4; k2++) {
+            cm_fill(cmx, n, kind);
+            cm_fill_pow(cmy, n, k2);
+            cm_check(op, fast, n, 0, cm_bound[op][fast]);
+            /* A broadcast exponent, and a broadcast base. */
+            cm_check(op, fast, n, RSIMD_EW_SCALAR(1), cm_bound[op][fast]);
+            cm_check(op, fast, n, RSIMD_EW_SCALAR(0), cm_bound[op][fast]);
+          }
+        } else {
+          cm_fill(cmx, n, kind);
+          cm_fill(cmy, n, (kind + 3) % 8);
+          cm_check(op, fast, n, 0, cm_bound[op][fast]);
+          cm_check(op, fast, n, RSIMD_EW_SCALAR(1), cm_bound[op][fast]);
+        }
+      }
+    }
+  }
+}
+
+/* Many more inputs at full length, for the error statistics, then whole
+   powers in the unfused multiply variant (x86-64 builds of R). */
+static void test_cmath_sweep(void) {
+  const char *e = getenv("RSIMD_CMATH_REPS");
+  int rep, reps = e ? atoi(e) : 2;
+  for (rep = 0; rep < reps; rep++) test_cmath_fns(CM_M);
+  cm_arith.mul_re = cm_arith.mul_im = RSIMD_CMUL_UNFUSED;
+  cm_arith.div = RSIMD_CDIV_UNFUSED;
+  cm_fill(cmx, CM_M, 0);
+  cm_fill_pow(cmy, CM_M, 0);
+  cm_check(RSIMD_CM_COUNT + RSIMD_CM2_POW, 0, CM_M, 0, -1);
+  cm_arith.mul_re = cm_arith.mul_im = RSIMD_CMUL_FMA1;
+  cm_arith.div = CM_DIV;
+}
+
+static void cm_report(void) {
+  int op, fast;
+  if (!getenv("RSIMD_CMATH_REPORT")) return;
+  printf("cmath worst errors in ULP (rsimd formulas | base functions), accurate / fast:\n");
+  for (op = 0; op < RSIMD_CM_COUNT + RSIMD_CM2_COUNT; op++) {
+    for (fast = 0; fast < 2; fast++) {
+      printf("  %-6s %s rsimd %8.3f at %a%+ai | base %8.3f at %a%+ai\n", cm_names[op],
+             fast ? "fast" : "acc ", cm_worst[op][fast][0], cm_worst_at[op][fast][0].r,
+             cm_worst_at[op][fast][0].i, cm_worst[op][fast][1], cm_worst_at[op][fast][1].r,
+             cm_worst_at[op][fast][1].i);
+    }
+  }
+  printf("  pow per 1 + |y log x|: %.3f / %.3f\n", cm_pow_scaled[0], cm_pow_scaled[1]);
+}
+#endif
+
 /* ---- integer64 kernels (int64.inc.c), against the scalar forms ---------- */
 
 static int64_t lsmall[N + 1], lsmall2[N + 1]; /* within +-2^31, and edges */
@@ -4088,6 +4569,7 @@ int main(void) {
 #if !defined(RSIMD_SKIP_math1_c128) && defined(RSIMD_HAVE_SLEEF)
     test_cmath(n);
 #endif
+    if (n <= 2 * RSIMD_LANES_64 + 1 || n == N) test_cmath_fns(n);
 #endif
     test_hamming(n);
 #ifndef RSIMD_NO_F64_SIMD
@@ -4107,6 +4589,8 @@ int main(void) {
   test_intdiv_const();
 #ifndef RSIMD_NO_F64_SIMD
   test_math_extras();
+  test_cmath_sweep();
+  cm_report();
 #endif
 #ifdef RSIMD_HAVE_SLEEF
   test_sleef();

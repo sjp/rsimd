@@ -325,11 +325,17 @@ Odd functions of \code{-0} &
   Always exact; base R computes in \code{long double} and can differ in
   the last bits, or warn about loss of accuracy, for large quotients. &
   Exactness. No workaround needed. \\
-Complex numbers &
-  Powers, the elementary functions and the comparisons other than
-  \code{==} and \code{!=} are an error. &
-  Not implemented yet (the comparisons are an error in base R too). Use
-  base R for them. \\
+Complex elementary functions &
+  The SIMD implementations are within 2 to 5 ULP of the exact value
+  (\code{?simd\_exp}); the \code{"none"} implementation and whole-number
+  powers are identical to base R. &
+  Speed. Base R's C library is within about 5 ULP itself; use
+  \code{simd\_with\_impl("none", ...)} for base R's exact values. \\
+Complex \code{acosh} &
+  The principal value (C's \code{cacosh}); base R's \code{acosh()} has a
+  negative real part in the lower half-plane and for real $z > 1$. &
+  Correctness: base R computes \code{acos(z) * 1i}. Negate base R's value
+  where its real part is negative to get \pkg{rsimd}'s. \\
 Complex \code{prod}, \code{mean} &
   Products multiply with base R's \code{x * y} (which recovers infinities)
   in double or, in compensated mode, double-double precision; base R

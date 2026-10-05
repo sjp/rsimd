@@ -171,6 +171,10 @@ ops <- list(
   ),
   list(
     op = "abs", type = "complex", simd = quote(simd_abs(cx)), base = quote(Mod(cx)), bound = TRUE
+  ),
+  list(
+    op = "pow_int", type = "complex", simd = quote(simd_pow(cs, 3)), base = quote(cs^3),
+    bound = FALSE
   )
 )
 
@@ -186,6 +190,15 @@ math_ops <- list(
   list(
     op = "hypot", type = "double", simd = quote(simd_hypot(x, y)),
     base = quote(sqrt(x * x + y * y))
+  ),
+  list(op = "sqrt", type = "complex", simd = quote(simd_sqrt(cs)), base = quote(sqrt(cs))),
+  list(op = "exp", type = "complex", simd = quote(simd_exp(cs)), base = quote(exp(cs))),
+  list(op = "log", type = "complex", simd = quote(simd_log(cs)), base = quote(log(cs))),
+  list(op = "sin", type = "complex", simd = quote(simd_sin(cs)), base = quote(sin(cs))),
+  list(op = "asin", type = "complex", simd = quote(simd_asin(cs)), base = quote(asin(cs))),
+  list(
+    op = "pow", type = "complex", simd = quote(simd_pow(cs, 0.5 + 0.5i)),
+    base = quote(cs^(0.5 + 0.5i))
   )
 )
 math_modes <- c("accurate", "fast")
@@ -244,6 +257,8 @@ make_inputs <- function(n) {
   env$cx <- complex(real = env$x, imaginary = env$y)
   env$cy <- complex(real = env$z, imaginary = env$xt)
   env$cu <- complex(modulus = 1, argument = env$x)
+  # Parts within +-5 for the elementary functions (no overflow).
+  env$cs <- complex(real = env$xt, imaginary = env$y / 20)
   env
 }
 

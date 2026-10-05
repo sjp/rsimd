@@ -27,8 +27,8 @@ simd_sqrt(x)
 }
 \arguments{
 \item{x}{A double, integer or logical vector; integer or logical only for
-the \code{_wrap} functions. \code{simd_neg()} and \code{simd_abs()}
-also take a complex vector, and \code{simd_neg()}, \code{simd_abs()}, \code{simd_sign()} and the
+the \code{_wrap} functions. \code{simd_neg()}, \code{simd_abs()} and
+\code{simd_sqrt()} also take a complex vector, and \code{simd_neg()}, \code{simd_abs()}, \code{simd_sign()} and the
 \code{_wrap} functions a \pkg{bit64} \code{integer64} vector.}
 \item{sign}{A double, integer or logical vector whose signs are copied to
 \code{x}.}
@@ -63,7 +63,9 @@ doubles for every input, as base R does for \code{sign()} and
 (\code{0}, not \code{-0}, for \code{-0}); \code{simd_recip(0)} is
 \code{Inf} and \code{simd_recip(-0)} is \code{-Inf}. \code{simd_sqrt()} is
 correctly rounded and warns \code{"NaNs produced"} once when a negative
-number gives \code{NaN}.
+number gives \code{NaN}. \code{simd_sqrt()} of a complex vector is the
+principal square root, as \code{sqrt(z)}: see the Complex numbers section
+of \code{\link{simd_exp}}.
 
 \code{simd_copysign()} sets the sign bit of \code{x}, including for
 \code{0}, infinities and \code{NaN}. A missing \code{sign} gives a missing
@@ -84,7 +86,8 @@ Integer64 input gives integer64 results (\code{NA} stays \code{NA}; see
 \value{
 A vector of the length of \code{x} (for \code{simd_copysign()}, of the
 longer operand): integer for \code{simd_neg()} and \code{simd_abs()} of
-integer or logical input, complex for \code{simd_neg()} of complex input,
+integer or logical input, complex for \code{simd_neg()} and
+\code{simd_sqrt()} of complex input,
 otherwise double (also for \code{simd_abs()} of complex input).
 }
 \seealso{
@@ -100,4 +103,5 @@ simd_sign(c(-2, 0, 3))
 simd_copysign(c(1, -2, 3), c(-1, -1, 1))
 simd_recip(c(2, 0, -0))
 simd_sqrt(c(4, 9, 2))
+simd_sqrt(c(-4+0i, -4-0i))
 }

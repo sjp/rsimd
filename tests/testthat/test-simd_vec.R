@@ -383,8 +383,9 @@ test_that("Math functions without a kernel fall back to base R", {
   expect_sv(signif(simd_vec(pi * 100), 2), signif(pi * 100, 2))
   z <- c(3 + 4i, -1i)
   expect_sv(abs(simd_vec(z)), abs(z))
-  expect_sv(exp(simd_vec(z)), exp(z))
-  expect_sv(sqrt(simd_vec(z)), sqrt(z))
+  # exp and sqrt of complex use the kernels (test-complex-math.R).
+  expect_sv(exp(simd_vec(z, impl = "none")), exp(z), "none")
+  expect_sv(sqrt(simd_vec(z, impl = "none")), sqrt(z), "none")
   expect_sv(cumsum(simd_vec(z)), cumsum(z))
   expect_sv(round(simd_vec(z), 1), round(z, 1))
 })

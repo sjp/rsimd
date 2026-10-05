@@ -25,6 +25,9 @@ void rsimd_c128_cmp(int op, SEXP x, SEXP y, int *po);
 /* The names of the arithmetic variants chosen at load time: a named
    character vector (mul, div, cumprod). */
 SEXP c128_variants(void);
+/* The arithmetic variants chosen at load time, for the complex functions
+   that multiply or divide as base R does. */
+const rsimd_c128_arith *rsimd_c128_arith_get(void);
 /* -x of a complex input. */
 SEXP rsimd_c128_neg(const rsimd_in *in);
 /* sum(x) of a complex input: each part is NA if it saw an NA, else NaN if

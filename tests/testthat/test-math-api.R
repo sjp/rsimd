@@ -72,16 +72,21 @@ test_that("an integer NA becomes NA_real_, and integer or logical input equals t
 test_that("unsupported argument types error", {
   for (name in c("exp", "log", "sinpi", "atanh")) {
     f <- get(paste0("simd_", name))
-    expect_error(f(1i), sprintf("simd_%s() does not support 'x' of type complex", name),
-      fixed = TRUE
-    )
+    if (name %in% c("sinpi")) {
+      expect_error(f(1i), sprintf("simd_%s() does not support 'x' of type complex", name),
+        fixed = TRUE
+      )
+    }
     # As every function of the package: the access layer names the type.
     expect_error(f("a"), "'x' must be an atomic vector", fixed = TRUE)
     expect_error(f(list(1)), "'x' must be an atomic vector", fixed = TRUE)
     expect_error(f(as.raw(1)), "non-numeric argument to mathematical function", fixed = TRUE)
   }
-  expect_error(simd_pow(2, 1i), "simd_pow() does not support 'y' of type complex", fixed = TRUE)
-  expect_error(simd_atan2(1i, 1), "simd_atan2() does not support 'y' of type complex",
+  # Complex input is taken where base R takes it (test-complex-math.R).
+  expect_error(simd_hypot(2, 1i), "simd_hypot() does not support 'y' of type complex",
+    fixed = TRUE
+  )
+  expect_error(simd_nextafter(1i, 1), "simd_nextafter() does not support 'x' of type complex",
     fixed = TRUE
   )
   expect_error(simd_hypot(1, as.raw(1)), "non-numeric argument to mathematical function",
@@ -92,7 +97,7 @@ test_that("unsupported argument types error", {
   expect_error(simd_sincos(1i), "simd_sincos() does not support 'x' of type complex",
     fixed = TRUE
   )
-  expect_error(simd_log(1i, 2), "simd_log() does not support 'x' of type complex", fixed = TRUE)
+  expect_error(simd_log1p(1i), "simd_log1p() does not support 'x' of type complex", fixed = TRUE)
   skip_if_not_installed("bit64")
   expect_error(simd_exp(bit64::as.integer64(1)),
     "simd_exp() does not support 'x' of type integer64",

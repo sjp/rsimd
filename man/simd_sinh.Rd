@@ -20,7 +20,7 @@ simd_acosh(x)
 simd_atanh(x)
 }
 \arguments{
-\item{x}{A double, integer or logical vector.}
+\item{x}{A double, integer, logical or complex vector.}
 }
 \description{
 \code{sinh(x)}, \code{cosh(x)}, \code{tanh(x)}, \code{asinh(x)},
@@ -37,12 +37,19 @@ there the C library's functions are used instead. \code{simd_acosh(x)} for
 \code{x < 1} and \code{simd_atanh(x)} for \eqn{|x| > 1} are \code{NaN} with a
 warning; \code{simd_atanh(1)} is \code{Inf}.
 
+\strong{Complex numbers.} These functions take complex input, as base R's
+do: see the Complex numbers section of \code{\link{simd_exp}} for the
+\code{"none"} implementation (base R exactly), the accuracy of the others and
+the special values. \code{simd_acosh()} of complex input is C's principal value,
+not base R's \code{acos(z) * 1i}, which has a negative real part in the
+lower half-plane.
+
 \rsimdMath
 
 \rsimdAttributes
 }
 \value{
-A double vector of the length of \code{x}.
+A vector of the length of \code{x}: complex for complex input, else double.
 }
 \seealso{
 \code{\link{sinh}}, \code{\link{simd_exp}}, \link{rsimd_options}.
@@ -54,4 +61,5 @@ simd_tanh(c(-20, 0.5))
 simd_asinh(1e300)
 simd_acosh(c(1, 10))
 simd_atanh(c(0.5, 1))
+simd_acosh(c(2 - 1i, 2 + 1i))
 }

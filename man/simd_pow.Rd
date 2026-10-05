@@ -17,7 +17,8 @@ simd_rootn(x, n)
 simd_rsqrt(x)
 }
 \arguments{
-\item{x, y}{Double, integer or logical vectors.}
+\item{x, y}{Double, integer or logical vectors; for \code{simd_pow()}, also
+complex.}
 \item{n}{An integer or logical vector, or a double vector of whole numbers
 in the integer range (\code{NA} allowed).}
 }
@@ -92,19 +93,27 @@ The two-operand functions follow the broadcast rule:
 
 \rsimdBroadcast
 
+\code{simd_pow(x, y)} with a complex operand converts the other with
+\code{as.complex()} and is base R's \code{x^y}: whole-number real powers up
+to 65536 are identical to base R on every implementation, other powers are
+\eqn{\exp(y \log x)}; see the Complex numbers section of
+\code{\link{simd_exp}}.
+
 \rsimdMath
 
 \rsimdAttributes
 }
 \value{
 A double vector, of the length of the longer operand for \code{simd_pow()},
-\code{simd_hypot()} and \code{simd_rootn()}.
+\code{simd_hypot()} and \code{simd_rootn()}; complex for \code{simd_pow()}
+with a complex operand.
 }
 \seealso{
 \code{\link{Arithmetic}}, \code{\link{simd_sqrt}}, \code{\link{simd_exp}},
 \code{\link{simd_recip_approx}}, \link{rsimd_options}.
 }
 \examples{
+simd_pow(1 + 1i, c(2, -3, 0.5))
 simd_pow(c(2, -2, 10), 3)
 simd_pow(c(NA, NaN), 0)
 simd_pow(-8, 1/3)

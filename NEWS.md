@@ -63,8 +63,16 @@ First release.
   division, `cumsum()` and `cumprod()` are identical to base R's results,
   special values included: base R's rounding depends on the compiler that
   built R, so the variant is chosen when the package loads by comparing
-  with base R (`attr(simd_current(), "complex")`). `simd_vec` objects use
-  the kernels for complex `*` and `/`.
+  with base R (`attr(simd_current(), "complex")`). The elementary functions
+  `simd_sqrt()`, `simd_exp()`, `simd_log()` (also with a base),
+  `simd_log2()`, `simd_log10()`, `simd_pow()`, `simd_sin()` to
+  `simd_atan()`, `simd_sinh()` to `simd_atanh()` and `simd_atan2()` take
+  complex input too: the `none` implementation is base R exactly, the others
+  are within 2 to 5 ULP (stated per function in `?simd_exp`) with base R's
+  special values and branch cuts, and whole-number powers are identical to
+  base R everywhere. `simd_acosh()` returns the principal value (C's
+  `cacosh`) where base R's `acosh()` has a negative real part. `simd_vec`
+  objects use the kernels for complex `*`, `/`, `^` and the Math group.
 * **64-bit integers:** `bit64::integer64` vectors are supported by the sums,
   extremes, scans, arithmetic, predicates, comparisons, bit operations and
   conversions, with exact 64-bit results and bit64's warnings;

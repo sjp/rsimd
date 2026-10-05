@@ -56,8 +56,11 @@ predicates \code{\link{simd_is_na}()}, \code{simd_is_nan()},
 \code{_any} and \code{_all} forms) and \code{\link{simd_any_na}()},
 \code{simd_count_na()} and \code{simd_which_na()} take complex input.
 Multiplication, division, \code{cumsum()} and \code{cumprod()} give
-exactly base R's results. The elementary functions and powers reject
-complex input; they are planned for a later version. The other
+exactly base R's results. The elementary functions base R defines on
+complex numbers (\code{\link{simd_sqrt}()}, \code{\link{simd_exp}()},
+\code{simd_log()}, \code{\link{simd_pow}()}, the trigonometric and
+hyperbolic functions and their inverses, \code{\link{simd_atan2}()}) take
+them too: see the Complex numbers section of \code{\link{simd_exp}}. The other
 comparisons give base R's error, and \code{min()}, \code{max()} and the
 like are not defined for complex numbers.
 

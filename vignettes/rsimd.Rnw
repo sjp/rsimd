@@ -147,7 +147,7 @@ simd_mul(1:4, 2L)
 @
 
 Integer and logical vectors give integer results where base R's operators
-do, and the functions work on raw, complex (a subset) and \pkg{bit64}
+do, and the functions work on raw, complex and \pkg{bit64}
 \code{integer64} vectors where that makes sense; each help page lists the
 types it takes. A broader set of examples by family:
 
@@ -290,7 +290,12 @@ imaginary part. \pkg{rsimd} supports these complex operations:
   \code{simd\_is\_finite()} and \code{simd\_is\_infinite()}, with their
   \code{\_any} and \code{\_all} forms, and \code{simd\_any\_na()},
   \code{simd\_count\_na()} and \code{simd\_which\_na()};
-\item \code{simd\_hamming()}, where a pair differs when either part does.
+\item \code{simd\_hamming()}, where a pair differs when either part does;
+\item the elementary functions base R defines on complex numbers:
+  \code{simd\_sqrt()}, \code{simd\_exp()}, \code{simd\_log()} (also with
+  a base), \code{simd\_log2()}, \code{simd\_log10()}, \code{simd\_pow()},
+  the trigonometric and hyperbolic functions and their inverses, and
+  \code{simd\_atan2()}.
 \end{itemize}
 
 A double, integer or logical operand of the arithmetic and comparison
@@ -345,12 +350,40 @@ rules: within a fraction of a unit in the last place, with infinite and
 missing parts exactly as base R. \code{simd\_prod()} multiplies with base
 R's \code{*} in an order set by the precision mode, and the
 \code{"compensated"} mode is usually as accurate as base R's
-\code{long double} product. The other comparisons, the powers and the
-elementary functions reject complex input; the last two are planned for a
-later version.
+\code{long double} product. The other comparisons (\code{<} and friends)
+are an error, as in base R.
 
-<<complex-unsupported>>=
-tryCatch(simd_exp(z), error = conditionMessage)
+The elementary functions follow a two-level contract. The \code{"none"}
+implementation calls what base R calls (the C library's \code{csqrt},
+\code{cexp}, \code{clog} and so on, and base R's own code for powers,
+\code{tan}, the inverse functions on their branch cuts, logarithms with a
+base and \code{atan2}), so its results are identical to base R's. The SIMD
+implementations compute elements with finite parts from SLEEF's real
+functions, within 2 to 5 units in the last place of the exact value (the
+bound of each function is in \code{?simd\_exp}; the C library's own complex
+functions are within about 5), and leave infinite and missing parts, base
+R's branch-cut code and the few regions their formulas do not handle to the
+\code{"none"} code, so special values and branch cuts are base R's. Powers
+with a whole-number exponent (up to 65536) multiply as base R does and are
+identical to base R on every implementation:
+
+<<complex-math>>=
+simd_exp(1i * pi)
+simd_log(c(-1+0i, complex(real = -1, imaginary = -0)))
+identical(simd_pow(z, 3), z^3)
+identical(simd_pow(z, -2), z^-2)
+simd_with_impl("none", identical(simd_sqrt(z), sqrt(z)))
+max(abs(simd_asin(z) - asin(z)) / Mod(asin(z)))
+@
+
+The one deliberate difference is \code{simd\_acosh()}: base R computes
+\code{acosh(z)} as \code{acos(z) * 1i}, which has a negative real part in
+the lower half-plane and on the real axis beyond 1. \pkg{rsimd} returns the
+principal value, C's \code{cacosh}:
+
+<<complex-acosh>>=
+acosh(c(2 - 1i, 2 + 0i))
+simd_acosh(c(2 - 1i, 2 + 0i))
 @
 
 \section{Where to go next}

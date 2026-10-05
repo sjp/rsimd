@@ -26,7 +26,8 @@ simd_atan(x)
 simd_atan2(y, x)
 }
 \arguments{
-\item{x, y}{Double, integer or logical vectors; angles in radians.}
+\item{x, y}{Double, integer, logical or complex vectors; angles in radians.
+\code{simd_sincos()} takes no complex input.}
 }
 \description{
 \code{sin(x)}, \code{cos(x)}, \code{tan(x)}, both \code{sin(x)} and
@@ -56,13 +57,21 @@ rule:
 See \code{\link{simd_sinpi}()} for \code{sin(pi * x)} and friends, which are
 exact at multiples of 1/2.
 
+\strong{Complex numbers.} These functions take complex input, as base R's
+do: see the Complex numbers section of \code{\link{simd_exp}} for the
+\code{"none"} implementation (base R exactly), the accuracy of the others and
+the special values. \code{simd_atan2(y, x)} of complex operands (one may be
+double, integer or logical) is base R's: \code{atan(y / x)}, plus \eqn{\pi}
+for \code{Re(x) < 0} (minus \eqn{2\pi} above \eqn{\pi}); \code{atan2(0i, 0i)}
+is \code{NA} with a warning.
+
 \rsimdMath
 
 \rsimdAttributes
 }
 \value{
 A double vector of the length of \code{x} (for \code{simd_atan2()}, of the
-longer operand); for \code{simd_sincos()}, a list of two such vectors named
+longer operand), complex for complex input; for \code{simd_sincos()}, a list of two such vectors named
 \code{sin} and \code{cos}.
 }
 \seealso{
@@ -75,4 +84,6 @@ simd_cos(pi)
 simd_sincos(c(0, pi / 4))
 simd_asin(c(-1, 0.5, 2))
 simd_atan2(c(1, -1, 0), c(0, 0, -1))
+simd_asin(2 + 0i)
+simd_tan(1 + 30i)
 }

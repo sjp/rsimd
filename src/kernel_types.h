@@ -354,6 +354,40 @@ typedef struct {
 /* Complex elementwise math (math1_c128), double results: Mod (|z|, as
    base R's cabs) and Arg (as carg). RSIMD_MATH_FAST may be OR-ed in. */
 enum { RSIMD_CMATH_MOD = 0, RSIMD_CMATH_ARG };
+
+/* Complex elementary functions with complex results (cmath1_c128), and
+   RSIMD_MATH_FAST may be OR-ed in. */
+enum {
+  RSIMD_CM_SQRT = 0,
+  RSIMD_CM_EXP,
+  RSIMD_CM_LOG,
+  RSIMD_CM_SIN,
+  RSIMD_CM_COS,
+  RSIMD_CM_TAN,
+  RSIMD_CM_SINH,
+  RSIMD_CM_COSH,
+  RSIMD_CM_TANH,
+  RSIMD_CM_ASIN,
+  RSIMD_CM_ACOS,
+  RSIMD_CM_ATAN,
+  RSIMD_CM_ASINH,
+  RSIMD_CM_ACOSH,
+  RSIMD_CM_ATANH,
+  RSIMD_CM_COUNT
+};
+/* The two-operand ones (cmath2_c128): x^y, log(x, base = y) and
+   atan2(x, y) (x the "y" argument of atan2). */
+enum { RSIMD_CM2_POW = 0, RSIMD_CM2_LOGB, RSIMD_CM2_ATAN2, RSIMD_CM2_COUNT };
+typedef void (*rsimd_c128_fn1)(const Rcomplex *x, Rcomplex *out);
+/* Base R's own computation of each function for one element, compiled
+   like base R (api_cmath.c): the none tier calls them for every element
+   and the vector tiers for the elements their formulas leave out. The
+   one-operand ones are called after the NA check (an NA part gives NA in
+   both parts), the two-operand ones always. */
+typedef struct {
+  rsimd_c128_fn1 f1[RSIMD_CM_COUNT];
+  rsimd_c128_fn f2[RSIMD_CM2_COUNT];
+} rsimd_cmath_base;
 /* Status bits of the conversion kernels, for base R's and bit64's
    coercion warnings (in checked mode only): a double outside the integer
    range ("NAs introduced by coercion to integer range"), a value not in
