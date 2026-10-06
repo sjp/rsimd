@@ -1,4 +1,5 @@
-# R CMD check and the full test suite once per tier on R-devel built
+# R CMD check and the full test suite (every tier through the kernel tests'
+# own loop, then the dispatch tests once per tier) on R-devel built
 # without long double (R-hub's nold container, as CRAN's noLD check). Base
 # R's sum() and friends then accumulate in double, which exercises the
 # tolerances of the comparisons with base R. The vignettes' code is run too
@@ -39,7 +40,7 @@ jobs:
           R CMD build --no-build-vignettes --no-manual .
           R CMD check --as-cran --no-manual --ignore-vignettes rsimd_*.tar.gz
 
-      - name: Run the tests once per tier
+      - name: Run the tests on every tier
         if: always()
         run: |
           R CMD INSTALL rsimd_*.tar.gz

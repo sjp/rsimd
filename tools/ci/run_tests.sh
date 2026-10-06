@@ -1,6 +1,7 @@
 #!/bin/sh
-# Runs the test suite against the installed rsimd once, reports the CPU
-# features and tiers seen, and adds a row to the job summary.
+# Runs the test suite (or the files --filter selects) against the installed
+# rsimd once, reports the CPU features and tiers seen, and adds a row to the
+# job summary.
 #
 # Usage: sh tools/ci/run_tests.sh [options]
 #   --impl TIER          start the session with RSIMD_IMPL=TIER (default: unset, auto)
@@ -9,6 +10,8 @@
 #                        "qemu-aarch64 -cpu max,sve-default-vector-length=32"
 #   --expect-impl TIER   fail unless the session's implementation is TIER
 #   --expect-tiers "T.." fail unless simd_available() lists every tier named
+#   --filter REGEX       run only the test files whose names match (as
+#                        testthat::test_dir()'s filter, e.g. "^dispatch$")
 #   --log FILE           also write the output to FILE
 #
 # RSIMD_TEST_SUBSET and RSIMD_TEST_TIERS are passed through to the tests (see
@@ -20,7 +23,7 @@
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
-impl='' label='' runner='' expect_impl='' expect_tiers='' log=''
+impl='' label='' runner='' expect_impl='' expect_tiers='' filter='' log=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --impl) impl=$2; shift 2 ;;
@@ -28,6 +31,7 @@ while [ $# -gt 0 ]; do
     --runner) runner=$2; shift 2 ;;
     --expect-impl) expect_impl=$2; shift 2 ;;
     --expect-tiers) expect_tiers=$2; shift 2 ;;
+    --filter) filter=$2; shift 2 ;;
     --log) log=$2; shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -54,8 +58,10 @@ if (length(miss <- setdiff(want[nzchar(want)], avail))) {
   stop("simd_available() lacks expected tiers: ", paste(miss, collapse = ", "))
 }
 options(testthat.progress.max_fails = 1e6)
+filter <- Sys.getenv("RSIMD_CI_TEST_FILTER")
 testthat::test_dir(Sys.getenv("RSIMD_CI_TEST_DIR"),
-  load_package = "installed", package = "rsimd", stop_on_failure = TRUE
+  filter = if (nzchar(filter)) filter, load_package = "installed", package = "rsimd",
+  stop_on_failure = TRUE
 )
 RCODE
 
@@ -68,8 +74,9 @@ fi
 RSIMD_CI_EXPECT_IMPL=$expect_impl
 RSIMD_CI_EXPECT_TIERS=$expect_tiers
 RSIMD_CI_TEST_DIR=$root/tests/testthat
+RSIMD_CI_TEST_FILTER=$filter
 NOT_CRAN=true
-export RSIMD_CI_EXPECT_IMPL RSIMD_CI_EXPECT_TIERS RSIMD_CI_TEST_DIR NOT_CRAN
+export RSIMD_CI_EXPECT_IMPL RSIMD_CI_EXPECT_TIERS RSIMD_CI_TEST_DIR RSIMD_CI_TEST_FILTER NOT_CRAN
 if [ -n "$impl" ]; then RSIMD_IMPL=$impl; export RSIMD_IMPL; else unset RSIMD_IMPL; fi
 
 if [ -n "$runner" ]; then

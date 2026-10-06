@@ -1,7 +1,9 @@
-# R CMD check and the test suite once per tier on R-devel builds with
-# AddressSanitizer and UndefinedBehaviorSanitizer (R-hub's containers, as
-# used for CRAN's additional checks). Tail loads and stores differ between
-# tiers, so every available tier is run. Any sanitizer report fails the job.
+# R CMD check and the test suite on R-devel builds with AddressSanitizer and
+# UndefinedBehaviorSanitizer (R-hub's containers, as used for CRAN's
+# additional checks). Tail loads and stores differ between tiers, so every
+# available tier is run: the suite's kernel tests loop over all of them
+# (tools/ci/test_tiers.sh runs it with NOT_CRAN=true), and the dispatch
+# tests run once per tier as the default. Any sanitizer report fails the job.
 on:
   schedule:
     - cron: "41 3 * * *"
@@ -42,7 +44,7 @@ jobs:
           R CMD build --no-build-vignettes --no-manual .
           R CMD check --as-cran --no-manual --ignore-vignettes rsimd_*.tar.gz
 
-      - name: Run the tests once per tier
+      - name: Run the tests on every tier
         if: always()
         run: |
           R CMD INSTALL rsimd_*.tar.gz
