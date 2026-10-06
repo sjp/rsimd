@@ -238,6 +238,10 @@ test_that("on base R's branch cuts every tier follows base R's own formula", {
   on_real <- complex(real = m, imaginary = zero)
   on_imag <- complex(real = zero, imaginary = m)
   off <- with_seed(34L, complex(real = stats::rnorm(400), imaginary = stats::rnorm(400)))
+  # Off the cut base R calls the C library (casin, catan, ...), which on
+  # Windows is no reference for accuracy; there the tiers are compared with
+  # the reference tier, as in the other tests.
+  ref_tier <- cm_ref_tier(tiers_to_test())
   for (f in c("asin", "acos", "atanh", "asinh", "atan")) {
     z <- if (f %in% c("asin", "acos", "atanh")) on_real else on_imag
     # Alone, and mixed with elements off the cut in every vector position.
@@ -248,6 +252,9 @@ test_that("on base R's branch cuts every tier follows base R's own formula", {
       tol <- ifelse(cut, if (acc == "fast") 5 else 2, cm_tol(f, acc == "fast"))
       with_accuracy(acc, {
         want <- suppressWarnings(simd_with_impl("none", simd_fn(f)(z)))
+        if (ref_tier != "none") {
+          want[!cut] <- suppressWarnings(simd_with_impl(ref_tier, simd_fn(f)(z)))[!cut]
+        }
         for (tier in setdiff(tiers_to_test(), "none")) {
           got <- suppressWarnings(simd_with_impl(tier, simd_fn(f)(z)))
           expect_null(cm_mismatch(got, want, tol, z), label = paste(f, acc, tier))
