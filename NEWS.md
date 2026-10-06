@@ -7,10 +7,12 @@ First release.
   Linux, macOS, Windows and FreeBSD. `configure` builds every instruction-set
   tier the compiler supports (`sse2`, `avx2` and `avx512` on x86; `neon`,
   `sve` and `sve2` on arm), each in its own file with its own flags, and
-  always the scalar `none` tier. `simd_available()` lists the tiers this
-  machine can run, `simd_use()` selects one by name or `"auto"`,
-  `simd_with_impl()` selects one temporarily, and the `rsimd.impl` option and
-  `RSIMD_IMPL` environment variable set it too (`?rsimd_options`).
+  always the scalar `none` tier. `simd_tiers()` lists every tier id,
+  `simd_available()` the tiers this machine can run, `simd_use()` selects
+  one by name or `"auto"`, `simd_with_impl()` selects one temporarily, and
+  the `rsimd.impl` option and `RSIMD_IMPL` environment variable set it too
+  (`?rsimd_options`). `simd_version()` reports the version of the native
+  interface.
 * **Reductions:** `simd_sum()`, `simd_prod()`, `simd_mean()`, `simd_min()`,
   `simd_max()`, `simd_range()`, `simd_which_min()`, `simd_which_max()`,
   `simd_any()`, `simd_all()`, `simd_any_na()`, `simd_count_na()`,
@@ -59,8 +61,8 @@ First release.
   `simd_exp2m1()`, `simd_exp10m1()`, `simd_log2p1()` and `simd_log10p1()`
   (C23's `exp2m1()` and the others) compute `2^x - 1`, `10^x - 1`,
   `log2(1 + x)` and `log10(1 + x)` without losing accuracy near 0, within
-  2 ULP, and `simd_sincospi()` gives `simd_sinpi()` and `simd_cospi()` in one
-  pass. Machine-learning helpers `simd_sigmoid()`,
+  2 ULP, and `simd_sincos()` and `simd_sincospi()` give the sine and cosine
+  in one pass. Machine-learning helpers `simd_sigmoid()`,
   `simd_softmax()` and `simd_log_softmax()`.
 * **Floating-point extras:** `simd_ilogb()`, `simd_scaleb()`,
   `simd_nextafter()`, `simd_next_up()`, `simd_next_down()`,
@@ -99,8 +101,8 @@ First release.
 * **`simd_vec` class:** `simd_vec()` wraps a vector so that the operators,
   the `Math` and `Summary` group generics, `mean()` and `anyNA()` use the
   SIMD kernels. An object can be pinned to one implementation
-  (`simd_impl<-`) and can carry a known NA-free flag that lets functions
-  skip their missing-value checks. The flag is tied to the object it was set
+  (`simd_impl<-`) and can carry a known NA-free flag (`simd_na_free()`)
+  that lets functions skip their missing-value checks. The flag is tied to the object it was set
   on, so base functions that copy attributes onto new data (`pmin()`,
   `storage.mode<-`, `unclass()`, `readRDS()`, ...) can never carry a stale
   one; `Re()`, `Im()`, `Mod()`, `Arg()`, `Conj()`, `is.na()`, `[[<-`,

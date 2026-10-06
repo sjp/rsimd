@@ -34,8 +34,8 @@ do not call these functions directly: `src/kernels/common.inc.h` wraps them as
 ## Changes from SLEEF's output
 
 `tools/vendor_sleef.sh` edits the generated headers so that they hold double precision
-only, do not depend on the machine that generated them and compile cleanly with
-`-Wall -pedantic`:
+only, do not depend on the machine that generated them, compile cleanly with
+`-Wall -pedantic` and have no undefined behaviour that sanitizers report:
 
 - the single-precision (`float`) functions are not generated (about a third of the
   size);
@@ -46,7 +46,12 @@ only, do not depend on the machine that generated them and compile cleanly with
   files are compiled with `-ffp-contract=off`, which SLEEF requires;
 - helpers declared plain `static` are made `static inline`;
 - the advsimd and sve headers get back the ARM Ltd. copyright notice of the SLEEF
-  source files they are generated from.
+  source files they are generated from;
+- in the advsimd header, the 64-bit mask add, subtract and negate helpers use
+  unsigned lanes (`vaddq_u64`, `vsubq_u64`) instead of signed ones. `nextafter`
+  relies on their wraparound, which is undefined for the signed intrinsics because
+  GCC implements them as C arithmetic (UBSan reports it); the instructions are the
+  same.
 
 Both the native and the cross-compiled generation routes give byte-identical headers.
 

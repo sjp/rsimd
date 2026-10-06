@@ -45,6 +45,25 @@ v * 2 + 1                            # 4 NA 7
 sum(v, na.rm = TRUE)                 # 4.5
 ```
 
+## Functions
+
+| Family | Examples | Help |
+|--------|----------|------|
+| Reductions | `simd_sum()`, `simd_mean()`, `simd_min()`, `simd_range()`, `simd_which_max()`, `simd_any()`, `simd_count_na()`, `simd_max_abs()` | `?simd_sum`, `?simd_min`, `?simd_which_min` |
+| Linear algebra and statistics | `simd_dot()`, `simd_norm()`, `simd_dist()`, `simd_cosine()`, `simd_var()`, `simd_sd()` | `?simd_dot`, `?simd_var` |
+| Scans | `simd_cumsum()`, `simd_cumprod()`, `simd_cummin()`, `simd_cummax()` | `?simd_cumsum` |
+| Elementwise arithmetic | `simd_add()`, `simd_div()`, `simd_idiv()`, `simd_mod()`, `simd_fma()`, `simd_pmin()`, `simd_clamp()`, `simd_round()`, `simd_add_wrap()` | `?simd_add`, `?simd_fma`, `?simd_round` |
+| Predicates and comparisons | `simd_is_na()`, `simd_is_finite()`, `simd_is_whole()` (with `_any` and `_all` forms), `simd_eq()`, `simd_which()`, `simd_count()`, `simd_hamming()` | `?simd_is_na`, `?simd_eq`, `?simd_hamming` |
+| Logic and bits | `simd_and()`, `simd_not()`, `simd_bit_and()`, `simd_shl()`, `simd_rotl()`, `simd_popcount()` | `?simd_and`, `?simd_bit_and`, `?simd_popcount` |
+| Conversions | `simd_as_integer()`, `simd_as_double()`, `simd_as_raw()`, `simd_as_integer64()` | `?simd_as_integer` |
+| Elementary functions | `simd_exp()`, `simd_log1p()`, `simd_pow()`, `simd_sin()`, `simd_sinpi()`, `simd_tanh()`, `simd_exp2m1()` | `?simd_exp`, `?simd_sin`, `?simd_math_accuracy` |
+| Floating-point extras | `simd_ilogb()`, `simd_nextafter()`, `simd_remainder()`, `simd_rootn()`, `simd_rsqrt_approx()` | `?simd_ilogb`, `?simd_recip_approx` |
+| Machine learning | `simd_sigmoid()`, `simd_softmax()`, `simd_log_softmax()` | `?simd_softmax` |
+| Complex vectors | arithmetic, sums, scans and elementary functions, plus `simd_conj()`, `simd_re()`, `simd_arg()` | `?simd_conj` |
+| 64-bit integers | `bit64::integer64` input to sums, extremes, arithmetic, comparisons and bit operations | `?rsimd-integer64` |
+| `simd_vec` class | operators, `Math` and `Summary` through the kernels; `simd_unwrap()`, `simd_na_free()` | `?simd_vec` |
+| Implementation selection | `simd_available()`, `simd_use()`, `simd_with_impl()`, `simd_precision()`, `simd_cpu_features()` | `?simd_use`, `?simd_precision` |
+
 ## Implementation tiers
 
 | Tier | Instruction sets | Platforms |

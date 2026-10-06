@@ -8,6 +8,7 @@
 // removed, host-dependent quad-precision settings cleared, FP_CONTRACT
 // pragma removed (compile with -ffp-contract=off) and plain static
 // helpers made inline.
+// The 64-bit mask add, subtract and negate use unsigned lanes.
 
 /* #undef SLEEF_FLOAT128_IS_IEEEQP */
 /* #undef SLEEF_LONGDOUBLE_IS_IEEEQP */
@@ -1629,7 +1630,7 @@ static SLEEF_ALWAYS_INLINE vopmask_advsimd_sleef veq64_vo_vm_vm_advsimd_sleef(vm
 }
 
 static SLEEF_ALWAYS_INLINE vmask_advsimd_sleef vadd64_vm_vm_vm_advsimd_sleef(vmask_advsimd_sleef x, vmask_advsimd_sleef y) {
-  return vreinterpretq_u32_s64(vaddq_s64(vreinterpretq_s64_u32(x), vreinterpretq_s64_u32(y)));
+  return vreinterpretq_u32_u64(vaddq_u64(vreinterpretq_u64_u32(x), vreinterpretq_u64_u32(y)));
 }
 
 static SLEEF_ALWAYS_INLINE vint_advsimd_sleef vsel_vi_vo_vi_vi_advsimd_sleef(vopmask_advsimd_sleef m, vint_advsimd_sleef x, vint_advsimd_sleef y) {
@@ -1707,11 +1708,11 @@ static SLEEF_ALWAYS_INLINE int vtestallzeros_i_vo64_advsimd_sleef(vopmask_advsim
 static SLEEF_ALWAYS_INLINE vmask_advsimd_sleef vsel_vm_vo64_vm_vm_advsimd_sleef(vopmask_advsimd_sleef m, vmask_advsimd_sleef x, vmask_advsimd_sleef y) { return vbslq_u32(m, x, y); }
 
 static SLEEF_ALWAYS_INLINE vmask_advsimd_sleef vsub64_vm_vm_vm_advsimd_sleef(vmask_advsimd_sleef x, vmask_advsimd_sleef y) {
-  return vreinterpretq_u32_s64(vsubq_s64(vreinterpretq_s64_u32(x), vreinterpretq_s64_u32(y)));
+  return vreinterpretq_u32_u64(vsubq_u64(vreinterpretq_u64_u32(x), vreinterpretq_u64_u32(y)));
 }
 
 static SLEEF_ALWAYS_INLINE vmask_advsimd_sleef vneg64_vm_vm_advsimd_sleef(vmask_advsimd_sleef x) {
-  return vreinterpretq_u32_s64(vnegq_s64(vreinterpretq_s64_u32(x)));
+  return vreinterpretq_u32_u64(vsubq_u64(vdupq_n_u64(0), vreinterpretq_u64_u32(x)));
 }
 
 static SLEEF_ALWAYS_INLINE vopmask_advsimd_sleef vgt64_vo_vm_vm_advsimd_sleef(vmask_advsimd_sleef x, vmask_advsimd_sleef y) {

@@ -389,9 +389,15 @@ RSIMD_INLINE rsimd_vi64 rsimd_vi64_loadu_i32(const int32_t *p) {
   simde__m128i v = simde_mm_loadl_epi64((const simde__m128i *) (const void *) p);
   return simde_mm_unpacklo_epi32(v, simde_mm_srai_epi32(v, 31));
 }
+/* The low 64 bits of v to p, which may be unaligned. Unlike
+   simde_mm_storel_epi64(), this does not pass p as a pointer to a 16-byte
+   aligned type, which is undefined where SIMDe emulates the store. */
+RSIMD_INLINE void rsimd_s128_storel(void *p, simde__m128i v) {
+  int64_t w = simde_mm_cvtsi128_si64(v);
+  memcpy(p, &w, sizeof w);
+}
 RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
-  simde_mm_storel_epi64((simde__m128i *) (void *) p,
-                        simde_mm_shuffle_epi32(v, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
+  rsimd_s128_storel(p, simde_mm_shuffle_epi32(v, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
 }
 #ifndef RSIMD_NO_F64_SIMD
 #if defined(__aarch64__) || defined(_M_ARM64)
@@ -455,8 +461,7 @@ RSIMD_INLINE void rsimd_vf64_storeu_i32(int32_t *p, rsimd_vf64 v) {
      in two's complement, exactly, for every value in the int32 range. */
   simde__m128d t = simde_mm_round_pd(v, SIMDE_MM_FROUND_TO_ZERO);
   simde__m128i w = simde_mm_castpd_si128(simde_mm_add_pd(t, simde_mm_set1_pd(6755399441055744.0)));
-  simde_mm_storel_epi64((simde__m128i *) (void *) p,
-                        simde_mm_shuffle_epi32(w, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
+  rsimd_s128_storel(p, simde_mm_shuffle_epi32(w, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
 #else
   simde_mm_storel_epi64((simde__m128i *) (void *) p, simde_mm_cvttpd_epi32(v));
 #endif
