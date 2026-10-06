@@ -59,6 +59,10 @@
 #   RSIMD_TEST_HOLE=<slot>  test build: leave the kernel slot <slot> (a name
 #                           from src/kernel_list.h) empty in every tier but
 #                           none, so the dispatcher must fill it from below.
+#   RSIMD_NO_MATH_LIBM=1    measurement build: the SIMD tiers use SLEEF for
+#                           every elementary function, ignoring the ops they
+#                           hand to libm (src/kernels/math.inc.c; the
+#                           math-paths workflow times both builds).
 # A tier that fails to compile cannot be forced on.
 #
 # Adding a tier
@@ -468,6 +472,11 @@ pkg_cppflags=
 if [ "${RSIMD_DEBUG:-0}" = 1 ]; then
   pkg_cppflags=-DRSIMD_DEBUG
   echo "rsimd: RSIMD_DEBUG is set: debug build (-DRSIMD_DEBUG)"
+fi
+
+if [ "${RSIMD_NO_MATH_LIBM:-0}" = 1 ]; then
+  pkg_cppflags="$pkg_cppflags -DRSIMD_NO_MATH_LIBM"
+  echo "rsimd: RSIMD_NO_MATH_LIBM is set: no elementary function is handed to libm"
 fi
 
 test_hole=${RSIMD_TEST_HOLE:-}

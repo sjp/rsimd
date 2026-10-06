@@ -1,0 +1,87 @@
+# Times the elementary functions whose implementation depends on the tier
+# (bench/math_paths.R, issue 036) on the arm64 runners, on demand only: the
+# neon tier hands some functions to the C math library (RSIMD_MATH1_LIBM in
+# src/kernels/math.inc.c) only where libm was measured faster on every core,
+# and this job measures Neoverse (ubuntu-24.04-arm) and Apple with macOS's
+# libm (macos-latest). It times two builds: the package as it is, and one
+# configured with RSIMD_NO_MATH_LIBM=1, whose SIMD tiers use SLEEF for every
+# function; an op belongs on the list where the first build's neon column
+# beats the second's. The tables go to the job summary and, with a csv of
+# every timing, to an artifact. Informational: no timing is checked. Hosted
+# runners share hardware, so compare the tiers within one run, not runs.
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: "Vector length"
+        type: string
+        default: "1e6"
+      rounds:
+        description: "Rounds (the median of the rounds' medians is reported)"
+        type: string
+        default: "5"
+      ops:
+        description: "Comma-separated functions (empty for all), e.g. log,pow,asin"
+        type: string
+        default: ""
+
+name: math-paths
+
+permissions: read-all
+
+jobs:
+  math-paths:
+    runs-on: ${{ matrix.os }}
+    name: math-paths ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-latest]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::bench
+
+      - name: Install rsimd, as it is and with SLEEF for every function
+        run: |
+          mkdir -p lib-sleef
+          R CMD INSTALL --preclean .
+          RSIMD_NO_MATH_LIBM=1 R CMD INSTALL --preclean -l lib-sleef .
+
+      - name: Time the math paths
+        env:
+          N: ${{ inputs.n }}
+          ROUNDS: ${{ inputs.rounds }}
+          OPS: ${{ inputs.ops }}
+        run: |
+          set -- bench/math_paths.R --n "$N" --rounds "$ROUNDS"
+          if [ -n "$OPS" ]; then set -- "$@" --ops "$OPS"; fi
+          {
+            echo "## As built (the libm list in effect)"
+            Rscript "$@" --out math-paths/as-built
+            echo
+            echo "## RSIMD_NO_MATH_LIBM=1 (SLEEF for every function)"
+            R_LIBS="$PWD/lib-sleef" Rscript "$@" --out math-paths/sleef
+          } | tee math-paths.md
+          cat math-paths.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: math-paths-${{ matrix.os }}
+          path: math-paths/
+          retention-days: 90
+          if-no-files-found: warn

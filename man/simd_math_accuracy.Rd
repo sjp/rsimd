@@ -49,7 +49,21 @@ The exact functions of \link{simd_ilogb}, \code{\link{simd_rootn}},
 
 The \code{"none"} implementation always uses the C math library, so the
 mode makes no difference to it, and neither does it to an implementation
-built without SLEEF (see \code{\link{simd_available}}). The mode applies to
+built without SLEEF (see \code{\link{simd_available}}).
+
+\strong{The C math library on \code{"neon"}.} On the \code{"neon"}
+implementation (arm64), \code{log} (with or without a base), \code{log2},
+\code{cosh}, \code{asinh}, \code{acosh} and \code{pow} call the C math
+library in accurate mode, as \code{"none"} does, because it was measured
+faster there than SLEEF's two-lane vector functions (on Apple cores with
+glibc; a function stays on the list only if that holds on Neoverse cores
+too). Their accurate results on \code{"neon"} are
+therefore identical to base R's. In fast mode \code{log}, \code{log2} and
+\code{cosh} use SLEEF's 3.5-ULP functions as on the other
+implementations; \code{asinh}, \code{acosh} and \code{pow}, which SLEEF
+has no faster variant of, stay on the C library, so they too are the same
+in both modes. Other implementations, and \code{"neon"} on Windows, use
+SLEEF for all of them. The mode applies to
 every call, whichever implementation a \code{\link{simd_vec}} is pinned to.
 
 The mode is stored in the option \code{rsimd.math_accuracy} (see

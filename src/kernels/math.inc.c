@@ -18,7 +18,11 @@
  * common.inc.h) with the same reductions and special cases, and recompute
  * with libm the rare lanes outside the range where SLEEF is accurate:
  * sinh and cosh for |x| > 709, asinh and acosh for |x| > 1e154, and pow
- * with an infinite operand (base R's rules there are not C's). A SIMD tier
+ * with an infinite operand (base R's rules there are not C's). In accurate
+ * mode a tier may instead run the none tier's loops for the ops where libm was
+ * measured faster than SLEEF on that tier (RSIMD_MATH1_LIBM and
+ * RSIMD_MATH2_LIBM: log, log2, logb, cosh, asinh, acosh and pow on neon),
+ * and in fast mode for those of them SLEEF has no fast variant of. A SIMD tier
  * built without SLEEF leaves these slots empty, so they are filled from
  * the next tier down, ultimately none.
  *
@@ -373,7 +377,10 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_next_up(rsimd_vf64 a) {
 
 #endif
 
-#if RSIMD_TIER_IS(none)
+/* ---- the libm kernels ----------------------------------------------------
+   math1_f64 and math2_f64 element by element with libm, as base R: the
+   none tier's kernels, and what a SIMD tier runs for the ops it hands to
+   libm (RSIMD_MATH1_LIBM, RSIMD_MATH2_LIBM below). */
 
 /* Element i of operand k as a double (an int32 NA as NA_real_). */
 static inline double rsimd_math_get(const void *p, int flags, int k, R_xlen_t i) {
@@ -405,25 +412,31 @@ static inline double rsimd_math_get(const void *p, int flags, int k, R_xlen_t i)
     RSIMD_MATH1_NONE_ELT(rsimd_math_get(x, flags, 0, i), f)                      \
   }
 
-int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
-int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out) {
+/* math1_f64 for op (without RSIMD_MATH_FAST) with libm. */
+static inline int rsimd_math1_libm(int op, const void *x, R_xlen_t n, int flags, double p,
+                                   double *out) {
   int st = 0;
   R_xlen_t i;
-  /* The common functions get their own loops; the others go through
-     rsimd_math1_f64(). */
-  switch (op & ~RSIMD_MATH_FAST) {
+  /* The common functions, and those a SIMD tier may hand to libm, get
+     their own loops; the others go through rsimd_math1_f64(). */
+  switch (op) {
   case RSIMD_MATH_EXP: RSIMD_MATH1_NONE_LOOP(exp(a)) break;
   case RSIMD_MATH_LOG: RSIMD_MATH1_NONE_LOOP(log(a)) break;
+  case RSIMD_MATH_LOG2: RSIMD_MATH1_NONE_LOOP(log2(a)) break;
+  case RSIMD_MATH_LOGB: RSIMD_MATH1_NONE_LOOP(log(a) / p) break;
   case RSIMD_MATH_SIN: RSIMD_MATH1_NONE_LOOP(sin(a)) break;
   case RSIMD_MATH_COS: RSIMD_MATH1_NONE_LOOP(cos(a)) break;
+  case RSIMD_MATH_COSH: RSIMD_MATH1_NONE_LOOP(cosh(a)) break;
   case RSIMD_MATH_TANH: RSIMD_MATH1_NONE_LOOP(tanh(a)) break;
+  case RSIMD_MATH_ASINH: RSIMD_MATH1_NONE_LOOP(asinh(a)) break;
+  case RSIMD_MATH_ACOSH: RSIMD_MATH1_NONE_LOOP(acosh(a)) break;
   case RSIMD_MATH_SIGMOID: RSIMD_MATH1_NONE_LOOP(rsimd_sigmoid_f64(a)) break;
   case RSIMD_MATH_NEXT_UP: RSIMD_MATH1_NONE_LOOP(rsimd_next_up_f64(a)) break;
   case RSIMD_MATH_NEXT_DOWN: RSIMD_MATH1_NONE_LOOP(rsimd_next_down_f64(a)) break;
   case RSIMD_MATH_RSQRT:
   case RSIMD_MATH_RSQRT_APPROX: RSIMD_MATH1_NONE_LOOP(1.0 / sqrt(a)) break;
   case RSIMD_MATH_RECIP_APPROX: RSIMD_MATH1_NONE_LOOP(1.0 / a) break;
-  default: RSIMD_MATH1_NONE_LOOP(rsimd_math1_f64(op & ~RSIMD_MATH_FAST, a, p)) break;
+  default: RSIMD_MATH1_NONE_LOOP(rsimd_math1_f64(op, a, p)) break;
   }
   return st;
 }
@@ -431,17 +444,21 @@ int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double
 #undef RSIMD_MATH1_NONE_LOOP
 #undef RSIMD_MATH1_NONE_ELT
 
-int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
-                            double *out);
-int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
-                            double *out) {
+/* math2_f64 for op (without RSIMD_MATH_FAST) with libm. */
+static inline int rsimd_math2_libm(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                                   double *out) {
   int st = 0;
   R_xlen_t i;
-  op &= ~RSIMD_MATH_FAST;
+  if (op == RSIMD_MATH_POW) {
+    /* Base R's ^ never warns. */
+    for (i = 0; i < n; i++) {
+      out[i] = rsimd_pow_f64(rsimd_math_get(x, flags, 0, i), rsimd_math_get(y, flags, 1, i));
+    }
+    return 0;
+  }
   for (i = 0; i < n; i++) {
     double a = rsimd_math_get(x, flags, 0, i), b = rsimd_math_get(y, flags, 1, i), r;
     switch (op) {
-    case RSIMD_MATH_POW: r = rsimd_pow_f64(a, b); break;
     case RSIMD_MATH_ATAN2: r = rsimd_math2_na_f64(atan2(a, b), a, b); break;
     case RSIMD_MATH_HYPOT: r = rsimd_math2_na_f64(hypot(a, b), a, b); break;
     case RSIMD_MATH_NEXTAFTER: r = rsimd_math2_na_f64(nextafter(a, b), a, b); break;
@@ -454,10 +471,24 @@ int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, in
       break;
     default: r = NAN; break;
     }
-    if (op != RSIMD_MATH_POW && isnan(r) && !isnan(a) && !isnan(b)) st = RSIMD_EW_NAN_PRODUCED;
+    if (isnan(r) && !isnan(a) && !isnan(b)) st = RSIMD_EW_NAN_PRODUCED;
     out[i] = r;
   }
   return st;
+}
+
+#if RSIMD_TIER_IS(none)
+
+int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
+int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out) {
+  return rsimd_math1_libm(op & ~RSIMD_MATH_FAST, x, n, flags, p, out);
+}
+
+int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                            double *out);
+int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                            double *out) {
+  return rsimd_math2_libm(op & ~RSIMD_MATH_FAST, x, y, n, flags, out);
 }
 
 int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, double *s,
@@ -794,8 +825,38 @@ static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, doubl
   return st;
 }
 
+/* ---- ops handed to the C math library -----------------------------------
+   The ops for which this tier runs the none tier's loops
+   (rsimd_math1_libm, rsimd_math2_libm), and so libm as base R does,
+   because libm was measured faster on this tier than SLEEF's 1-ULP vector
+   function (issue 036, amending D13): bit k of RSIMD_MATH1_LIBM is
+   math1_f64 op k, of RSIMD_MATH2_LIBM math2_f64 op k. A function belongs
+   here only if libm wins on every core measured: on neon, Apple's and
+   Neoverse's, with glibc (Windows is not measured). LOGB is log(x) /
+   log(base), so it follows LOG. Fast mode uses SLEEF's 3.5-ULP functions:
+   only the ops SLEEF has none of (RSIMD_MATH*_LIBM_FAST) stay on libm
+   there, since without one fast mode is accurate mode. Configure's
+   RSIMD_NO_MATH_LIBM=1 empties the lists, to time SLEEF against libm. */
+#if RSIMD_TIER_IS(neon) && !defined(_WIN32) && !defined(RSIMD_NO_MATH_LIBM)
+#define RSIMD_MATH1_LIBM_FAST (1u << RSIMD_MATH_ASINH | 1u << RSIMD_MATH_ACOSH)
+#define RSIMD_MATH1_LIBM                                                         \
+  (RSIMD_MATH1_LIBM_FAST | 1u << RSIMD_MATH_LOG | 1u << RSIMD_MATH_LOG2 |        \
+   1u << RSIMD_MATH_LOGB | 1u << RSIMD_MATH_COSH)
+#define RSIMD_MATH2_LIBM (1u << RSIMD_MATH_POW)
+#define RSIMD_MATH2_LIBM_FAST RSIMD_MATH2_LIBM
+#else
+#define RSIMD_MATH1_LIBM 0u
+#define RSIMD_MATH1_LIBM_FAST 0u
+#define RSIMD_MATH2_LIBM 0u
+#define RSIMD_MATH2_LIBM_FAST 0u
+#endif
+
 int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
 int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out) {
+  if ((op & RSIMD_MATH_FAST ? RSIMD_MATH1_LIBM_FAST : RSIMD_MATH1_LIBM) >>
+        (op & ~RSIMD_MATH_FAST) & 1u) {
+    return rsimd_math1_libm(op & ~RSIMD_MATH_FAST, x, n, flags, p, out);
+  }
   if ((op & ~RSIMD_MATH_FAST) >= RSIMD_MATH_NEXT_UP) {
     return rsimd_math1_extra(op & ~RSIMD_MATH_FAST, x, n, flags, out);
   }
@@ -960,6 +1021,10 @@ int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, in
                             double *out);
 int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
                             double *out) {
+  if ((op & RSIMD_MATH_FAST ? RSIMD_MATH2_LIBM_FAST : RSIMD_MATH2_LIBM) >>
+        (op & ~RSIMD_MATH_FAST) & 1u) {
+    return rsimd_math2_libm(op & ~RSIMD_MATH_FAST, x, y, n, flags, out);
+  }
   if ((op & ~RSIMD_MATH_FAST) >= RSIMD_MATH_NEXTAFTER) {
     return rsimd_math2_extra(op & ~RSIMD_MATH_FAST, x, y, n, flags, out);
   }
@@ -1021,6 +1086,10 @@ int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, doubl
 #undef RSIMD_MATH2_RESULT
 #undef RSIMD_MATH_FIXED
 #undef RSIMD_SLEEF_CALL
+#undef RSIMD_MATH1_LIBM
+#undef RSIMD_MATH1_LIBM_FAST
+#undef RSIMD_MATH2_LIBM
+#undef RSIMD_MATH2_LIBM_FAST
 
 #else /* a SIMD tier without SLEEF: the slots are filled from below */
 #define RSIMD_SKIP_math1_f64 1

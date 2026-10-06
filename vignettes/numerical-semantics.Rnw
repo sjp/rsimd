@@ -400,6 +400,18 @@ that base R uses is usually also within 1 ULP, but not always the same
 ULP, so results can differ from base R and between tiers in the last bit.
 The \code{"none"} tier calls the C library, as base R does.
 
+On the \code{"neon"} tier (arm64), \code{simd\_log()} (with or without a
+base), \code{simd\_log2()}, \code{simd\_cosh()}, \code{simd\_asinh()},
+\code{simd\_acosh()} and \code{simd\_pow()} call the C library too, as
+\code{"none"} does, because there it was measured faster than SLEEF's
+two-lane vector code (on Apple cores with glibc; the list is kept only for
+functions where that holds on Neoverse cores too). Their results
+on \code{"neon"} are therefore base R's, bit for bit. In fast mode
+\code{simd\_log()}, \code{simd\_log2()} and \code{simd\_cosh()} use
+SLEEF's 3.5-ULP variants again, and the others, which have none, stay on the
+C library. The wider tiers (\code{"sve"}, \code{"avx2"} and so on) use SLEEF
+for all of them.
+
 The tests compare every tier with \code{"none"} and allow 2 ULP, plus exact
 checks at special values (zeros, infinities, \code{NA}, \code{NaN}, overflow
 and underflow thresholds). You can measure the difference on your own

@@ -92,6 +92,7 @@ On a schedule, and on demand with "Run workflow":
 | `emulation-qemu` | weekly | The `sve` and `sve2` tiers under `qemu-aarch64` at 256- and 512-bit vectors (`tier_emulation` subset), and `auto` choosing `neon` on a Cortex-A72 model (quick subset). |
 | `cran-incoming` | release branches (`release/**`), `v*` tags | `R CMD check --as-cran` with CRAN's remote incoming checks (URLs, maintainer), the PDF manual and the spelling check; and a check without the suggested packages bit64 and bench. Errors and warnings fail. |
 | `benchmarks` | weekly | `bench/run.R` on Linux x86-64, Linux arm64 and macOS arm64; results uploaded as an artifact and shown in the job summary (see `bench/README.md`). Informational; never fails on timings. |
+| `math-paths` | on demand only | `bench/math_paths.R` on Linux arm64 (Neoverse) and macOS arm64, for the package as built and for a build with `RSIMD_NO_MATH_LIBM=1` (SLEEF for every function): the functions neon hands to the C math library and the complex functions on their branch cuts, per tier and accuracy mode. Checks the libm list in `src/kernels/math.inc.c` on those cores; informational. |
 
 The emulated runs use the reduced test subsets described in `tests/README.md`
 (`RSIMD_TEST_SUBSET`, `RSIMD_TEST_TIERS`). To run the jobs locally, install the

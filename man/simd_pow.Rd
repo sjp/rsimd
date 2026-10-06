@@ -39,7 +39,9 @@ by 1 ULP),
 \code{Inf} for \code{y < 0} (also for \code{-0}), and infinite operands
 follow R's rules, which differ from C's: \code{(-Inf)^0.5} and
 \code{(-2)^Inf} are \code{NaN}. Everything else is the SLEEF (or C) power
-function, within 1 ULP. Apart from \code{x^0} and \code{1^y}, an \code{NA}
+function, within 1 ULP; the \code{"none"} and \code{"neon"}
+implementations call the C library's, so they are identical to base R (see
+\link{simd_math_accuracy}). Apart from \code{x^0} and \code{1^y}, an \code{NA}
 operand gives \code{NA}, as in \code{\link{simd_add}()}. Like \code{^},
 \code{simd_pow()} never warns: \code{simd_pow(-8, 1/3)} is a silent
 \code{NaN}.
