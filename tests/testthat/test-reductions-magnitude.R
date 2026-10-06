@@ -170,7 +170,9 @@ test_that("the magnitude reductions of complex numbers use the moduli of simd_ab
       }
     }
     z <- complex(real = c(3, 0, -1, NA), imaginary = c(4, -6, 1, 0))
-    check_identical(simd_max_abs(z), NA_real_)
+    # Mod(NA + 0i) is NA with glibc's hypot but NaN with Windows', so the
+    # missing result follows base R's max(Mod(z)) on each platform.
+    check_identical(simd_max_abs(z), max(Mod(z)))
     check_identical(simd_max_abs(z, na.rm = TRUE), 6)
     check_identical(simd_which_max_abs(z), 2L)
     check_identical(simd_which_min_abs(z), 3L)
