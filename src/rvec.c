@@ -9,6 +9,7 @@
 #include "rvec.h"
 #include "dispatch.h"
 #include <R_ext/Utils.h>
+#include <Rversion.h>
 
 _Static_assert(sizeof(Rcomplex) == 2 * sizeof(double), "Rcomplex must be two doubles");
 
@@ -142,18 +143,15 @@ static int scalar_is_na(const rsimd_in *v) {
   }
 }
 
-/* Records operand v (named arg) in sv_call: a simd_vec's rsimd_na_free
+/* Records operand v (named arg) in sv_call: a simd_vec's valid NA-free
    flag sets v->no_na_hint, and its rsimd_impl pin switches rsimd_active to
    the pinned tier's table, erroring if the tier is not available or two
    operands are pinned to different tiers. */
 static void sv_note(rsimd_in *v, const char *arg) {
-  SEXP x = v->sx, flag, impl;
+  SEXP x = v->sx, impl;
   if (Rf_inherits(x, "simd_vec")) {
     sv_call.seen = 1;
-    flag = Rf_getAttrib(x, Rf_install("rsimd_na_free"));
-    if (TYPEOF(flag) == LGLSXP && XLENGTH(flag) == 1 && LOGICAL_ELT(flag, 0) == TRUE) {
-      v->no_na_hint = 1;
-    }
+    if (rsimd_sv_flag(x) == 1) v->no_na_hint = 1;
     impl = Rf_getAttrib(x, Rf_install("rsimd_impl"));
     if (impl != R_NilValue) {
       rsimd_tier t = RSIMD_TIER_COUNT;
@@ -185,8 +183,109 @@ static void sv_note(rsimd_in *v, const char *arg) {
   sv_call.na_free = sv_call.na_free && v->no_na_hint;
 }
 
+/* Attribute `name` of x without Rf_getAttrib(), which marks the value it
+   returns as shared (ENSURE_NAMEDMAX) and so would void every token it
+   read. R_mapAttrib() is new in R 4.6.0; ATTRIB() was the way before. */
+#if R_VERSION >= R_Version(4, 6, 0)
+struct sv_attr_find {
+  SEXP name, value;
+};
+
+static SEXP sv_attr_visit(SEXP tag, SEXP value, void *data) {
+  struct sv_attr_find *f = data;
+  if (tag == f->name) f->value = value;
+  return NULL;
+}
+
+static SEXP sv_attr(SEXP x, SEXP name) {
+  struct sv_attr_find f = {name, R_NilValue};
+  R_mapAttrib(x, sv_attr_visit, &f);
+  return f.value;
+}
+#else
+static SEXP sv_attr(SEXP x, SEXP name) {
+  SEXP a;
+  for (a = ATTRIB(x); a != R_NilValue; a = CDR(a)) {
+    if (TAG(a) == name) return CAR(a);
+  }
+  return R_NilValue;
+}
+#endif
+
+int rsimd_sv_flag(SEXP x) {
+  SEXP flag, token;
+  if (TYPEOF(x) == RAWSXP) return 1;
+  flag = sv_attr(x, Rf_install("rsimd_na_free"));
+  if (TYPEOF(flag) != LGLSXP || XLENGTH(flag) != 1 || LOGICAL_ELT(flag, 0) == NA_LOGICAL) {
+    return -1;
+  }
+  token = sv_attr(x, Rf_install("rsimd_na_token"));
+  if (TYPEOF(token) != EXTPTRSXP || R_ExternalPtrAddr(token) != (void *) x ||
+      MAYBE_SHARED(token)) {
+    return -1;
+  }
+  return LOGICAL_ELT(flag, 0);
+}
+
+/* Removes the token of x. The value is replaced first: that drops the
+   token's reference count, which removing the attribute alone would leave
+   counted by the unlinked cell, so that the object a copy x shares the
+   token with keeps its flag. */
+static void sv_drop_token(SEXP x, SEXP token_sym) {
+  if (sv_attr(x, token_sym) == R_NilValue) return;
+  Rf_setAttrib(x, token_sym, Rf_ScalarLogical(FALSE));
+  Rf_setAttrib(x, token_sym, R_NilValue);
+}
+
+SEXP rsimd_sv_stamp(SEXP x, int flag) {
+  SEXP flag_sym = Rf_install("rsimd_na_free"), token_sym = Rf_install("rsimd_na_token");
+  PROTECT(x);
+  if (flag < 0) {
+    Rf_setAttrib(x, flag_sym, R_NilValue);
+    sv_drop_token(x, token_sym);
+  } else {
+    Rf_setAttrib(x, flag_sym, PROTECT(Rf_ScalarLogical(flag != 0)));
+    Rf_setAttrib(x, token_sym, PROTECT(R_MakeExternalPtr((void *) x, R_NilValue, R_NilValue)));
+    UNPROTECT(2);
+  }
+  UNPROTECT(1);
+  return x;
+}
+
+SEXP rsimd_sv_release(SEXP x) {
+  SEXP token_sym = Rf_install("rsimd_na_token"), token = sv_attr(x, token_sym);
+  if (token == R_NilValue || (TYPEOF(token) == EXTPTRSXP && R_ExternalPtrAddr(token) == x)) {
+    return x;
+  }
+  PROTECT(x);
+  sv_drop_token(x, token_sym);
+  Rf_setAttrib(x, Rf_install("rsimd_na_free"), R_NilValue);
+  UNPROTECT(1);
+  return x;
+}
+
+SEXP rsimd_sv_bare(SEXP x) {
+  SEXP out;
+  const void *src;
+  size_t size;
+  R_xlen_t n = XLENGTH(x);
+  switch (TYPEOF(x)) {
+  case REALSXP: size = sizeof(double); break;
+  case INTSXP:
+  case LGLSXP: size = sizeof(int); break;
+  case RAWSXP: size = 1; break;
+  case CPLXSXP: size = sizeof(Rcomplex); break;
+  default: return R_NilValue;
+  }
+  src = DATAPTR_OR_NULL(x);
+  if (src == NULL && n > 0) return R_NilValue;
+  out = Rf_allocVector(TYPEOF(x), n);
+  if (n > 0) memcpy(rsimd_out_ptr(out), src, (size_t) n * size);
+  return out;
+}
+
 SEXP rsimd_sv_result(SEXP out, int keeps_na_free) {
-  SEXP cls, impl, flag, impl_sym, flag_sym;
+  SEXP cls, impl, impl_sym;
   int na_free;
   if (!sv_call.seen) return out;
   if (MAYBE_REFERENCED(out)) out = Rf_shallow_duplicate(out);
@@ -200,14 +299,12 @@ SEXP rsimd_sv_result(SEXP out, int keeps_na_free) {
   }
   Rf_setAttrib(out, R_ClassSymbol, cls);
   impl_sym = Rf_install("rsimd_impl");
-  flag_sym = Rf_install("rsimd_na_free");
   impl = PROTECT(sv_call.pin == RSIMD_TIER_COUNT ? R_NilValue
                                                  : Rf_mkString(rsimd_tier_names[sv_call.pin]));
   Rf_setAttrib(out, impl_sym, impl);
   na_free = TYPEOF(out) == RAWSXP || (keeps_na_free && sv_call.na_free);
-  flag = PROTECT(na_free ? Rf_ScalarLogical(TRUE) : R_NilValue);
-  Rf_setAttrib(out, flag_sym, flag);
-  UNPROTECT(4);
+  rsimd_sv_stamp(out, na_free ? 1 : -1);
+  UNPROTECT(3);
   return out;
 }
 

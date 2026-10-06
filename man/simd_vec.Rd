@@ -50,6 +50,9 @@ returns plain vectors.
 \item{\code{rsimd_na_free}}{\code{TRUE} if the data is known to contain no
   \code{NA} or \code{NaN}, \code{FALSE} if it is known to contain one,
   absent when unknown.}
+\item{\code{rsimd_na_token}}{An external pointer that ties the flag to
+  this object (see \dQuote{Where the flag holds} below); present with
+  \code{rsimd_na_free}.}
 }
 \code{simd_vec()} drops every other attribute of \code{x} (names,
 dimensions, dimnames). Given a \code{simd_vec}, it replaces the pin only
@@ -112,6 +115,23 @@ the checks, and \code{abs(simd_vec(2))} is flagged \code{TRUE}.
 \code{anyNA(x)} answers from the flag when it is known, without reading
 the data.
 
+\strong{Where the flag holds.} Base R copies attributes onto new data in
+many places (\code{pmin()}, \code{storage.mode<-}, \code{ifelse()},
+\code{unclass()}, \code{attributes<-} \dots), so the flag counts only
+for the object it was set on. Its token points at that object, and the
+flag reads as unknown (\code{simd_na_free()} gives \code{NULL}) on any
+object the attributes were copied to, and also on the original once a
+copy has been made: R cannot tell which of the two still holds the data
+the flag describes. A flag forged with \code{attr<-} or
+\code{structure()} is unknown too, and so is a flag reloaded by
+\code{readRDS()} or \code{unserialize()}. Assigning into a copy
+(\code{y <- x; y[1] <- 0}), passing \code{x} to functions, putting it in
+a list, subsetting, sorting and printing leave the flag of \code{x}
+alone; \code{attributes(x)}, \code{saveRDS(x)} and \code{serialize(x)}
+void it. A lost flag only costs speed:
+\code{simd_vec(x, check_na = TRUE)} sets it again. Raw data is always
+NA-free.
+
 \strong{Operators.} \code{+}, \code{-}, \code{*}, \code{/}, \code{^},
 \code{\%\%} and \code{\%/\%} call \code{\link{simd_add}},
 \code{\link{simd_sub}}, \code{\link{simd_mul}}, \code{\link{simd_div}},
@@ -147,18 +167,28 @@ generic: use \code{\link{simd_var}} and \code{\link{simd_sd}}, or
 \strong{Base fallbacks.} What has no kernel runs base R on the data and,
 for a vector result, wraps it again with the operands' pin and an unknown
 NA-free flag: \code{signif}, \code{gamma}, \code{lgamma},
-\code{digamma}, \code{trigamma}; for complex data \code{*}, \code{/},
-\code{^}, \code{\%\%}, \code{\%/\%}, the comparisons (plain logical
-results), the \code{Math} functions, and \code{prod}, \code{min},
-\code{max}, \code{range}, \code{any}, \code{all} and \code{mean}; for
+\code{digamma}, \code{trigamma}; for complex data \code{\%\%},
+\code{\%/\%}, the comparisons other than \code{==} and \code{!=} (plain
+logical results), the \code{Math} functions without a complex kernel, and
+\code{min}, \code{max}, \code{range}, \code{any} and \code{all}; for
 \code{integer64} data \code{^}, \code{prod}, \code{mean} and the
 \code{Math} functions other than \code{abs}, \code{sign}, \code{cumsum},
-\code{cummax} and \code{cummin}, which need \pkg{bit64}; and
-\code{mean(x, trim)} with \code{trim} other than 0.
+\code{cummax} and \code{cummin}, which need \pkg{bit64};
+\code{mean(x, trim)} with \code{trim} other than 0; \code{range(x,
+finite = TRUE)}; and \code{Re}, \code{Im}, \code{Mod}, \code{Arg} and
+\code{Conj} of non-complex data. For complex data \code{Re}, \code{Im},
+\code{Mod}, \code{Arg} and \code{Conj} call \code{\link{simd_re}},
+\code{\link{simd_im}}, \code{\link{simd_abs}}, \code{\link{simd_arg}}
+and \code{\link{simd_conj}}.
 
-\strong{Other methods.} \code{x[i]} keeps the class and the pin;
-\code{x[i] <- value} too (an \code{integer64} object converts
-\code{value} to \code{integer64}); \code{x[[i]]} returns a plain element.
+\strong{Other methods.} \code{x[i]} keeps the class and the pin
+(\code{drop} is ignored); \code{x[i] <- value} and \code{x[[i]] <- value}
+too (an \code{integer64} object converts \code{value} to
+\code{integer64}); \code{x[[i]]} returns a plain element.
+\code{is.na(x)} calls \code{\link{simd_is_na}} and returns a plain
+logical vector. \code{names<-}, \code{dim<-} and \code{dimnames<-} do
+nothing, so a \code{simd_vec} never has names or dimensions (and
+\code{quantile(x)} is unnamed).
 \code{c()} combines with base R's type promotion, except that
 \code{integer64} absorbs the other parts, as in \pkg{bit64}, and the
 parts' pins must agree. \code{length(x) <- n} pads with \code{NA}.
@@ -167,16 +197,23 @@ parts' pins must agree. \code{length(x) <- n} pads with \code{NA}.
 plain vectors. \code{as.vector()}, \code{as.double()},
 \code{as.numeric()}, \code{as.integer()}, \code{as.logical()} and
 \code{as.data.frame()} (so \code{data.frame(v = x)}) unwrap to plain
-vectors; \code{unclass(x)} removes only the class and keeps the
-\code{rsimd_impl} and \code{rsimd_na_free} attributes. \code{print()}
-shows a header line before the data, \code{format()} formats the data and
-\code{str()} gives a one-line summary.
+vectors; \code{unclass(x)} removes only the class and keeps the other
+attributes (voiding the flag, as above). \code{print()} shows a header
+line before the data, \code{format()} formats the data and \code{str()}
+gives a one-line summary.
+
+\code{all.equal(x, y)} compares the data, the pins and the flags. The
+token makes two separately built flagged objects differ for
+\code{identical()}, and \code{dput()} of a flagged object does not parse
+back.
 }
 \value{
 \code{simd_vec()}, \code{as_simd_vec()} and \code{simd_impl<-}: a
 \code{simd_vec}. \code{is_simd_vec()}: \code{TRUE} or \code{FALSE}.
 \code{simd_impl()}: the pinned implementation or \code{NULL}.
 \code{simd_na_free()}: \code{TRUE}, \code{FALSE} or \code{NULL}.
+\code{all.equal()}: \code{TRUE} or a character vector describing the
+differences.
 }
 \seealso{
 \code{\link{simd_use}}, \code{\link{simd_with_impl}},

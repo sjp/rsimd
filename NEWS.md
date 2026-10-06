@@ -81,7 +81,11 @@ First release.
   the `Math` and `Summary` group generics, `mean()` and `anyNA()` use the
   SIMD kernels. An object can be pinned to one implementation
   (`simd_impl<-`) and can carry a known NA-free flag that lets functions
-  skip their missing-value checks (`?simd_vec`).
+  skip their missing-value checks. The flag is tied to the object it was set
+  on, so base functions that copy attributes onto new data (`pmin()`,
+  `storage.mode<-`, `unclass()`, `readRDS()`, ...) can never carry a stale
+  one; `Re()`, `Im()`, `Mod()`, `Arg()`, `Conj()`, `is.na()`, `[[<-`,
+  `all.equal()` and `range(finite = TRUE)` have methods (`?simd_vec`).
 * Edge cases made consistent across implementations before release:
   `simd_idiv()` on doubles is the exact floor of the quotient, rounded once,
   for quotients of 2^52 and more too (it could be a few units off there);

@@ -300,3 +300,36 @@ SEXP C_simd_debug_active(SEXP x, SEXP y) {
   Rf_error("internal error: the active table belongs to no tier");
   return R_NilValue; /* not reached */
 }
+
+/* The NA-free flag of simd_vec x (TRUE, FALSE or NULL), valid or not as
+   rsimd_sv_flag() decides. */
+SEXP C_simd_sv_flag(SEXP x) {
+  int flag;
+  rsimd_entry();
+  flag = rsimd_sv_flag(x);
+  return rsimd_exit(flag < 0 ? R_NilValue : Rf_ScalarLogical(flag));
+}
+
+/* x with its NA-free flag set to flag (TRUE, FALSE or NULL) and a fresh
+   token; x is changed in place unless it is shared, as attr<- does. */
+SEXP C_simd_sv_stamp(SEXP x, SEXP flag) {
+  int f = Rf_isNull(flag) ? NA_LOGICAL : Rf_asLogical(flag);
+  rsimd_entry();
+  if (MAYBE_SHARED(x)) x = Rf_shallow_duplicate(x);
+  return rsimd_exit(rsimd_sv_stamp(x, f == NA_LOGICAL ? -1 : f));
+}
+
+/* x without a token that belongs to another object (one R copied x from),
+   changed in place. Replacement methods call it first: for f(y) <- v on a
+   shared y, R hands them a copy of y, whose shared token would otherwise
+   void the flag of y's other references for good. */
+SEXP C_simd_sv_release(SEXP x) {
+  rsimd_entry();
+  return rsimd_exit(rsimd_sv_release(x));
+}
+
+/* The data of x without attributes, or NULL; see rsimd_sv_bare(). */
+SEXP C_simd_sv_bare(SEXP x) {
+  rsimd_entry();
+  return rsimd_exit(rsimd_sv_bare(x));
+}

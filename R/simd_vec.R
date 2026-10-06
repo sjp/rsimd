@@ -1,7 +1,15 @@
 # The simd_vec wrapper: an atomic vector with class "simd_vec" (or
 # c("simd_vec", "integer64")), an optional pinned implementation (attribute
 # rsimd_impl) and a known-NA-free flag (attribute rsimd_na_free: TRUE,
-# FALSE or absent for unknown).
+# FALSE or absent for unknown, with attribute rsimd_na_token).
+#
+# Base R copies attributes onto new data (pmin(), storage.mode<-, ...), so
+# the flag is only read through .sv_flag(), which trusts it only while its
+# token is this object's own and unshared (see rsimd_sv_flag() in
+# src/rvec.h), and only set through .Call(C_simd_sv_stamp, ...), which
+# makes a fresh token. The methods here strip a simd_vec with .subset(),
+# never by copying its attributes, so that they do not share the token of
+# the original and void its flag.
 #
 # The simd_* functions themselves handle simd_vec operands on the C side
 # (src/rvec.c): they run under the operands' pin, skip NA checks for
@@ -16,9 +24,12 @@ simd_vec <- function(x, impl = NULL, check_na = FALSE) {
     stop("'check_na' must be TRUE or FALSE", call. = FALSE)
   }
   if (is_simd_vec(x)) {
-    if (!missing(impl)) attr(x, "rsimd_impl") <- .sv_check_impl(impl)
-    if (check_na) attr(x, "rsimd_na_free") <- !simd_any_na(x)
-    return(x)
+    if (missing(impl) && !check_na) {
+      return(x)
+    }
+    impl <- if (missing(impl)) attr(x, "rsimd_impl", exact = TRUE) else .sv_check_impl(impl)
+    na_free <- if (check_na) !simd_any_na(x) else .sv_flag(x)
+    return(.sv_new(.sv_data(x), impl, na_free))
   }
   data <- .sv_strip(x)
   impl <- .sv_check_impl(impl)
@@ -30,7 +41,7 @@ as_simd_vec <- function(x, ...) UseMethod("as_simd_vec")
 
 as_simd_vec.default <- function(x, ...) simd_vec(x, ...)
 
-as_simd_vec.simd_vec <- function(x, ...) x
+as_simd_vec.simd_vec <- function(x, ...) simd_vec(x, ...)
 
 is_simd_vec <- function(x) inherits(x, "simd_vec")
 
@@ -41,16 +52,26 @@ simd_impl <- function(x) {
 
 `simd_impl<-` <- function(x, value) {
   .sv_assert(x)
-  attr(x, "rsimd_impl") <- .sv_check_impl(value)
-  x
+  .sv_release(x)
+  flag <- .sv_flag(x)
+  .sv_new(.sv_data_own(x), .sv_check_impl(value), flag)
 }
 
 simd_na_free <- function(x) {
   .sv_assert(x)
-  attr(x, "rsimd_na_free", exact = TRUE)
+  .sv_flag(x)
 }
 
 # ---- Internal helpers ------------------------------------------------------
+
+# The NA-free flag of simd_vec x: TRUE, FALSE, or NULL when unknown or not
+# valid for this object.
+.sv_flag <- function(x) .Call(C_simd_sv_flag, x)
+
+# Replacement methods start with .sv_release(x): for f(y) <- value on a
+# shared y, R passes a copy of y, and the token it shares with y would void
+# y's flag for good. Removes, in place, a token that is not x's own.
+.sv_release <- function(x) invisible(.Call(C_simd_sv_release, x))
 
 .sv_assert <- function(x, arg = "x") {
   if (!is_simd_vec(x)) stop("'", arg, "' must be a simd_vec", call. = FALSE)
@@ -85,7 +106,13 @@ simd_na_free <- function(x) {
       call. = FALSE
     )
   }
-  attributes(x) <- NULL
+  if (is.object(x) || !is.null(attributes(x))) {
+    # Not attributes(x) <- NULL: on a shared x that copies the attributes,
+    # and so the NA-free token (see the top of this file).
+    bare <- .Call(C_simd_sv_bare, x)
+    x <- if (is.null(bare)) .subset(x, seq_along(x)) else bare
+    names(x) <- NULL
+  }
   if (i64) class(x) <- "integer64"
   x
 }
@@ -93,17 +120,26 @@ simd_na_free <- function(x) {
 .sv_new <- function(data, impl = NULL, na_free = NULL) {
   class(data) <- if (inherits(data, "integer64")) c("simd_vec", "integer64") else "simd_vec"
   attr(data, "rsimd_impl") <- impl
-  attr(data, "rsimd_na_free") <- if (is.raw(data)) TRUE else na_free
-  data
+  .Call(C_simd_sv_stamp, data, if (is.raw(data)) TRUE else na_free)
 }
 
 # The data of a simd_vec (integer64 keeps its class).
 .sv_data <- function(x) .sv_strip(x)
 
+# The same for replacement methods, after .sv_release(x): x is then R's
+# private copy (f(y) <- value on a shared y) or the object being replaced,
+# so its attributes are dropped in place, saving a copy of the data.
+.sv_data_own <- function(x) {
+  i64 <- inherits(x, "integer64")
+  attributes(x) <- NULL
+  if (i64) class(x) <- "integer64"
+  x
+}
+
 # out (a bare result computed from x by base R) as a simd_vec like x: same
 # pin, and the given NA-free flag. Returned unchanged when x is not a
 # simd_vec or out already is one.
-.sv_like <- function(out, x, na_free = attr(x, "rsimd_na_free", exact = TRUE)) {
+.sv_like <- function(out, x, na_free = .sv_flag(x)) {
   if (!is_simd_vec(x) || is_simd_vec(out)) {
     return(out)
   }
@@ -241,8 +277,8 @@ Ops.simd_vec <- function(e1, e2) {
 
 # Math functions that take complex input in rsimd (log too).
 .sv_math_complex <- c(
-  "sqrt", "exp", "log2", "log10", "cos", "sin", "tan", "acos", "asin", "atan", "cosh", "sinh",
-  "tanh", "acosh", "asinh", "atanh"
+  "abs", "cumsum", "cumprod", "sqrt", "exp", "log2", "log10", "cos", "sin", "tan", "acos",
+  "asin", "atan", "cosh", "sinh", "tanh", "acosh", "asinh", "atanh"
 )
 
 Math.simd_vec <- function(x, ...) {
@@ -267,7 +303,7 @@ Math.simd_vec <- function(x, ...) {
 # Summary functions with a kernel, and the element types it rejects.
 .sv_summary_kernels <- list(
   sum = list(simd_sum, character()),
-  prod = list(simd_prod, c("complex", "integer64")),
+  prod = list(simd_prod, "integer64"),
   min = list(simd_min, "complex"),
   max = list(simd_max, "complex"),
   range = list(simd_range, "complex"),
@@ -278,17 +314,44 @@ Math.simd_vec <- function(x, ...) {
 Summary.simd_vec <- function(..., na.rm = FALSE) {
   gen <- .Generic
   args <- list(...)
+  # range() takes 'finite' (an argument of range.default) through '...'.
+  finite <- FALSE
+  if (gen == "range" && "finite" %in% names(args)) {
+    finite <- args[["finite"]]
+    args <- args[names(args) != "finite"]
+  }
   x <- if (length(args) == 1L) args[[1L]] else .sv_combine(args)
   k <- .sv_summary_kernels[[gen]]
-  if (is_simd_vec(x) && !(.sv_type(x) %in% k[[2L]])) {
+  if (isFALSE(finite) && is_simd_vec(x) && !(.sv_type(x) %in% k[[2L]])) {
     return(k[[1L]](x, na.rm = na.rm))
   }
   f <- get(gen, envir = baseenv())
-  .sv_fallback(function(x) f(x, na.rm = na.rm), list(x), wrap = FALSE)
+  g <- if (isFALSE(finite)) {
+    function(x) f(x, na.rm = na.rm)
+  } else {
+    function(x) f(x, na.rm = na.rm, finite = finite)
+  }
+  .sv_fallback(g, list(x), wrap = FALSE)
+}
+
+# Re, Im, Mod, Arg and Conj: kernels for complex data, base R otherwise
+# (whose result types for numeric input differ from the kernels').
+Complex.simd_vec <- function(z) {
+  if (!is.complex(z)) {
+    f <- get(.Generic, envir = baseenv())
+    return(.sv_fallback(f, list(z)))
+  }
+  switch(.Generic,
+    Re = simd_re(z),
+    Im = simd_im(z),
+    Mod = simd_abs(z),
+    Arg = simd_arg(z),
+    Conj = simd_conj(z)
+  )
 }
 
 mean.simd_vec <- function(x, trim = 0, na.rm = FALSE, ...) {
-  if (!identical(trim, 0) || .sv_type(x) %in% c("complex", "integer64")) {
+  if (!identical(trim, 0) || .sv_type(x) == "integer64") {
     return(.sv_fallback(function(x) mean(x, trim = trim, na.rm = na.rm, ...), list(x),
       wrap = FALSE
     ))
@@ -296,8 +359,14 @@ mean.simd_vec <- function(x, trim = 0, na.rm = FALSE, ...) {
   simd_mean(x, na.rm = na.rm)
 }
 
+is.na.simd_vec <- function(x) simd_is_na(x)
+
+# The data, for order() and so sort(): xtfrm.default would unclass(x),
+# copying the attributes and so voiding x's NA-free flag.
+xtfrm.simd_vec <- function(x) xtfrm(.sv_data(x))
+
 anyNA.simd_vec <- function(x, recursive = FALSE) {
-  flag <- attr(x, "rsimd_na_free", exact = TRUE)
+  flag <- .sv_flag(x)
   if (isTRUE(flag)) {
     return(FALSE)
   }
@@ -309,25 +378,25 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 
 # ---- Subsetting, combining, length -----------------------------------------
 
-`[.simd_vec` <- function(x, i, ...) {
+`[.simd_vec` <- function(x, i, ..., drop = TRUE) {
   if (missing(i)) {
     return(x)
   }
   if (...length() > 0L) stop("incorrect number of dimensions", call. = FALSE)
-  data <- .sv_data(x)
-  j <- seq_along(data)[i]
-  out <- .sv_take(data, j)
-  flag <- attr(x, "rsimd_na_free", exact = TRUE)
+  j <- seq_along(x)[i]
+  out <- .sv_take(x, j)
+  flag <- .sv_flag(x)
   na_free <- if (isTRUE(flag) && !anyNA(j)) TRUE else NULL
   .sv_new(out, attr(x, "rsimd_impl", exact = TRUE), na_free)
 }
 
-# data[j] for positions j (NA giving a missing element), integer64 too.
-.sv_take <- function(data, j) {
-  if (!inherits(data, "integer64")) {
-    return(data[j])
+# The data of x (a simd_vec or its data) at positions j (NA giving a
+# missing element), integer64 too, without copying the rest.
+.sv_take <- function(x, j) {
+  out <- .subset(x, j)
+  if (!inherits(x, "integer64")) {
+    return(out)
   }
-  out <- unclass(data)[j]
   if (anyNA(j)) out[is.na(j)] <- unclass(.sv_na_i64())
   class(out) <- "integer64"
   out
@@ -336,12 +405,20 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 .sv_na_i64 <- function() simd_as_integer64(NA)
 
 `[<-.simd_vec` <- function(x, i, value) {
-  data <- .sv_data(x)
+  .sv_release(x)
+  data <- .sv_data_own(x)
   if (is_simd_vec(value)) value <- .sv_data(value)
   if (inherits(data, "integer64")) {
     if (!inherits(value, "integer64")) value <- simd_as_integer64(value)
     data <- unclass(data)
+    n <- length(data)
     if (missing(i)) data[] <- unclass(value) else data[i] <- unclass(value)
+    if (length(data) > n) {
+      # The gap R filled with double NA becomes integer64 NA.
+      gap <- logical(n)
+      gap[i] <- TRUE
+      data[is.na(gap)] <- unclass(.sv_na_i64())
+    }
     class(data) <- "integer64"
   } else if (inherits(value, "integer64")) {
     stop("cannot assign integer64 values into a ", typeof(data), " simd_vec", call. = FALSE)
@@ -353,12 +430,29 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
   .sv_new(.sv_strip(data), attr(x, "rsimd_impl", exact = TRUE))
 }
 
-`[[.simd_vec` <- function(x, i, ...) {
-  data <- .sv_data(x)
-  if (inherits(data, "integer64")) .sv_take(data, seq_along(data)[[i]]) else data[[i]]
+# x[[i]] <- value is x[i] <- value for a single element, with base R's
+# checks (the default method would keep the attributes, and so a stale
+# NA-free flag).
+`[[<-.simd_vec` <- function(x, i, value) {
+  .sv_release(x)
+  if (length(i) != 1L) {
+    what <- if (length(i)) "more" else "less"
+    where <- if (length(i)) "vectorIndex" else "OneIndex"
+    stop("attempt to select ", what, " than one element in ", where, call. = FALSE)
+  }
+  if (length(value) != 1L) {
+    if (length(value)) stop("more elements supplied than there are to replace", call. = FALSE)
+    stop("replacement has length zero", call. = FALSE)
+  }
+  `[<-.simd_vec`(x, i, value)
 }
 
-c.simd_vec <- function(...) .sv_combine(list(...))
+`[[.simd_vec` <- function(x, i, ...) {
+  if (inherits(x, "integer64")) .sv_take(x, seq_along(x)[[i]]) else .subset2(x, i)
+}
+
+# recursive and use.names change nothing for atomic parts without names.
+c.simd_vec <- function(..., recursive = FALSE, use.names = TRUE) .sv_combine(list(...))
 
 # c() of simd_vec and plain vectors: base R's type promotion (integer64
 # absorbing the integer, logical and double parts, as bit64's c() does),
@@ -366,8 +460,11 @@ c.simd_vec <- function(...) .sv_combine(list(...))
 .sv_combine <- function(args) {
   args <- args[lengths(args) > 0L | vapply(args, is_simd_vec, NA)]
   pin <- .sv_resolve(args)
-  flags <- lapply(args, function(a) if (is_simd_vec(a)) attr(a, "rsimd_na_free", exact = TRUE))
+  flags <- lapply(args, function(a) if (is_simd_vec(a)) .sv_flag(a))
   data <- lapply(args, function(a) .sv_strip(a))
+  is_sv <- vapply(args, is_simd_vec, NA)
+  # Checked before the integer64 conversion, whose NA bits read as -0.
+  plain_na <- any(vapply(data[!is_sv], simd_any_na, NA))
   if (any(vapply(data, inherits, NA, what = "integer64"))) {
     data <- lapply(data, function(d) {
       unclass(if (inherits(d, "integer64")) d else simd_as_integer64(d))
@@ -379,17 +476,18 @@ c.simd_vec <- function(...) .sv_combine(list(...))
     out <- unlist(data, use.names = FALSE)
     if (is.null(out)) out <- logical()
   }
-  is_sv <- vapply(args, is_simd_vec, NA)
   na_free <- if (any(vapply(flags, isFALSE, NA))) {
     FALSE
   } else if (all(vapply(flags[is_sv], isTRUE, NA))) {
-    if (all(is_sv) || !any(vapply(data[!is_sv], simd_any_na, NA))) TRUE
+    if (!plain_na) TRUE
   }
   .sv_new(out, pin, na_free)
 }
 
 `length<-.simd_vec` <- function(x, value) {
-  data <- .sv_data(x)
+  .sv_release(x)
+  flag <- .sv_flag(x)
+  data <- .sv_data_own(x)
   n <- length(data)
   if (inherits(data, "integer64")) {
     raw <- unclass(data)
@@ -400,10 +498,17 @@ c.simd_vec <- function(...) .sv_combine(list(...))
   } else {
     length(data) <- value
   }
-  flag <- attr(x, "rsimd_na_free", exact = TRUE)
   na_free <- if (isTRUE(flag) && value <= n) TRUE else NULL
   .sv_new(data, attr(x, "rsimd_impl", exact = TRUE), na_free)
 }
+
+# A simd_vec has no names, dimensions or dimnames: setting them is a no-op,
+# as simd_vec() drops them (so quantile() of a simd_vec is unnamed).
+`names<-.simd_vec` <- function(x, value) .sv_release(x)
+
+`dim<-.simd_vec` <- function(x, value) .sv_release(x)
+
+`dimnames<-.simd_vec` <- function(x, value) .sv_release(x)
 
 # ---- Unwrapping ------------------------------------------------------------
 
@@ -437,7 +542,7 @@ as.data.frame.simd_vec <- function(x, row.names = NULL, optional = FALSE, ...,
 
 .sv_header <- function(x) {
   impl <- attr(x, "rsimd_impl", exact = TRUE)
-  flag <- attr(x, "rsimd_na_free", exact = TRUE)
+  flag <- .sv_flag(x)
   sprintf(
     "impl=%s na_free=%s", if (is.null(impl)) "auto" else impl,
     if (is.null(flag)) "unknown" else as.character(flag)
@@ -470,4 +575,35 @@ str.simd_vec <- function(object, ...) {
     paste(shown, collapse = " "), if (n > 10L) " ..." else ""
   ))
   invisible()
+}
+
+# ---- Comparison ------------------------------------------------------------
+
+# Data, pin and NA-free flag; not the flag's per-object token, which makes
+# two separately built flagged simd_vecs differ for identical().
+all.equal.simd_vec <- function(target, current, ...) {
+  if (!is_simd_vec(current)) {
+    return(paste0("target is simd_vec, current is ", data.class(current)))
+  }
+  show <- function(v, unset) if (is.null(v)) unset else as.character(v)
+  msg <- NULL
+  p1 <- attr(target, "rsimd_impl", exact = TRUE)
+  p2 <- attr(current, "rsimd_impl", exact = TRUE)
+  if (!identical(p1, p2)) {
+    msg <- c(msg, paste0("pins differ: ", show(p1, "auto"), " vs ", show(p2, "auto")))
+  }
+  f1 <- .sv_flag(target)
+  f2 <- .sv_flag(current)
+  if (!identical(f1, f2)) {
+    msg <- c(msg, paste0(
+      "NA-free flags differ: ", show(f1, "unknown"), " vs ",
+      show(f2, "unknown")
+    ))
+  }
+  d1 <- .sv_data(target)
+  d2 <- .sv_data(current)
+  if (inherits(d1, "integer64") || inherits(d2, "integer64")) .sv_need_bit64()
+  data <- all.equal(d1, d2, ...)
+  if (!isTRUE(data)) msg <- c(msg, data)
+  if (is.null(msg)) TRUE else msg
 }

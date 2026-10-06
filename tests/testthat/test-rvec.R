@@ -223,12 +223,15 @@ test_that("results are bare except for the integer64 and simd_vec classes", {
   sv64 <- structure(c(1, 2), class = c("simd_vec", "integer64"), rsimd_impl = "none")
   expect_identical(.debug_copy(sv64), sv64)
 
+  # A forged flag (no token) is unknown; a flagged result gets a token.
   sv <- structure(c(1, 2), class = "simd_vec", rsimd_impl = "none", rsimd_na_free = TRUE)
   expect_identical(
     .debug_copy(sv),
     structure(c(1, 2), class = "simd_vec", rsimd_impl = "none")
   )
-  expect_identical(.debug_copy(sv, no_na = TRUE), sv)
+  expect_null(simd_na_free(.debug_copy(sv, no_na = TRUE)))
+  flagged <- .debug_copy(simd_vec(c(1, 2), impl = "none", check_na = TRUE), no_na = TRUE)
+  expect_true(all.equal(flagged, simd_vec(c(1, 2), impl = "none", check_na = TRUE)))
 })
 
 test_that("integer64 class is kept when bit64 is loaded", {

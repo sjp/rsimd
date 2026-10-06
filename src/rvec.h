@@ -375,8 +375,9 @@ void rsimd_copy_class(SEXP x, SEXP out);
 
    rsimd_in_init() (and so rsimd_bin_init() and rsimd_ew_init()) then
    records each simd_vec operand (one whose class contains "simd_vec"):
-     - attribute rsimd_na_free = TRUE sets the operand's no_na_hint, so
-       na_check is skipped as for an ALTREP that promises no NA;
+     - a valid NA-free flag (rsimd_sv_flag() == 1) sets the operand's
+       no_na_hint, so na_check is skipped as for an ALTREP that promises
+       no NA;
      - attribute rsimd_impl (a tier name) pins the call: rsimd_active
        becomes that tier's resolved table. It errors for an invalid value,
        for a tier that is not available on this machine and for operands
@@ -402,14 +403,39 @@ void rsimd_warn(const char *fmt, ...)
 void rsimd_warn_flush(void);
 SEXP rsimd_exit(SEXP out);
 
+/* The NA-free flag of a simd_vec is attribute rsimd_na_free (TRUE or
+   FALSE) together with attribute rsimd_na_token, an external pointer to
+   the object itself. Base R copies attributes onto new data (pmin(),
+   storage.mode<-, Re(), ...), so the flag counts only while the token
+   points at x and is not shared: a copy shares the token, which raises its
+   reference count for good (GC never lowers it), so the copy and the
+   original both read as unknown, and a later object at a reused address
+   cannot pick the flag up either. A token is also never valid after
+   unserialize() (the pointer comes back NULL). Tokens are read without
+   Rf_getAttrib(), which marks the value it returns as shared.
+
+   rsimd_sv_flag() returns 1 (known NA-free), 0 (known to contain a
+   missing value) or -1 (unknown) for x; raw data is always 1.
+   rsimd_sv_stamp() sets the flag of x in place to flag (1, 0, or -1 to
+   remove it) with a fresh token and returns x; x must not be shared. */
+int rsimd_sv_flag(SEXP x);
+SEXP rsimd_sv_stamp(SEXP x, int flag);
+/* Removes in place, and returns, a token of x that points at another
+   object, together with the flag; see C_simd_sv_release(). */
+SEXP rsimd_sv_release(SEXP x);
+/* A copy of the data of atomic x without attributes (memcpy), or
+   R_NilValue for a type it does not handle or an ALTREP x without a data
+   pointer. Copying x itself would share its token. */
+SEXP rsimd_sv_bare(SEXP x);
+
 /* For entry points whose result is a value vector (not a reduction, mask or
    index): when an operand of the call was a simd_vec, out (a fresh result,
    or an input, which is then shallow-copied) becomes a simd_vec with class
    "simd_vec", or c("simd_vec", "integer64") for an integer64 result,
    attribute rsimd_impl set to the call's pin (absent when unpinned) and
-   rsimd_na_free = TRUE when the op cannot make a missing value from
+   the NA-free flag set (rsimd_sv_stamp()) when the op cannot make a missing value from
    non-missing input (keeps_na_free) and every operand was known NA-free,
-   or when out is raw; otherwise rsimd_na_free is absent. Other results are
+   or when out is raw; otherwise the flag is absent. Other results are
    returned unchanged. out need not be PROTECTed; the value returned is not
    PROTECTed. */
 SEXP rsimd_sv_result(SEXP out, int keeps_na_free);

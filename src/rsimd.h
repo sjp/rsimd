@@ -24,6 +24,10 @@ SEXP C_simd_debug_active(SEXP x, SEXP y);
 SEXP C_simd_debug_bin(SEXP x, SEXP y);
 SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision, SEXP na_rm);
 SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
+SEXP C_simd_sv_flag(SEXP x);
+SEXP C_simd_sv_stamp(SEXP x, SEXP flag);
+SEXP C_simd_sv_release(SEXP x);
+SEXP C_simd_sv_bare(SEXP x);
 
 /* reductions */
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
