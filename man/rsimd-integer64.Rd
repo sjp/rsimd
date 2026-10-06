@@ -22,9 +22,11 @@ data without it.
 \describe{
 \item{Reductions}{\code{\link{simd_sum}}, \code{\link{simd_min}},
 \code{\link{simd_max}}, \code{\link{simd_range}}, \code{\link{simd_cumsum}},
-\code{\link{simd_cummin}}, \code{\link{simd_cummax}};
-\code{\link{simd_which_min}} and \code{\link{simd_which_max}} (integer,
-\code{NA} ignored); \code{\link{simd_any}} and \code{\link{simd_all}}
+\code{\link{simd_cummin}}, \code{\link{simd_cummax}},
+\code{\link{simd_max_abs}} and \code{\link{simd_min_abs}};
+\code{\link{simd_which_min}}, \code{\link{simd_which_max}},
+\code{\link{simd_which_min_abs}} and \code{\link{simd_which_max_abs}}
+(integer, \code{NA} ignored); \code{\link{simd_any}} and \code{\link{simd_all}}
 (logical; non-zero is \code{TRUE}); \code{\link{simd_any_na}},
 \code{\link{simd_count_na}} (double) and \code{\link{simd_which_na}}.}
 \item{Arithmetic}{\code{\link{simd_add}}, \code{\link{simd_sub}},
@@ -139,7 +141,7 @@ are not measured.
 \tabular{llllll}{
 \strong{operation} \tab \strong{sse2} \tab \strong{avx2} \tab \strong{avx512} \tab \strong{neon} \tab \strong{sve, sve2} \cr
 sum, add, sub \tab SIMDe \tab native \tab native \tab native \tab native \cr
-min, max, pmin, pmax, clamp, comparisons \tab SIMDe \tab native \tab native \tab native \tab native \cr
+min, max, their magnitudes, pmin, pmax, clamp, comparisons \tab SIMDe \tab native \tab native \tab native \tab native \cr
 missing values, predicates, any, all \tab native \tab native \tab native \tab native \tab native \cr
 mul (checked) \tab partial \tab native \tab native \tab native \tab native \cr
 mul_wrap \tab partial \tab partial \tab native \tab partial \tab native \cr

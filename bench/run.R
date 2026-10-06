@@ -122,6 +122,22 @@ ops <- list(
     bound = FALSE
   ),
   list(
+    op = "which", type = "logical", simd = quote(simd_which(xl)), base = quote(which(xl)),
+    bound = FALSE
+  ),
+  list(
+    op = "count", type = "logical", simd = quote(simd_count(xl)), base = quote(sum(xl)),
+    bound = TRUE
+  ),
+  list(
+    op = "max_abs", type = "double", simd = quote(simd_max_abs(x)), base = quote(max(abs(x))),
+    bound = TRUE
+  ),
+  list(
+    op = "which_max_abs", type = "double", simd = quote(simd_which_max_abs(x)),
+    base = quote(which.max(abs(x))), bound = TRUE
+  ),
+  list(
     op = "as_integer", type = "double", simd = quote(simd_as_integer(xc, mode = "truncating")),
     base = quote(as.integer(xc)), bound = FALSE
   ),
@@ -268,6 +284,8 @@ make_inputs <- function(n) {
   env$cu <- complex(modulus = 1, argument = env$x)
   # Parts within +-5 for the elementary functions (no overflow).
   env$cs <- complex(real = env$xt, imaginary = env$y / 20)
+  # A logical vector, TRUE where x > 0 (no further draws).
+  env$xl <- env$x > 0
   # |x| in [1.01, 10] on the real axis (base R's branch cut of asin).
   env$ccut <- as.complex(sign(env$x) * (1.01 + abs(env$x) * 0.0899))
   env

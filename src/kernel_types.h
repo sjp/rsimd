@@ -26,12 +26,15 @@ typedef struct {
   int precision; /* RSIMD_PREC_FAST / PAIRWISE / COMPENSATED */
 } rsimd_opts;
 
-/* What the missing-value kernels (na_f64 ...) compute. */
+/* What the missing-value kernels (na_f64 ...) compute. RSIMD_NAMODE_TRUE,
+   OR-ed into COUNT or a WHICH mode of na_i32, looks for TRUE (1) instead
+   of NA: simd_count and simd_which of a logical vector. */
 enum {
   RSIMD_NAMODE_ANY = 0,
   RSIMD_NAMODE_COUNT = 1,
   RSIMD_NAMODE_WHICH_I32 = 2,
-  RSIMD_NAMODE_WHICH_F64 = 3
+  RSIMD_NAMODE_WHICH_F64 = 3,
+  RSIMD_NAMODE_TRUE = 4
 };
 
 /* Partial sums of pairwise summation: s[k] is the sum of 2^k leaves for
@@ -156,7 +159,11 @@ enum {
    logarithm is p; SIGMOID is the logistic function 1 / (1 + exp(-x)),
    computed as e = exp(-|x|), then 1 / (1 + e) for x >= 0 and e / (1 + e)
    otherwise, which is accurate in both tails (subnormal results down to
-   x = -745). NEXT_UP and NEXT_DOWN are IEEE nextUp and nextDown (C23
+   x = -745). EXP2M1, EXP10M1, LOG2P1 and LOG10P1 are C23's exp2m1(x) =
+   2^x - 1, exp10m1(x) = 10^x - 1, log2p1(x) = log2(1 + x) and
+   log10p1(x) = log10(1 + x), from expm1 and log1p with the scaling by
+   log(2) or log(10) in double-double (none of them has a fast variant).
+   NEXT_UP and NEXT_DOWN are IEEE nextUp and nextDown (C23
    nextup, nextdown); RSQRT is 1 / sqrt(x), rounded twice as in base R;
    RECIP_APPROX and RSQRT_APPROX approximate 1 / x and 1 / sqrt(x) within a
    relative error of 2^-22 (a hardware estimate refined by Newton steps,
@@ -196,6 +203,10 @@ enum {
   RSIMD_MATH_ACOSH,
   RSIMD_MATH_ATANH,
   RSIMD_MATH_SIGMOID,
+  RSIMD_MATH_EXP2M1,
+  RSIMD_MATH_EXP10M1,
+  RSIMD_MATH_LOG2P1,
+  RSIMD_MATH_LOG10P1,
   RSIMD_MATH_NEXT_UP,
   RSIMD_MATH_NEXT_DOWN,
   RSIMD_MATH_RSQRT,
@@ -212,7 +223,7 @@ enum {
   RSIMD_MATH_ROOTN
 };
 /* OR-ed into an op code of math1_f64, math2_f64 or sincos_f64 (whose
-   only op is RSIMD_MATH_SIN): fast mode (option rsimd.math_accuracy =
+   ops are RSIMD_MATH_SIN and RSIMD_MATH_SINPI): fast mode (option rsimd.math_accuracy =
    "fast"), in which the SIMD tiers use SLEEF's 3.5-ULP functions where
    they have them (the rsimd_sleef_<f>_fast wrappers of common.inc.h).
    Missing values, special values and the status are as without it; the

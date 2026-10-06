@@ -56,7 +56,7 @@ static SEXP softmax(SEXP x, SEXP precision, int log_out) {
   case RSIMD_F64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
       memcpy(po + off, px, (size_t) len * sizeof(double));
-      rsimd_active->minmax_f64(po + off, len, &r, &o);
+      rsimd_active->minmax_f64(po + off, len, 0, &r, &o);
       if (r.saw_na) break;
     });
     break;
@@ -64,7 +64,7 @@ static SEXP softmax(SEXP x, SEXP precision, int log_out) {
   case RSIMD_LGL:
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
       rsimd_active->convert(RSIMD_CVT_I32_F64, RSIMD_CVT_CHECKED, px, len, po + off);
-      rsimd_active->minmax_f64(po + off, len, &r, &o);
+      rsimd_active->minmax_f64(po + off, len, 0, &r, &o);
       if (r.saw_na) break;
     });
     break;

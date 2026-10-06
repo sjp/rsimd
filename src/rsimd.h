@@ -33,11 +33,13 @@ SEXP C_simd_sv_bare(SEXP x);
 /* reductions */
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
+SEXP C_simd_prod2(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
-SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check);
-SEXP C_simd_which(SEXP x, SEXP max);
+SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval, SEXP accuracy);
+SEXP C_simd_which(SEXP x, SEXP max, SEXP absval, SEXP accuracy);
 SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm);
 SEXP C_simd_na(SEXP x, SEXP mode);
+SEXP C_simd_true(SEXP x, SEXP mode, SEXP na_rm);
 SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision);
@@ -67,7 +69,7 @@ SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode, SEXP quiet);
 SEXP C_simd_math1(SEXP x, SEXP op, SEXP accuracy);
 SEXP C_simd_log(SEXP x, SEXP base, SEXP accuracy);
 SEXP C_simd_math2(SEXP x, SEXP y, SEXP op, SEXP accuracy);
-SEXP C_simd_sincos(SEXP x, SEXP accuracy);
+SEXP C_simd_sincos(SEXP x, SEXP accuracy, SEXP pi);
 SEXP C_simd_ilogb(SEXP x);
 SEXP C_simd_ulp_dist(SEXP a, SEXP b);
 

@@ -157,9 +157,11 @@ types it takes. A broader set of examples by family:
 Family & Functions (help page) \\
 \hline
 Reductions & \code{simd\_sum}, \code{simd\_mean}, \code{simd\_min},
-  \code{simd\_max}, \code{simd\_which\_max}, \code{simd\_any\_na},
-  \code{simd\_count\_na} (\code{?simd\_sum}, \code{?simd\_min},
-  \code{?simd\_any\_na}) \\
+  \code{simd\_max}, \code{simd\_max\_abs}, \code{simd\_which\_max},
+  \code{simd\_which\_max\_abs}, \code{simd\_prod\_sums},
+  \code{simd\_any\_na}, \code{simd\_count\_na}, \code{simd\_which},
+  \code{simd\_count} (\code{?simd\_sum}, \code{?simd\_min},
+  \code{?simd\_which\_min}, \code{?simd\_any\_na}) \\
 Statistics & \code{simd\_dot}, \code{simd\_norm}, \code{simd\_dist},
   \code{simd\_var}, \code{simd\_sd}, \code{simd\_cumsum}
   (\code{?simd\_dot}, \code{?simd\_var}, \code{?simd\_cumsum}) \\
@@ -176,9 +178,10 @@ Bits & \code{simd\_bit\_and}, \code{simd\_shl}, \code{simd\_popcount}
   (\code{?simd\_bit\_and}, \code{?simd\_popcount}) \\
 Conversions & \code{simd\_as\_double}, \code{simd\_as\_integer},
   \code{simd\_as\_integer64} (\code{?simd\_as\_integer}) \\
-Elementary functions & \code{simd\_exp}, \code{simd\_log}, \code{simd\_sin},
-  \code{simd\_sinpi}, \code{simd\_tanh}, \code{simd\_pow},
-  \code{simd\_rootn} (\code{?simd\_exp}, \code{?simd\_sin},
+Elementary functions & \code{simd\_exp}, \code{simd\_log},
+  \code{simd\_exp2m1}, \code{simd\_log1p}, \code{simd\_sin},
+  \code{simd\_sinpi}, \code{simd\_sincospi}, \code{simd\_tanh},
+  \code{simd\_pow}, \code{simd\_rootn} (\code{?simd\_exp}, \code{?simd\_sin},
   \code{?simd\_sinh}, \code{?simd\_sinpi}, \code{?simd\_pow}) \\
 Floating point & \code{simd\_ilogb}, \code{simd\_scaleb},
   \code{simd\_next\_up}, \code{simd\_remainder} (\code{?simd\_ilogb});
@@ -280,11 +283,15 @@ imaginary part. \pkg{rsimd} supports these complex operations:
 \begin{itemize}
 \item \code{simd\_add()}, \code{simd\_sub()}, \code{simd\_mul()},
   \code{simd\_div()} and \code{simd\_neg()};
-\item \code{simd\_sum()}, \code{simd\_prod()} and \code{simd\_mean()}, in
-  every \code{simd\_precision()} mode, and \code{simd\_cumsum()} and
+\item \code{simd\_sum()}, \code{simd\_prod()}, \code{simd\_mean()},
+  \code{simd\_prod\_sums()} and \code{simd\_prod\_diffs()}, in every
+  \code{simd\_precision()} mode, and \code{simd\_cumsum()} and
   \code{simd\_cumprod()};
 \item \code{simd\_conj()}, \code{simd\_re()}, \code{simd\_im()},
-  \code{simd\_abs()} (the modulus, as \code{Mod()}) and \code{simd\_arg()};
+  \code{simd\_abs()} (the modulus, as \code{Mod()}) and \code{simd\_arg()},
+  and the largest and smallest moduli and where they are,
+  \code{simd\_max\_abs()}, \code{simd\_min\_abs()},
+  \code{simd\_which\_max\_abs()} and \code{simd\_which\_min\_abs()};
 \item the comparisons \code{simd\_eq()} and \code{simd\_ne()};
 \item the predicates \code{simd\_is\_na()}, \code{simd\_is\_nan()},
   \code{simd\_is\_finite()} and \code{simd\_is\_infinite()}, with their

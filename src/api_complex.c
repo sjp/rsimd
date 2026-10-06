@@ -450,31 +450,57 @@ static SEXP c128_scalar(double re, double im) {
   return out;
 }
 
+/* The R value of the product s. */
+static SEXP cprod_finish(rsimd_cprod_state *s, const rsimd_opts *o);
+
 SEXP rsimd_c128_prod(const rsimd_in *in, const rsimd_opts *o) {
   rsimd_cprod_state s;
-  Rcomplex r;
-  int k;
 
   memset(&s, 0, sizeof s);
   s.p.r = 1.0;
   RSIMD_FOREACH_CHUNK(in, Rcomplex, px, len, off,
                       { rsimd_active->prod_c128(px, len, &s, &c128_arith, o); });
+  return cprod_finish(&s, o);
+}
+
+SEXP rsimd_c128_prod2(int op, const rsimd_bin *b, const rsimd_opts *o) {
+  rsimd_cprod_state s;
+  Rcomplex blk[RSIMD_C128_BCAST];
+
+  memset(&s, 0, sizeof s);
+  s.p.r = 1.0;
+  RSIMD_FOREACH_CHUNK2(b, Rcomplex, px, py, len, off, {
+    R_xlen_t i;
+    for (i = 0; i < len; i += RSIMD_C128_BCAST) {
+      R_xlen_t l = len - i < RSIMD_C128_BCAST ? len - i : RSIMD_C128_BCAST;
+      c128_add_chunk(op, b->x_scalar ? px : px + i, b->y_scalar ? py : py + i, l, b->x_scalar,
+                     b->y_scalar, blk, o);
+      rsimd_active->prod_c128(blk, l, &s, &c128_arith, o);
+    }
+  });
+  return cprod_finish(&s, o);
+}
+
+static SEXP cprod_finish(rsimd_cprod_state *s, const rsimd_opts *o) {
+  Rcomplex r;
+  int k;
+
   /* With missing values (and na.rm = FALSE), both parts are NA if one was
      NA, else NaN. */
-  if (s.saw_nan && !o->na_rm) {
-    double v = s.saw_na ? NA_REAL : R_NaN;
+  if (s->saw_nan && !o->na_rm) {
+    double v = s->saw_na ? NA_REAL : R_NaN;
     return c128_scalar(v, v);
   }
-  r = s.p;
+  r = s->p;
   if (o->precision == RSIMD_PREC_COMPENSATED) {
-    r.r += s.lo.r;
-    r.i += s.lo.i;
+    r.r += s->lo.r;
+    r.i += s->lo.i;
   } else if (o->precision == RSIMD_PREC_PAIRWISE) {
     /* The unfinished leaf, then the leaves from the latest to the
        earliest. */
     for (k = 0; k < 64; k++) {
-      if ((s.leaves >> k) & 1) {
-        rsimd_active->ew2_c128(RSIMD_EW_MUL, s.pw + k, &r, 1, 0, &r, &c128_arith);
+      if ((s->leaves >> k) & 1) {
+        rsimd_active->ew2_c128(RSIMD_EW_MUL, s->pw + k, &r, 1, 0, &r, &c128_arith);
       }
     }
   }

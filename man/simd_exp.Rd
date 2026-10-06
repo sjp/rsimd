@@ -7,6 +7,10 @@
 \alias{simd_log2}
 \alias{simd_log10}
 \alias{simd_log1p}
+\alias{simd_exp2m1}
+\alias{simd_exp10m1}
+\alias{simd_log2p1}
+\alias{simd_log10p1}
 \title{Exponentials and Logarithms}
 \usage{
 simd_exp(x)
@@ -24,6 +28,14 @@ simd_log2(x)
 simd_log10(x)
 
 simd_log1p(x)
+
+simd_exp2m1(x)
+
+simd_exp10m1(x)
+
+simd_log2p1(x)
+
+simd_log10p1(x)
 }
 \arguments{
 \item{x}{A double, integer or logical vector; complex for \code{simd_exp()},
@@ -34,10 +46,12 @@ simd_log1p(x)
 \description{
 \code{exp(x)}, \code{2^x}, \code{10^x}, \code{expm1(x)} (\code{exp(x) - 1}),
 \code{log(x, base)}, \code{log2(x)}, \code{log10(x)} and \code{log1p(x)}
-(\code{log(1 + x)}) computed with SIMD instructions. They correspond to
+(\code{log(1 + x)}), and \code{2^x - 1}, \code{10^x - 1},
+\code{log2(1 + x)} and \code{log10(1 + x)} without their loss of accuracy
+near 0, computed with SIMD instructions. They correspond to
 \code{Exp}, \code{Exp2}, \code{Exp10}, \code{ExpM1}, \code{Log},
-\code{Log2}, \code{Log10} and \code{LogP1} of .NET's
-\code{TensorPrimitives}.
+\code{Log2}, \code{Log10}, \code{LogP1}, \code{Exp2M1}, \code{Exp10M1},
+\code{Log2P1} and \code{Log10P1} of .NET's \code{TensorPrimitives}.
 }
 \details{
 \code{simd_exp2(x)} and \code{simd_exp10(x)} correspond to base R's
@@ -57,6 +71,24 @@ Results overflow to \code{Inf} and underflow through the subnormal numbers
 to zero where base R's do: \code{simd_exp(709.78)} is finite,
 \code{simd_exp(709.79)} is \code{Inf}, \code{simd_exp(-745)} is
 \code{5e-324} and \code{simd_exp(-746)} is 0.
+
+\code{simd_exp2m1(x)}, \code{simd_exp10m1(x)}, \code{simd_log2p1(x)} and
+\code{simd_log10p1(x)} are \code{2^x - 1}, \code{10^x - 1},
+\code{log2(1 + x)} and \code{log10(1 + x)} (C23's \code{exp2m1},
+\code{exp10m1}, \code{log2p1} and \code{log10p1}), without the
+cancellation of those expressions near 0: \code{simd_exp2m1(1e-20)} is
+\code{6.93e-21}, where \code{2^1e-20 - 1} is 0. They are computed from
+\code{expm1} and \code{log1p}, with the scaling by \code{log(2)} or
+\code{log(10)} carried in extra precision, and are within 2 ULP of the
+exact value on every implementation (at most 1.6 ULP measured), with the
+same results in both accuracy modes (SLEEF has no faster \code{expm1} or
+\code{log1p}). They are exact where the base R expression is:
+\code{simd_exp2m1()} at the whole numbers from -53 to 53,
+\code{simd_exp10m1()} at 1 to 15, and \code{simd_log2p1()} and
+\code{simd_log10p1()} wherever \code{1 + x} is exact and a power of 2 or
+10 (\code{simd_log2p1(7)} is 3). Zeros keep their sign,
+\code{simd_log2p1(-1)} is \code{-Inf}, and arguments below -1 give
+\code{NaN} with a warning. They do not take complex input.
 
 \rsimdMath
 
@@ -112,7 +144,7 @@ within about 5 ULP.
   function \tab accurate \tab fast \cr
   \code{sqrt} \tab 2 \tab 3 \cr
   \code{exp} \tab 2.5 \tab 3 \cr
-  \code{log} \tab 3 \tab 5 \cr
+  \code{log} \tab 3 \tab 5.5 \cr
   \code{log} with a base, \code{log2}, \code{log10} \tab 4.5 \tab 6.5 \cr
   \code{sin}, \code{cos}, \code{sinh}, \code{cosh} \tab 3 \tab 4 \cr
   \code{tan} \tab 4.5 \tab 6 \cr
@@ -165,4 +197,7 @@ simd_log1p(-0.5)
 simd_exp(c(1i * pi, 1 + 1i))
 simd_log(c(-1+0i, -1-0i, 1i))
 simd_log(1i, base = 2i)
+simd_exp2m1(c(1e-20, 3, -1))
+2^1e-20 - 1 # 0: the difference is lost
+simd_log10p1(c(1e-15, 99))
 }

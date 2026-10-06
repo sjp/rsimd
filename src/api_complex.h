@@ -16,6 +16,10 @@ SEXP rsimd_c128_muldiv(int op, SEXP x, SEXP y);
    missing element (na.rm = FALSE) both parts are NA if one was NA, else
    NaN. mean: sum's parts (as rsimd_c128_sum) divided by the count. */
 SEXP rsimd_c128_prod(const rsimd_in *in, const rsimd_opts *o);
+/* prod(x + y) or prod(x - y) (op RSIMD_EW_ADD or RSIMD_EW_SUB) of the
+   complex operands of b, as prod of rsimd_c128_add()'s result, computed
+   in blocks without it. */
+SEXP rsimd_c128_prod2(int op, const rsimd_bin *b, const rsimd_opts *o);
 SEXP rsimd_c128_mean(const rsimd_in *in, const rsimd_opts *o);
 /* cumsum (op 0) or cumprod (op 1) of a complex input, as base R. */
 SEXP rsimd_c128_scan(const rsimd_in *in, int op);

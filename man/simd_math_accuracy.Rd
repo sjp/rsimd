@@ -27,12 +27,13 @@ result:
 \code{sinh}, \code{cosh}, \code{tanh} \tab 1 \tab 3.5 \cr
 \code{log}, \code{log2}, \code{cbrt} \tab 1 \tab 3.5 \cr
 \code{log(x, base)} for a base other than 2 and 10 \tab \code{log}'s, then a division \tab \code{log}'s, then a division \cr
-\code{sinpi}, \code{cospi} \tab 0.5 \tab 3.5 \cr
+\code{sinpi}, \code{cospi}, \code{simd_sincospi} \tab 0.5 \tab 3.5 \cr
 \code{tanpi} \tab about 2 \tab about 4 \cr
 \code{hypot} \tab 0.5 \tab 3.5 \cr
 \code{exp}, \code{exp2}, \code{exp10}, \code{expm1} \tab 1 \tab 1 \cr
 \code{log10}, \code{log1p}, \code{pow} \tab 1 \tab 1 \cr
 \code{asinh}, \code{acosh}, \code{atanh} \tab 1 \tab 1 \cr
+\code{simd_exp2m1}, \code{simd_exp10m1}, \code{simd_log2p1}, \code{simd_log10p1} \tab 2 \tab 2 \cr
 \code{simd_sigmoid}, \code{simd_softmax}, \code{simd_log_softmax} \tab as \code{exp} \tab as \code{exp} \cr
 }
 The functions whose bound is the same in both modes give identical results

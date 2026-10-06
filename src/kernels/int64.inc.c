@@ -21,9 +21,9 @@
  *
  *   op                       sse2     avx2     avx512   neon     sve/sve2
  *   sum (exact, carries)     SIMDe    native   native   native   native
- *   min/max, pmin/pmax,      SIMDe    native   native   native   native
- *     clamp, comparisons     (64-bit compares are SSE4.2; min/max are
- *                            compare + blend except on avx512 and sve)
+ *   min/max (also of |x|),   SIMDe    native   native   native   native
+ *     pmin/pmax, clamp,      (64-bit compares are SSE4.2; min/max are
+ *     comparisons            compare + blend except on avx512 and sve)
  *   any/all, is_na ...,      native   native   native   native   native
  *     any_na/count/which
  *   add, sub (checked/wrap)  native   native   native   native   native
@@ -504,32 +504,34 @@ void RSIMD_KERNEL(sum_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
   r->count += n - removed;
 }
 
-void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o);
-void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o) {
   int check = o->na_check || o->na_rm;
   int64_t lo = r->i64, hi = r->i64_hi;
   R_xlen_t i, missing = 0;
   for (i = 0; i < n; i++) {
-    if (check && x[i] == RSIMD_NA_I64) {
+    /* |NA| wraps to NA. */
+    int64_t v = absval ? rsimd_abs_i64(x[i]) : x[i];
+    if (check && v == RSIMD_NA_I64) {
       missing++;
       r->saw_na = 1;
       continue;
     }
-    if (x[i] < lo) lo = x[i];
-    if (x[i] > hi) hi = x[i];
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
   r->i64 = lo;
   r->i64_hi = hi;
   r->count += n - missing;
 }
 
-R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int64_t v);
-R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int64_t v) {
+R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int absval, int64_t v);
+R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int absval, int64_t v) {
   R_xlen_t i;
   for (i = 0; i < n; i++) {
-    if (x[i] == v) return i;
+    if ((absval ? rsimd_abs_i64(x[i]) : x[i]) == v) return i;
   }
   return -1;
 }
@@ -1002,24 +1004,26 @@ RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_na_i64_)(const int64_t *x, R_xlen_t n) 
 }
 
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_i64_)(const int64_t *x, R_xlen_t n, const int check,
-                                                  rsimd_reduce_result *r) {
+                                                  const int absval, rsimd_reduce_result *r) {
   const ptrdiff_t W = RSIMD_LANES_64;
-  const rsimd_vi64 big = rsimd_vi64_set1(INT64_MAX);
+  const rsimd_vi64 big = rsimd_vi64_set1(INT64_MAX), zero = rsimd_vi64_zero();
   rsimd_vi64 lo0 = big, lo1 = big, hi0 = rsimd_vi64_set1(INT64_MIN), hi1 = hi0;
   rsimd_mi64 mna = rsimd_mi64_none();
   R_xlen_t i = 0, missing = 0;
   /* NA (INT64_MIN) lanes cannot raise the maximum; for the minimum they
-     are replaced by INT64_MAX. */
-#define RSIMD_MINMAX_I64_(lo, hi, v)                                                     \
+     are replaced by INT64_MAX. The absolute value max(v, -v) of NA wraps
+     to NA. */
+#define RSIMD_MINMAX_I64_(lo, hi, v0)                                                    \
   do {                                                                                   \
-    rsimd_vi64 m_ = (v);                                                                 \
+    rsimd_vi64 v_ = absval ? rsimd_vi64_max((v0), rsimd_vi64_sub(zero, (v0))) : (v0);    \
+    rsimd_vi64 m_ = v_;                                                                  \
     if (check) {                                                                         \
-      rsimd_mi64 na_ = rsimd_vi64_is_na(v);                                              \
+      rsimd_mi64 na_ = rsimd_vi64_is_na(v_);                                             \
       mna = rsimd_mi64_or(mna, na_);                                                     \
       m_ = rsimd_vi64_blend(m_, big, na_);                                               \
     }                                                                                    \
     (lo) = rsimd_vi64_min((lo), m_);                                                     \
-    (hi) = rsimd_vi64_max((hi), (v));                                                    \
+    (hi) = rsimd_vi64_max((hi), v_);                                                     \
   } while (0)
   for (; i + 2 * W <= n; i += 2 * W) {
     rsimd_vi64 v0 = rsimd_vi64_loadu(x + i), v1 = rsimd_vi64_loadu(x + i + W);
@@ -1045,31 +1049,46 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_i64_)(const int64_t *x, R_xlen_t n,
   r->count += n - missing;
 }
 
-void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o);
-void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i64)(const int64_t *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o) {
-  if (o->na_check || o->na_rm) RSIMD_KERNEL(minmax_i64_)(x, n, 1, r);
-  else RSIMD_KERNEL(minmax_i64_)(x, n, 0, r);
+  int check = o->na_check || o->na_rm;
+  if (absval) {
+    if (check) RSIMD_KERNEL(minmax_i64_)(x, n, 1, 1, r);
+    else RSIMD_KERNEL(minmax_i64_)(x, n, 0, 1, r);
+  } else {
+    if (check) RSIMD_KERNEL(minmax_i64_)(x, n, 1, 0, r);
+    else RSIMD_KERNEL(minmax_i64_)(x, n, 0, 0, r);
+  }
 }
 
-R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int64_t v);
-R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int64_t v) {
+RSIMD_ALWAYS_INLINE R_xlen_t RSIMD_KERNEL(find_i64_)(const int64_t *x, R_xlen_t n,
+                                                    const int absval, int64_t v) {
   const ptrdiff_t W = RSIMD_LANES_64;
-  const rsimd_vi64 vv = rsimd_vi64_set1(v);
+  const rsimd_vi64 vv = rsimd_vi64_set1(v), zero = rsimd_vi64_zero();
   R_xlen_t i = 0;
+#define RSIMD_FIND_I64_(j)                                                               \
+  rsimd_vi64_cmp_eq(absval ? rsimd_vi64_max(rsimd_vi64_loadu(x + i + (j) * W),           \
+                                            rsimd_vi64_sub(zero, rsimd_vi64_loadu(x + i + (j) * W))) \
+                           : rsimd_vi64_loadu(x + i + (j) * W),                          \
+                    vv)
   for (; i + 4 * W <= n; i += 4 * W) {
-    rsimd_mi64 m = rsimd_mi64_or(
-        rsimd_mi64_or(rsimd_vi64_cmp_eq(rsimd_vi64_loadu(x + i), vv),
-                      rsimd_vi64_cmp_eq(rsimd_vi64_loadu(x + i + W), vv)),
-        rsimd_mi64_or(rsimd_vi64_cmp_eq(rsimd_vi64_loadu(x + i + 2 * W), vv),
-                      rsimd_vi64_cmp_eq(rsimd_vi64_loadu(x + i + 3 * W), vv)));
+    rsimd_mi64 m = rsimd_mi64_or(rsimd_mi64_or(RSIMD_FIND_I64_(0), RSIMD_FIND_I64_(1)),
+                                 rsimd_mi64_or(RSIMD_FIND_I64_(2), RSIMD_FIND_I64_(3)));
     if (rsimd_mi64_any(m)) break;
   }
+#undef RSIMD_FIND_I64_
   for (; i < n; i++) {
-    if (x[i] == v) return i;
+    if ((absval ? rsimd_abs_i64(x[i]) : x[i]) == v) return i;
   }
   return -1;
+}
+
+R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int absval, int64_t v);
+R_xlen_t RSIMD_KERNEL(find_i64)(const int64_t *x, R_xlen_t n, int absval, int64_t v) {
+  if (absval) return RSIMD_KERNEL(find_i64_)(x, n, 1, v);
+  return RSIMD_KERNEL(find_i64_)(x, n, 0, v);
 }
 
 /* Whole vectors give the TRUE, FALSE and NA flags; the tail is scalar.

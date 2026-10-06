@@ -50,16 +50,29 @@ RSIMD_OP(sum_dev_f64, void,
 /* Products, in double; the precision mode does not apply. */
 RSIMD_OP(prod_f64, void, (const double *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
 RSIMD_OP(prod_i32, void, (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+/* The product of x[i] + y[i] (op RSIMD_EW_ADD) or x[i] - y[i]
+   (RSIMD_EW_SUB), in double, with operands read and broadcast as by
+   ew2_f64 (flags RSIMD_EW_I32(k), RSIMD_EW_SCALAR(k)). A pair is missing
+   when its sum or difference is NaN (a missing operand, or Inf - Inf):
+   it sets saw_nan, and saw_na when an operand is NA, and na.rm leaves it
+   out, so the result is prod(x + y, na.rm) of the doubles. */
+RSIMD_OP(prod2_f64, void,
+         (int op, const void *x, const void *y, R_xlen_t n, int flags, rsimd_reduce_result *r,
+          const rsimd_opts *o))
 /* Minimum into f64 (i64) and maximum into f64_hi (i64_hi), over the
    elements that are not missing; count is the number of those. A zero
-   extremum keeps the sign of the first zero in the input, as base R. */
+   extremum keeps the sign of the first zero in the input, as base R.
+   With absval set, of the absolute values (|NA| stays NA for integers, and
+   a zero extremum is +0). */
 RSIMD_OP(minmax_f64, void,
-         (const double *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
-RSIMD_OP(minmax_i32, void, (const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
+         (const double *x, R_xlen_t n, int absval, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(minmax_i32, void,
+         (const int *x, R_xlen_t n, int absval, rsimd_reduce_result *r, const rsimd_opts *o))
 /* The 0-based index of the first element equal to v (numerically, so 0
-   matches -0), or -1. Used by which_min and which_max after min/max. */
-RSIMD_OP(find_f64, R_xlen_t, (const double *x, R_xlen_t n, double v))
-RSIMD_OP(find_i32, R_xlen_t, (const int *x, R_xlen_t n, int v))
+   matches -0), or with absval whose absolute value is v, or -1. Used by
+   which_min and which_max after min/max. */
+RSIMD_OP(find_f64, R_xlen_t, (const double *x, R_xlen_t n, int absval, double v))
+RSIMD_OP(find_i32, R_xlen_t, (const int *x, R_xlen_t n, int absval, int v))
 /* which_min (max = 0) or which_max (max = 1) of raw bytes: the extremum in
    i64 and its index in idx, off being the chunk's offset. */
 RSIMD_OP(which_u8, void,
@@ -77,7 +90,8 @@ RSIMD_OP(anyall_u8, void, (const Rbyte *x, R_xlen_t n, int stop, rsimd_reduce_re
    (RSIMD_NAMODE_*): ANY sets saw_na at the first one and returns; COUNT
    adds their number to i64; WHICH_I32 and WHICH_F64 write their 1-based
    indices (off + i + 1) to out[i64], out[i64 + 1] ... as int or double,
-   advancing i64. */
+   advancing i64. na_i32 also takes RSIMD_NAMODE_TRUE with COUNT or a
+   WHICH mode, and then counts or writes the elements equal to 1. */
 RSIMD_OP(na_f64, void,
          (const double *x, R_xlen_t n, int mode, R_xlen_t off, void *out, rsimd_reduce_result *r))
 RSIMD_OP(na_i32, void,
@@ -160,7 +174,9 @@ RSIMD_OP(ew3_i32, int,
 /* Elementary functions, out[i] = f(x[i]) (math1_f64, op codes
    RSIMD_MATH_EXP .. RSQRT_APPROX, p used by LOGB only), out[i] = f(x[i], y[i])
    (math2_f64, RSIMD_MATH_POW .. ROOTN) and both sin(x[i]) and cos(x[i])
-   (sincos_f64, op RSIMD_MATH_SIN), with base R's missing-value rules; any
+   (sincos_f64, op RSIMD_MATH_SIN) or sinpi(x[i]) and cospi(x[i]) (op
+   RSIMD_MATH_SINPI, as math1_f64 computes them), with base R's
+   missing-value rules; any
    op may have RSIMD_MATH_FAST set (fast mode). Operands are read as
    doubles or int32 elements with the flags of the elementwise kernels
    (an int32 NA is always NA_real_). Each returns the status bits of the
@@ -349,7 +365,8 @@ RSIMD_OP(convert, int, (int op, int mode, const void *x, R_xlen_t n, void *out))
    - sum_i64 adds with wrapping and counts the wraps in r->carry, so the
      exact total is r->i64 + r->carry * 2^64 whatever the order of the
      additions (the entry point gives NA for a total outside int64);
-   - minmax_i64 puts the extrema in i64 and i64_hi, find_i64 looks up v;
+   - minmax_i64 puts the extrema in i64 and i64_hi, find_i64 looks up v
+     (both with absval, as the int32 ones);
    - scan_i64 is cumsum (op 0, NA from the first overflow, which sets
      s->overflow), cummin (2) or cummax (3), continuing from s->i64, and
      returns the index of the first element it did not write (an NA or the
@@ -369,8 +386,8 @@ RSIMD_OP(convert, int, (int op, int mode, const void *x, R_xlen_t n, void *out))
      int32. */
 RSIMD_OP(sum_i64, void, (const int64_t *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
 RSIMD_OP(minmax_i64, void,
-         (const int64_t *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o))
-RSIMD_OP(find_i64, R_xlen_t, (const int64_t *x, R_xlen_t n, int64_t v))
+         (const int64_t *x, R_xlen_t n, int absval, rsimd_reduce_result *r, const rsimd_opts *o))
+RSIMD_OP(find_i64, R_xlen_t, (const int64_t *x, R_xlen_t n, int absval, int64_t v))
 RSIMD_OP(anyall_i64, void,
          (const int64_t *x, R_xlen_t n, int stop, rsimd_reduce_result *r, const rsimd_opts *o))
 RSIMD_OP(na_i64, void,

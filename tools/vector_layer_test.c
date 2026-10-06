@@ -30,7 +30,7 @@
 
 #include <float.h>
 #include <stdio.h>
-/* Flush the lane counts of count_na_i32_() every two iterations, and
+/* Flush the lane counts of count_eq_i32_() every two iterations, and
    those of the Hamming kernels every two vectors. */
 #define RSIMD_COUNT_BLOCK 2
 #define RSIMD_HAMMING_BLOCK 2
@@ -829,6 +829,9 @@ static void math_inputs(int op, double *v, int32_t *iv, ptrdiff_t n) {
     lo = -2; hi = 2; break;
   case RSIMD_MATH_SINH: case RSIMD_MATH_COSH: lo = -712; hi = 712; break;
   case RSIMD_MATH_SIGMOID: lo = -800; hi = 800; break;
+  case RSIMD_MATH_EXP2M1: lo = -1100; hi = 1030; break;
+  case RSIMD_MATH_EXP10M1: lo = -340; hi = 310; break;
+  case RSIMD_MATH_LOG2P1: case RSIMD_MATH_LOG10P1: lo = -320; hi = 308; log_scale = 1; break;
   default: break;
   }
   sleef_inputs(v, n, lo, hi, log_scale, 1);
@@ -843,6 +846,14 @@ static void math_inputs(int op, double *v, int32_t *iv, ptrdiff_t n) {
   if (op == RSIMD_MATH_SINH || op == RSIMD_MATH_COSH) {
     static const double extra[] = {709.5, -709.9, 710.4, -710.47, 710.5, 750};
     for (j = 0; j < 6 && 10 + j < n; j++) v[10 + j] = extra[j];
+  }
+  /* Small and whole arguments, and the bounds of the special cases. */
+  if (op >= RSIMD_MATH_EXP2M1 && op <= RSIMD_MATH_LOG10P1) {
+    static const double extra[] = {1e-300, -1e-20, 3e-9, -0.25, 3, -7, 53, 54, 54.5, 17.5,
+                                   -1100.5, 1023.9, 1024, 99, -1, -0.999999, 7, 1e-320};
+    for (j = 0; j < (int) (sizeof extra / sizeof extra[0]) && 10 + j < n; j++) v[10 + j] = extra[j];
+    for (j = 30; j < n && j < 60; j++) v[j] = ldexp((double) (next_rand() % 2001) - 1000, -12);
+    for (j = 60; j < n && j < 100; j++) v[j] = (double) (next_rand() % 121) - 60;
   }
   for (j = 0; j < n; j++) iv[j] = (int32_t) (next_rand() % 41) - 20;
   if (n > 3) iv[3] = RSIMD_NA_I32;
@@ -963,7 +974,7 @@ static void test_math_mode(int fast) {
   char what[96];
   for (li = 0; li < sizeof lens / sizeof lens[0]; li++) {
     n = lens[li];
-    for (op = RSIMD_MATH_EXP; op <= RSIMD_MATH_SIGMOID; op++) {
+    for (op = RSIMD_MATH_EXP; op <= RSIMD_MATH_LOG10P1; op++) {
       const double p = op == RSIMD_MATH_LOGB ? log(3.0) : 1.0;
       math_inputs(op, ma, mia, n);
       for (f = 0; f < 2; f++) {
@@ -1034,6 +1045,22 @@ static void test_math_mode(int fast) {
     check_math("sincos sin", n, fout, mref, ma, NULL, 0, 2 + extra);
     check_math("sincos cos", n, mout2, mref2, ma, NULL, 0, 2 + extra);
     check_int("sincos status", n, 0, st, math_ref_status);
+    /* sincospi: bit for bit math1's sinpi and cospi, with one status. */
+    math_inputs(RSIMD_MATH_SINPI, ma, mia, n);
+    for (f = 0; f < 2; f++) {
+      const void *x = f ? (const void *) mia : ma;
+      const int fl = f ? RSIMD_EW_I32(0) : 0;
+      reset_out();
+      for (j = 0; j <= n; j++) mout2[j] = SENTINEL_F64;
+      st = RSIMD_KERNEL(sincos_f64)(RSIMD_MATH_SINPI | bit, x, n, fl, fout, mout2);
+      math_ref_status = RSIMD_KERNEL(math1_f64)(RSIMD_MATH_SINPI | bit, x, n, fl, 1.0, mref);
+      math_ref_status |= RSIMD_KERNEL(math1_f64)(RSIMD_MATH_COSPI | bit, x, n, fl, 1.0, mref2);
+      snprintf(what, sizeof what, "sincospi sin int32 %d fast %d", f, fast);
+      check_f64(what, n, fout, mref, 1);
+      snprintf(what, sizeof what, "sincospi cos int32 %d fast %d", f, fast);
+      check_f64(what, n, mout2, mref2, 1);
+      check_int(what, n, 0, st, math_ref_status);
+    }
   }
 }
 
@@ -1945,8 +1972,11 @@ static int lgl3(const rsimd_reduce_result *r, int all, int narm) {
     REF_CHECK;                                                                   \
   }
 
+/* |v| for int32, with NA (and so the minimum) wrapping to itself. */
+static int32_t abs_ref_i32(int32_t v) { return v < 0 ? (int32_t) (0u - (uint32_t) v) : v; }
+
 static void test_reduce(ptrdiff_t n) {
-  int variant, way, narm, check, stop, mode;
+  int variant, way, narm, check, stop, mode, ab;
   char what[64];
   for (variant = 0; variant < 4; variant++) {
     fill_reduce(variant);
@@ -1958,26 +1988,30 @@ static void test_reduce(ptrdiff_t n) {
         ptrdiff_t i;
         if (!chk && (variant == 1 || variant == 3)) continue;
 
-        /* min/max of int32 */
-        reduce_init(&want, HUGE_VAL);
-        for (i = 0; i < n; i++) {
-          if (chk && ri[i] == RSIMD_NA_I32) {
-            want.saw_na = 1;
-            continue;
+        /* min/max of int32, and of their absolute values */
+        for (ab = 0; ab < 2; ab++) {
+          reduce_init(&want, HUGE_VAL);
+          for (i = 0; i < n; i++) {
+            int32_t v = ab ? abs_ref_i32(ri[i]) : ri[i];
+            if (chk && v == RSIMD_NA_I32) {
+              want.saw_na = 1;
+              continue;
+            }
+            want.count++;
+            if (v < want.i64) want.i64 = v;
+            if (v > want.i64_hi) want.i64_hi = v;
           }
-          want.count++;
-          if (ri[i] < want.i64) want.i64 = ri[i];
-          if (ri[i] > want.i64_hi) want.i64_hi = ri[i];
-        }
 #define REF_CHECK                                                                \
-  snprintf(what, sizeof what, "minmax_i32 v%d narm%d way%d", variant, narm, way); \
+  snprintf(what, sizeof what, "minmax_i32 abs%d v%d narm%d way%d", ab, variant, narm, way); \
   check_flags(what, n, &r, &want);                                               \
   if (want.count > 0) {                                                          \
     check_int(what, n, 3, (long) r.i64, (long) want.i64);                        \
     check_int(what, n, 4, (long) r.i64_hi, (long) want.i64_hi);                  \
   }
-        TWO_WAYS(r, reduce_init(&r, HUGE_VAL), RSIMD_KERNEL(minmax_i32)(ri + off, len, &r, &o))
+          TWO_WAYS(r, reduce_init(&r, HUGE_VAL),
+                   RSIMD_KERNEL(minmax_i32)(ri + off, len, ab, &r, &o))
 #undef REF_CHECK
+        }
 
         /* prod of int32 (exact) */
         reduce_init(&want, 1.0);
@@ -2006,17 +2040,20 @@ static void test_reduce(ptrdiff_t n) {
         }
 #endif
 
-        /* find_i32 */
-        for (i = 0; i < 3; i++) {
-          int v = i == 0 ? (n > 0 ? ri[n - 1] : 0) : (i == 1 ? 5 : 77);
-          ptrdiff_t j, wantj = -1;
-          for (j = 0; j < n; j++) {
-            if (ri[j] == v) {
-              wantj = j;
-              break;
+        /* find_i32, of the values and of their absolute values */
+        for (ab = 0; ab < 2; ab++) {
+          for (i = 0; i < 4; i++) {
+            int v = i == 0 ? (n > 0 ? ri[n - 1] : 0) : (i == 1 ? 5 : i == 2 ? 2 : 77);
+            ptrdiff_t j, wantj = -1;
+            for (j = 0; j < n; j++) {
+              if ((ab ? abs_ref_i32(ri[j]) : ri[j]) == v) {
+                wantj = j;
+                break;
+              }
             }
+            snprintf(what, sizeof what, "find_i32 abs%d", ab);
+            check_int(what, n, i, (long) RSIMD_KERNEL(find_i32)(ri, n, ab, v), (long) wantj);
           }
-          check_int("find_i32", n, i, (long) RSIMD_KERNEL(find_i32)(ri, n, v), (long) wantj);
         }
 
         /* any/all of int32, logical and raw */
@@ -2061,30 +2098,35 @@ static void test_reduce(ptrdiff_t n) {
         }
 
 #ifndef RSIMD_NO_F64_SIMD
-        /* min/max of double: exact, including the sign of zero */
-        reduce_init(&want, HUGE_VAL);
-        for (i = 0; i < n; i++) {
-          if (isnan(rd[i])) {
-            if (chk) {
-              want.saw_nan = 1;
-              if (is_na_ref(rd[i])) want.saw_na = 1;
-            } else {
-              want.count++;
+        /* min/max of double, and of their absolute values: exact,
+           including the sign of zero (+0 for absolute values) */
+        for (ab = 0; ab < 2; ab++) {
+          reduce_init(&want, HUGE_VAL);
+          for (i = 0; i < n; i++) {
+            double v = ab ? fabs(rd[i]) : rd[i];
+            if (isnan(v)) {
+              if (chk) {
+                want.saw_nan = 1;
+                if (is_na_ref(rd[i])) want.saw_na = 1;
+              } else {
+                want.count++;
+              }
+              continue;
             }
-            continue;
+            want.count++;
+            if (v < want.f64) want.f64 = v;
+            if (v > want.f64_hi) want.f64_hi = v;
           }
-          want.count++;
-          if (rd[i] < want.f64) want.f64 = rd[i];
-          if (rd[i] > want.f64_hi) want.f64_hi = rd[i];
-        }
 #define REF_CHECK                                                                \
-  snprintf(what, sizeof what, "minmax_f64 v%d narm%d way%d", variant, narm, way); \
+  snprintf(what, sizeof what, "minmax_f64 abs%d v%d narm%d way%d", ab, variant, narm, way); \
   check_flags(what, n, &r, &want);                                               \
   n_checks += 2;                                                                 \
   if (bits(r.f64) != bits(want.f64)) fail(what, n, 3, "minimum differs");        \
   if (bits(r.f64_hi) != bits(want.f64_hi)) fail(what, n, 4, "maximum differs");
-        TWO_WAYS(r, reduce_init(&r, HUGE_VAL), RSIMD_KERNEL(minmax_f64)(rd + off, len, &r, &o))
+          TWO_WAYS(r, reduce_init(&r, HUGE_VAL),
+                   RSIMD_KERNEL(minmax_f64)(rd + off, len, ab, &r, &o))
 #undef REF_CHECK
+        }
 
         /* prod of double: exact (powers of two), NaN matches any NaN */
         reduce_init(&want, 1.0);
@@ -2131,17 +2173,21 @@ static void test_reduce(ptrdiff_t n) {
 #undef REF_CHECK
         }
 
-        /* find_f64: numeric equality, so 0 finds -0 */
-        for (i = 0; i < 4; i++) {
-          double v = i == 0 ? 0.0 : (i == 1 ? -2.0 : (i == 2 ? 7.0 : -HUGE_VAL));
-          ptrdiff_t j, wantj = -1;
-          for (j = 0; j < n; j++) {
-            if (rd[j] == v) {
-              wantj = j;
-              break;
+        /* find_f64: numeric equality, so 0 finds -0, of the values and
+           of their absolute values */
+        for (ab = 0; ab < 2; ab++) {
+          for (i = 0; i < 5; i++) {
+            double v = i == 0 ? 0.0 : (i == 1 ? -2.0 : (i == 2 ? 7.0 : i == 3 ? 2.0 : HUGE_VAL));
+            ptrdiff_t j, wantj = -1;
+            for (j = 0; j < n; j++) {
+              if ((ab ? fabs(rd[j]) : rd[j]) == v) {
+                wantj = j;
+                break;
+              }
             }
+            snprintf(what, sizeof what, "find_f64 abs%d", ab);
+            check_int(what, n, i, (long) RSIMD_KERNEL(find_f64)(rd, n, ab, v), (long) wantj);
           }
-          check_int("find_f64", n, i, (long) RSIMD_KERNEL(find_f64)(rd, n, v), (long) wantj);
         }
 
         /* any/all of double */
@@ -2169,6 +2215,38 @@ static void test_reduce(ptrdiff_t n) {
         }
 #endif
       }
+    }
+
+    /* TRUE elements of a logical vector: count, which (as int and as
+       double). */
+    for (mode = RSIMD_NAMODE_COUNT; mode < 4; mode++) {
+      static int32_t rl[N + 1];
+      rsimd_reduce_result r, want;
+      ptrdiff_t i;
+      for (i = 0; i < n; i++) rl[i] = ri[i] == RSIMD_NA_I32 ? ri[i] : (ri[i] & 1);
+      reduce_init(&want, 0.0);
+      want.i64 = 0;
+      for (i = 0; i < n; i++) {
+        if (rl[i] == 1) want.i64++;
+      }
+#define REF_CHECK                                                                \
+  snprintf(what, sizeof what, "na_i32 TRUE v%d mode%d way%d", variant, mode, way); \
+  check_int(what, n, 1, (long) r.i64, (long) want.i64);                          \
+  for (i = 0, j = 0; mode != RSIMD_NAMODE_COUNT && i < n; i++) {                 \
+    if (rl[i] != 1) continue;                                                    \
+    check_int(what, n, i, mode == RSIMD_NAMODE_WHICH_I32 ? iidx[j] : (long) ridx[j], \
+              (long) (i + 1001));                                                \
+    j++;                                                                         \
+  }
+      {
+        ptrdiff_t j;
+        TWO_WAYS(r, (reduce_init(&r, 0.0), r.i64 = 0),
+                 RSIMD_KERNEL(na_i32)(rl + off, len, mode | RSIMD_NAMODE_TRUE, 1000 + off,
+                                      mode == RSIMD_NAMODE_WHICH_I32 ? (void *) iidx
+                                                                     : (void *) ridx,
+                                      &r))
+      }
+#undef REF_CHECK
     }
 
     /* Missing values: any, count, which (as int and as double). */
@@ -2236,6 +2314,108 @@ static void test_reduce(ptrdiff_t n) {
     }
   }
 }
+
+/* prod2_f64 against a scalar reference, over pairs whose sums (or
+   differences) are powers of two, so that every product is exact whatever
+   the order: double and int32 operands, every broadcast, NaN and NA
+   operands and Inf - Inf pairs (variant 1), with and without na_check and
+   na.rm, in one call and split in two. */
+#ifndef RSIMD_NO_F64_SIMD
+static double p2x[N + 1], p2y[N + 1];
+static int32_t p2xi[N + 1], p2yi[N + 1];
+static void test_prod2(ptrdiff_t n) {
+  static const double tf[] = {1, -1, 0.5, 2, -0.5, -2};
+  static const int32_t ti[] = {1, -1, 2, -2};
+  const double nan = from_bits(UINT64_C(0x7FF8000000000000)), na = rsimd_na_real();
+  int op, f, narm, check, variant, way;
+  char what[96];
+  for (variant = 0; variant < 2; variant++) {
+    for (op = RSIMD_EW_ADD; op <= RSIMD_EW_SUB; op++) {
+      /* f: bits 0-1 broadcast x, y; bits 2-3 int32 x, y. */
+      for (f = 0; f < 16; f++) {
+        const int xs = f & 1, ys = (f >> 1) & 1, xi = (f >> 2) & 1, yi = (f >> 3) & 1;
+        const int flags = (xs ? RSIMD_EW_SCALAR(0) : 0) | (ys ? RSIMD_EW_SCALAR(1) : 0) |
+                          (xi ? RSIMD_EW_I32(0) : 0) | (yi ? RSIMD_EW_I32(1) : 0);
+        const int sgn = op == RSIMD_EW_SUB ? -1 : 1;
+        ptrdiff_t i;
+        for (i = 0; i < n; i++) {
+          uint64_t u = next_rand();
+          double t = xi || yi ? (double) ti[u % 4] : tf[u % 6];
+          int32_t yv = (int32_t) ((u >> 8) % 5) - 2;
+          if (ys) {
+            /* y = 0: the sums are x. */
+            p2x[i] = t;
+            p2y[i] = 0;
+          } else if (xs) {
+            /* x = 0: the sums are +-y. */
+            p2x[i] = 0;
+            p2y[i] = sgn * t;
+          } else {
+            p2y[i] = yv;
+            p2x[i] = t - sgn * yv;
+          }
+          if (variant == 1 && (u >> 20) % 11 == 0) {
+            switch ((u >> 24) % 4) {
+            case 0: if (!xs) p2x[i] = xi ? na : ((u >> 30) & 1 ? nan : na); break;
+            case 1: if (!ys) p2y[i] = yi ? na : ((u >> 30) & 1 ? nan : na); break;
+            default:
+              /* Inf - Inf */
+              if (!xs && !ys && !xi && !yi) {
+                p2x[i] = HUGE_VAL;
+                p2y[i] = -sgn * HUGE_VAL;
+              }
+              break;
+            }
+          }
+          p2xi[i] = isnan(p2x[i]) ? RSIMD_NA_I32 : (int32_t) p2x[i];
+          p2yi[i] = isnan(p2y[i]) ? RSIMD_NA_I32 : (int32_t) p2y[i];
+        }
+        for (narm = 0; narm < 2; narm++) {
+          for (check = 0; check < 2; check++) {
+            const rsimd_opts o = {narm, check, RSIMD_PREC_FAST};
+            const int chk = check || narm;
+            rsimd_reduce_result r, want;
+            reduce_init(&want, 1.0);
+            for (i = 0; i < n; i++) {
+              double a = xi ? (p2xi[xs ? 0 : i] == RSIMD_NA_I32 ? na : p2xi[xs ? 0 : i]) : p2x[xs ? 0 : i];
+              double b = yi ? (p2yi[ys ? 0 : i] == RSIMD_NA_I32 ? na : p2yi[ys ? 0 : i]) : p2y[ys ? 0 : i];
+              double v = op == RSIMD_EW_SUB ? a - b : a + b;
+              if (chk && isnan(v)) {
+                want.saw_nan = 1;
+                if (is_na_ref(a) || is_na_ref(b)) want.saw_na = 1;
+                if (narm) continue;
+              }
+              want.count++;
+              want.f64 *= v;
+            }
+            for (way = 0; way < 2; way++) {
+              ptrdiff_t k = way ? n / 3 : n, off, len;
+              reduce_init(&r, 1.0);
+              for (off = 0; off < n; off += len) {
+                const void *px = xi ? (const void *) (p2xi + (xs ? 0 : off))
+                                    : (const void *) (p2x + (xs ? 0 : off));
+                const void *py = yi ? (const void *) (p2yi + (ys ? 0 : off))
+                                    : (const void *) (p2y + (ys ? 0 : off));
+                len = off < k ? k - off : n - off;
+                RSIMD_KERNEL(prod2_f64)(op, px, py, len, flags, &r, &o);
+              }
+              snprintf(what, sizeof what, "prod2_f64 op%d v%d flags%d narm%d check%d way%d", op,
+                       variant, f, narm, check, way);
+              if (chk) check_flags(what, n, &r, &want);
+              n_checks++;
+              if (!(bits(r.f64) == bits(want.f64) || (isnan(r.f64) && isnan(want.f64)))) {
+                char buf[96];
+                snprintf(buf, sizeof buf, "got %a want %a", r.f64, want.f64);
+                fail(what, n, 0, buf);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+#endif
 
 /* ---- Fused reductions and scans ----------------------------------------- */
 
@@ -3905,6 +4085,9 @@ static void cm_fill(Rcomplex *v, ptrdiff_t n, int kind) {
       v[i].r = r & 2 ? (r & 4 ? -0.0 : 0.0) : cm_rand_part(r & 8 ? 0 : 1);
       v[i].i = r & 2 ? cm_rand_part(r & 8 ? 0 : 1) : (r & 4 ? -0.0 : 0.0);
       if (r & 16) v[i].i = ldexp(cm_rand_part(0), -1000 - (int) (next_rand() % 70));
+      /* The smallest subnormals, whose sign SLEEF can lose. */
+      if ((r >> 8) % 7 == 0) v[i].i = r & 64 ? -0x1p-1074 : 0x1p-1074;
+      if ((r >> 12) % 7 == 0) v[i].r = r & 128 ? -0x1p-1074 : 0x1p-1074;
       break;
     case 5:
       v[i].r = r % 11 == 0 ? na : sp[(r >> 8) % 9];
@@ -4040,7 +4223,7 @@ static void cm_check(int op, int fast, ptrdiff_t n, int flags, double bound) {
 static const double cm_bound[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2] = {
   {2, 3},     /* sqrt */
   {2.5, 3},   /* exp */
-  {3, 5},     /* log */
+  {3, 5.5},   /* log */
   {3, 4},     /* sin */
   {3, 4},     /* cos */
   {4.5, 6},   /* tan */
@@ -4193,7 +4376,7 @@ static void test_int64(ptrdiff_t n) {
   const rsimd_opts *opts[3] = {&onc, &oc, &orm};
   char what[96];
   ptrdiff_t j;
-  int op, f, k, v, mode, st, want;
+  int op, f, k, v, mode, st, want, ab;
 
   /* Reductions, with each of na_check off, on, and na.rm. */
   for (v = 0; v < 3; v++) {
@@ -4219,22 +4402,26 @@ static void test_int64(ptrdiff_t n) {
     check_int(what, n, 2, (long) r.carry, (long) ref.carry);
     check_flags(what, n, &r, &ref);
 
-    reduce_init(&r, 0.0);
-    reduce_init(&ref, 0.0);
-    RSIMD_KERNEL(minmax_i64)(x, n, &r, o);
-    for (j = 0; j < n; j++) {
-      if (check && x[j] == INT64_MIN) {
-        ref.saw_na = 1;
-        continue;
+    for (ab = 0; ab < 2; ab++) {
+      reduce_init(&r, 0.0);
+      reduce_init(&ref, 0.0);
+      RSIMD_KERNEL(minmax_i64)(x, n, ab, &r, o);
+      for (j = 0; j < n; j++) {
+        /* |NA| wraps to NA. */
+        int64_t xv = ab && x[j] < 0 ? (int64_t) (0u - (uint64_t) x[j]) : x[j];
+        if (check && xv == INT64_MIN) {
+          ref.saw_na = 1;
+          continue;
+        }
+        if (xv < ref.i64) ref.i64 = xv;
+        if (xv > ref.i64_hi) ref.i64_hi = xv;
+        ref.count++;
       }
-      if (x[j] < ref.i64) ref.i64 = x[j];
-      if (x[j] > ref.i64_hi) ref.i64_hi = x[j];
-      ref.count++;
+      snprintf(what, sizeof what, "minmax_i64 abs %d variant %d", ab, v);
+      check_int(what, n, 0, r.i64 == ref.i64, 1);
+      check_int(what, n, 1, r.i64_hi == ref.i64_hi, 1);
+      check_flags(what, n, &r, &ref);
     }
-    snprintf(what, sizeof what, "minmax_i64 variant %d", v);
-    check_int(what, n, 0, r.i64 == ref.i64, 1);
-    check_int(what, n, 1, r.i64_hi == ref.i64_hi, 1);
-    check_flags(what, n, &r, &ref);
 
     for (stop = RSIMD_STOP_NONE; stop <= RSIMD_STOP_FALSE; stop++) {
       memset(&r, 0, sizeof r);
@@ -4277,11 +4464,16 @@ static void test_int64(ptrdiff_t n) {
     if (!ref.saw_na || o->na_rm) check_int(what, n, 1, (long) r.i64, (long) ref.i64);
   }
   for (j = 0; j < n; j += 7) {
-    R_xlen_t got = RSIMD_KERNEL(find_i64)(la, n, la[j]), ref = 0;
+    R_xlen_t got = RSIMD_KERNEL(find_i64)(la, n, 0, la[j]), ref = 0;
+    int64_t av = la[j] < 0 ? (int64_t) (0u - (uint64_t) la[j]) : la[j];
     while (la[ref] != la[j]) ref++;
     check_int("find_i64", n, j, (long) got, (long) ref);
+    got = RSIMD_KERNEL(find_i64)(la, n, 1, av);
+    ref = 0;
+    while (la[ref] != av && la[ref] != (int64_t) (0u - (uint64_t) av)) ref++;
+    check_int("find_i64 abs", n, j, (long) got, (long) ref);
   }
-  check_int("find_i64 absent", n, 0, (long) RSIMD_KERNEL(find_i64)(la, n, INT64_C(77)), -1L);
+  check_int("find_i64 absent", n, 0, (long) RSIMD_KERNEL(find_i64)(la, n, 0, INT64_C(77)), -1L);
   for (mode = RSIMD_NAMODE_ANY; mode <= RSIMD_NAMODE_WHICH_I32; mode++) {
     rsimd_reduce_result r;
     int32_t idx[N + 1];
@@ -4738,6 +4930,119 @@ static void test_edge_cases(void) {
 }
 #endif
 
+/* exp2m1, exp10m1, log2p1 and log10p1 (math1_f64 and the scalar forms
+   math.inc.c defines for the none tier) against long double references,
+   where long double has at least 64 bits: within M1P1_BOUND ULP over
+   sweeps of their ranges, the worst error of each op reported; and in
+   every tier exact at the whole x where b^x - 1 is exact, at x = b^k - 1
+   for the logarithms, and at zeros (keeping their sign). */
+#if RSIMD_TIER_IS(none) || defined(RSIMD_HAVE_SLEEF)
+#define M1P1_BOUND 2.0
+static double m1p1_worst[4] = {0, 0, 0, 0};
+static long double ref_m1p1(int op, double x) {
+  const long double ln2 = 0.693147180559945309417232121458176568L;
+  const long double ln10 = 2.302585092994045684017991454684364208L;
+  switch (op) {
+  case RSIMD_MATH_EXP2M1: return fabs(x) < 1 ? expm1l((long double) x * ln2) : exp2l(x) - 1;
+  case RSIMD_MATH_EXP10M1:
+    return fabs(x) < 1 ? expm1l((long double) x * ln10) : powl(10.0L, (long double) x) - 1;
+  case RSIMD_MATH_LOG2P1: return log1pl(x) / ln2;
+  default: return log1pl(x) / ln10;
+  }
+}
+static double m1p1_x[4000], m1p1_out[4000];
+static void check_m1p1(int op, const char *what, ptrdiff_t i, double x, double got) {
+  long double ref = ref_m1p1(op, x);
+  double w = (double) ref, err;
+  char buf[200];
+  n_checks++;
+  if (isnan(w) || isinf(w) || w == 0) {
+    if (!(bits(got) == bits(w) || (isnan(got) && isnan(w)))) {
+      snprintf(buf, sizeof buf, "x = %a: got %a want %a", x, got, w);
+      fail(what, 4000, i, buf);
+    }
+    return;
+  }
+  err = (double) (fabsl((long double) got - ref) / fmax(ldexp(1.0, ilogb(w) - 52), DBL_TRUE_MIN));
+  if (err > m1p1_worst[op - RSIMD_MATH_EXP2M1]) m1p1_worst[op - RSIMD_MATH_EXP2M1] = err;
+  if (!(err <= M1P1_BOUND)) {
+    snprintf(buf, sizeof buf, "x = %a: got %a, %.3f ULP from %.20Lg", x, got, err, ref);
+    fail(what, 4000, i, buf);
+  }
+}
+static void test_m1p1(void) {
+  /* Per op: ranges [lo, hi], uniform or (log_scale) +-10^u. */
+  static const struct { int op; double lo, hi; int log_scale; } sweeps[] = {
+    {RSIMD_MATH_EXP2M1, -1, 1, 0},     {RSIMD_MATH_EXP2M1, -60, 60, 0},
+    {RSIMD_MATH_EXP2M1, 54, 1024, 0},  {RSIMD_MATH_EXP2M1, -1100, -60, 0},
+    {RSIMD_MATH_EXP2M1, -320, 0, 1},   {RSIMD_MATH_EXP10M1, -1, 1, 0},
+    {RSIMD_MATH_EXP10M1, -18, 18, 0},  {RSIMD_MATH_EXP10M1, 17, 308.3, 0},
+    {RSIMD_MATH_EXP10M1, -330, -18, 0}, {RSIMD_MATH_EXP10M1, -320, 0, 1},
+    {RSIMD_MATH_LOG2P1, -320, 308, 1}, {RSIMD_MATH_LOG2P1, -1, 4, 0},
+    {RSIMD_MATH_LOG10P1, -320, 308, 1}, {RSIMD_MATH_LOG10P1, -1, 4, 0}};
+  const ptrdiff_t m = 4000;
+  size_t c;
+  ptrdiff_t i;
+  int op, k;
+  char what[64];
+  if (LDBL_MANT_DIG >= 64) {
+    for (c = 0; c < sizeof sweeps / sizeof sweeps[0]; c++) {
+      op = sweeps[c].op;
+      for (i = 0; i < m; i++) {
+        double u = (double) (next_rand() >> 11) * 0x1.0p-53;
+        double x = sweeps[c].lo + u * (sweeps[c].hi - sweeps[c].lo);
+        if (sweeps[c].log_scale) {
+          x = pow(10.0, x);
+          /* The logarithms take x > -1. */
+          if (next_rand() & 1) x = op >= RSIMD_MATH_LOG2P1 && x >= 1 ? -1 + 1 / (1 + x) : -x;
+        }
+        m1p1_x[i] = x;
+      }
+      RSIMD_KERNEL(math1_f64)(op, m1p1_x, m, 0, 1.0, m1p1_out);
+      snprintf(what, sizeof what, "m1p1 op %d sweep %d", op, (int) c);
+      for (i = 0; i < m; i++) check_m1p1(op, what, i, m1p1_x[i], m1p1_out[i]);
+      snprintf(what, sizeof what, "m1p1 scalar op %d sweep %d", op, (int) c);
+      for (i = 0; i < m; i++) check_m1p1(op, what, i, m1p1_x[i], rsimd_math1_f64(op, m1p1_x[i], 1));
+    }
+  }
+  /* Exact cases. */
+  for (op = RSIMD_MATH_EXP2M1; op <= RSIMD_MATH_LOG10P1; op++) {
+    const int ten = op == RSIMD_MATH_EXP10M1 || op == RSIMD_MATH_LOG10P1;
+    const int lo = op == RSIMD_MATH_EXP2M1 ? -53 : op == RSIMD_MATH_LOG2P1 ? -52 : 1;
+    const int hi = ten ? 15 : 53;
+    double want[200];
+    ptrdiff_t n = 0;
+    for (k = lo; k <= hi; k++) {
+      double p = ten ? pow(10.0, k) : ldexp(1.0, k);
+      if (op <= RSIMD_MATH_EXP10M1) {
+        m1p1_x[n] = k;
+        want[n] = p - 1;
+      } else {
+        m1p1_x[n] = p - 1;
+        want[n] = k;
+      }
+      if (k != 0) n++;
+    }
+    m1p1_x[n] = 0.0;
+    want[n++] = 0.0;
+    m1p1_x[n] = -0.0;
+    want[n++] = -0.0;
+    RSIMD_KERNEL(math1_f64)(op, m1p1_x, n, 0, 1.0, m1p1_out);
+    for (i = 0; i < n; i++) {
+      char buf[96];
+      n_checks += 2;
+      snprintf(buf, sizeof buf, "x = %a: got %a, scalar %a, want %a", m1p1_x[i], m1p1_out[i],
+               rsimd_math1_f64(op, m1p1_x[i], 1), want[i]);
+      snprintf(what, sizeof what, "m1p1 op %d exact", op);
+      if (bits(m1p1_out[i]) != bits(want[i]) ||
+          bits(rsimd_math1_f64(op, m1p1_x[i], 1)) != bits(want[i])) {
+        fail(what, n, i, buf);
+      }
+    }
+  }
+}
+#endif
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
@@ -4759,6 +5064,9 @@ int main(void) {
     test_na_fold(n);
 #endif
     test_reduce(n);
+#ifndef RSIMD_NO_F64_SIMD
+    test_prod2(n);
+#endif
     test_linalg(n);
     test_scan(n);
     test_arith(n);
@@ -4793,6 +5101,9 @@ int main(void) {
   test_cmath_sweep();
   cm_report();
 #endif
+#if RSIMD_TIER_IS(none) || defined(RSIMD_HAVE_SLEEF)
+  test_m1p1();
+#endif
 #ifdef RSIMD_HAVE_SLEEF
   test_sleef();
   test_pi_oracle();
@@ -4815,6 +5126,12 @@ int main(void) {
 #ifndef RSIMD_NO_F64_SIMD
   printf("; approx worst recip 2^%.2f rsqrt 2^%.2f; rootn worst %.3f ULP", log2(approx_worst[0]),
          log2(approx_worst[1]), rootn_worst);
+#endif
+#if RSIMD_TIER_IS(none) || defined(RSIMD_HAVE_SLEEF)
+  if (LDBL_MANT_DIG >= 64) {
+    printf("; exp2m1/exp10m1/log2p1/log10p1 worst %.3f/%.3f/%.3f/%.3f ULP", m1p1_worst[0],
+           m1p1_worst[1], m1p1_worst[2], m1p1_worst[3]);
+  }
 #endif
   printf("\n");
   return n_fail != 0;

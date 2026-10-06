@@ -19,6 +19,12 @@ First release.
   and the scans `simd_cumsum()`, `simd_cumprod()`, `simd_cummin()` and
   `simd_cummax()`. `simd_precision()` chooses how floating-point sums are
   accumulated: `"fast"`, `"pairwise"` or `"compensated"` (Neumaier).
+  `simd_which()` and `simd_count()` are `which()` and `sum()` of a logical
+  vector; `simd_max_abs()`, `simd_min_abs()`, `simd_which_max_abs()` and
+  `simd_which_min_abs()` are `max(abs(x))` and its kin without the vector
+  `abs(x)`, also for complex and integer64 input; `simd_prod_sums()` and
+  `simd_prod_diffs()` are `prod(x + y)` and `prod(x - y)` without the
+  vector of sums.
 * **Elementwise arithmetic:** `simd_add()`, `simd_sub()`, `simd_mul()`,
   `simd_div()`, `simd_idiv()`, `simd_mod()`, `simd_neg()`, `simd_abs()`,
   `simd_sign()`, `simd_copysign()`, `simd_recip()`, `simd_sqrt()`,
@@ -50,7 +56,11 @@ First release.
   `simd_pow()` call the C math library in accurate mode, which is faster
   there than SLEEF's 128-bit vector code, so they are identical to base R
   (`?simd_math_accuracy`).
-  Machine-learning helpers `simd_sigmoid()`,
+  `simd_exp2m1()`, `simd_exp10m1()`, `simd_log2p1()` and `simd_log10p1()`
+  (C23's `exp2m1()` and the others) compute `2^x - 1`, `10^x - 1`,
+  `log2(1 + x)` and `log10(1 + x)` without losing accuracy near 0, within
+  2 ULP, and `simd_sincospi()` gives `simd_sinpi()` and `simd_cospi()` in one
+  pass. Machine-learning helpers `simd_sigmoid()`,
   `simd_softmax()` and `simd_log_softmax()`.
 * **Floating-point extras:** `simd_ilogb()`, `simd_scaleb()`,
   `simd_nextafter()`, `simd_next_up()`, `simd_next_down()`,
@@ -112,7 +122,9 @@ First release.
   `simd_asin()`, `simd_atan()`, `simd_sinh()`, `simd_tanh()`,
   `simd_asinh()`, `simd_atanh()`, `simd_expm1()` and `simd_log1p()` return
   the smallest subnormal numbers themselves, sign included, in both
-  accuracy modes (some gave zero). A function called from a warning handler
+  accuracy modes (some gave zero); the complex `simd_tan()` and
+  `simd_tanh()` of numbers with such a part keep its sign in the result
+  (SVE gave a zero of the other sign). A function called from a warning handler
   in the middle of another rsimd call no longer changes that call's
   implementation or `simd_vec` result.
 * Results follow base R's types, warnings and missing-value rules; `NA` and

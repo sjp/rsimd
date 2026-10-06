@@ -12,6 +12,22 @@ static void bad_type(rsimd_etype type) {
   Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[type]);
 }
 
+static int is_numeric(rsimd_etype t) {
+  return t == RSIMD_F64 || t == RSIMD_I32 || t == RSIMD_LGL;
+}
+
+/* Complex numbers per block of Mod values (8 KiB of doubles on the
+   stack). */
+#define RSIMD_MOD_BLOCK 1024
+
+/* RSIMD_MATH_FAST for accuracy code 1 (option rsimd.math_accuracy =
+   "fast"), 0 for 0. */
+static int accuracy_bit(SEXP accuracy) {
+  int a = rsimd_arg_int1(accuracy, "accuracy");
+  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
+  return a ? RSIMD_MATH_FAST : 0;
+}
+
 /* sum(x, na.rm): double for double x; integer for integer and logical x,
    or double when the total does not fit in an integer; integer64 for
    integer64 x, exact, or NA with bit64's warning when the total does not
@@ -78,6 +94,47 @@ SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return rsimd_exit(simd_prod_impl(x, na_rm, na_check, precision));
 }
 
+/* prod(x + y) (op 0) or prod(x - y) (op 1) without the vector of sums,
+   with the length-1 broadcast rule: double for double, integer and logical
+   operands, whose sums are computed in double (so integer sums do not
+   overflow), and complex when both are complex (the R side converts the
+   other), as simd_prod of the sums. A pair whose sum is NaN is missing
+   (removed under na.rm), so the result is prod(x + y, na.rm) of those
+   double sums. */
+static SEXP simd_prod2_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_reduce_result r;
+  rsimd_opts o;
+  rsimd_bin b;
+  int ew = rsimd_arg_int1(op, "op") ? RSIMD_EW_SUB : RSIMD_EW_ADD, flags;
+
+  rsimd_bin_init(&b, x, y);
+  rsimd_opts_init(&o, na_rm, na_check, precision, b.x.no_na_hint && b.y.no_na_hint);
+  if (b.x.type == RSIMD_C128 && b.y.type == RSIMD_C128) return rsimd_c128_prod2(ew, &b, &o);
+  if (!is_numeric(b.x.type)) bad_type(b.x.type);
+  if (!is_numeric(b.y.type)) bad_type(b.y.type);
+  flags = (b.x_scalar ? RSIMD_EW_SCALAR(0) : 0) | (b.y_scalar ? RSIMD_EW_SCALAR(1) : 0) |
+          (b.x.type != RSIMD_F64 ? RSIMD_EW_I32(0) : 0) |
+          (b.y.type != RSIMD_F64 ? RSIMD_EW_I32(1) : 0);
+  rsimd_reduce_result_init(&r, RSIMD_RED_PROD);
+#define RSIMD_PROD2_LOOP_(TX, TY)                                                        \
+  RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off,                                    \
+                        { rsimd_active->prod2_f64(ew, px, py, len, flags, &r, &o); })
+  if (b.x.type == RSIMD_F64) {
+    if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(double, double);
+    else RSIMD_PROD2_LOOP_(double, int);
+  } else {
+    if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(int, double);
+    else RSIMD_PROD2_LOOP_(int, int);
+  }
+#undef RSIMD_PROD2_LOOP_
+  return rsimd_reduce_finish(RSIMD_RED_PROD, RSIMD_F64, b.n, &r, &o);
+}
+
+SEXP C_simd_prod2(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
+  rsimd_entry();
+  return rsimd_exit(simd_prod2_impl(x, y, op, na_rm, na_check, precision));
+}
+
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
    with r->count > 0 elements left): the exact integer sum divided in long
    double, or the double sum divided by the count, refined in pairwise and
@@ -138,16 +195,34 @@ SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return rsimd_exit(simd_mean_impl(x, na_rm, na_check, precision));
 }
 
-/* min (op 0), max (op 1) or range (op 2) of x: both extrema come from one
-   pass. Integer and logical results are integer, except for empty input
-   (after na.rm), which gives Inf and -Inf with base R's warnings.
-   integer64 results are integer64; empty input gives +INT64_MAX and
-   -INT64_MAX with bit64's warnings (one for range). */
-static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
+/* Folds Mod(x) of a complex input into the min/max result r: Mod of each
+   block (math1_c128, as simd_abs computes it, in fast mode with `fast`)
+   into a buffer that the double kernel reads. */
+static void minmax_mod(const rsimd_in *in, int fast, rsimd_reduce_result *r, const rsimd_opts *o) {
+  double buf[RSIMD_MOD_BLOCK];
+  RSIMD_FOREACH_CHUNK(in, Rcomplex, px, len, off, {
+    R_xlen_t i;
+    for (i = 0; i < len; i += RSIMD_MOD_BLOCK) {
+      R_xlen_t l = len - i < RSIMD_MOD_BLOCK ? len - i : RSIMD_MOD_BLOCK;
+      rsimd_active->math1_c128(RSIMD_CMATH_MOD | fast, px + i, l, buf);
+      rsimd_active->minmax_f64(buf, l, 0, r, o);
+    }
+  });
+}
+
+/* min (op 0), max (op 1) or range (op 2) of x, or with absval of abs(x)
+   (Mod(x) for complex x, a double result, in the accuracy mode
+   `accuracy`): both extrema come from one pass. Integer and logical
+   results are integer, except for empty input (after na.rm), which gives
+   Inf and -Inf with base R's warnings. integer64 results are integer64;
+   empty input gives +INT64_MAX and -INT64_MAX with bit64's warnings (one
+   for range). */
+static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval,
+                             SEXP accuracy) {
   rsimd_reduce_result r, rmax;
   rsimd_opts o;
   rsimd_in in;
-  int which = rsimd_arg_int1(op, "op");
+  int which = rsimd_arg_int1(op, "op"), ab = rsimd_arg_lgl1(absval, "absval");
   SEXP lo, hi, out;
 
   rsimd_in_init(&in, x, "x");
@@ -155,15 +230,21 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   rsimd_reduce_result_init(&r, RSIMD_RED_MIN);
   switch (in.type) {
   case RSIMD_F64:
-    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->minmax_f64(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
+                        { rsimd_active->minmax_f64(px, len, ab, &r, &o); });
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->minmax_i32(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->minmax_i32(px, len, ab, &r, &o); });
     break;
   case RSIMD_I64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
-                        { rsimd_active->minmax_i64((const int64_t *) px, len, &r, &o); });
+                        { rsimd_active->minmax_i64((const int64_t *) px, len, ab, &r, &o); });
+    break;
+  case RSIMD_C128:
+    if (!ab) bad_type(in.type);
+    minmax_mod(&in, accuracy_bit(accuracy), &r, &o);
+    in.type = RSIMD_F64;
     break;
   default: bad_type(in.type);
   }
@@ -198,20 +279,47 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   return out;
 }
 
-SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
+SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_exit(simd_minmax_impl(x, op, na_rm, na_check));
+  return rsimd_exit(simd_minmax_impl(x, op, na_rm, na_check, absval, accuracy));
 }
 
-/* which.min (max = FALSE) or which.max (max = TRUE): missing values are
-   ignored. The extremum comes from the min/max kernels, then the first
-   element equal to it is looked up (so 0 and -0 tie, as in base R). Raw
-   vectors use a one-pass kernel. */
-static SEXP simd_which_impl(SEXP x, SEXP max) {
+/* which.min (dir = 0) or which.max (dir = 1) of Mod(x) for complex x, into
+   r->idx: Mod of each block into a buffer, its extremum from the double
+   kernel, and the block's first element equal to it when it beats the
+   extremum of the earlier blocks (which win ties). */
+static void which_mod(const rsimd_in *in, int dir, int fast, rsimd_reduce_result *r,
+                      const rsimd_opts *o) {
+  double buf[RSIMD_MOD_BLOCK], best = 0;
+  RSIMD_FOREACH_CHUNK(in, Rcomplex, px, len, off, {
+    R_xlen_t i;
+    for (i = 0; i < len; i += RSIMD_MOD_BLOCK) {
+      R_xlen_t l = len - i < RSIMD_MOD_BLOCK ? len - i : RSIMD_MOD_BLOCK;
+      rsimd_reduce_result rb;
+      double v;
+      rsimd_active->math1_c128(RSIMD_CMATH_MOD | fast, px + i, l, buf);
+      rsimd_reduce_result_init(&rb, RSIMD_RED_MIN);
+      rsimd_active->minmax_f64(buf, l, 0, &rb, o);
+      if (rb.count == 0) continue;
+      v = dir ? rb.f64_hi : rb.f64;
+      if (r->idx < 0 || (dir ? v > best : v < best)) {
+        best = v;
+        r->idx = off + i + rsimd_active->find_f64(buf, l, 0, v);
+      }
+    }
+  });
+}
+
+/* which.min (max = FALSE) or which.max (max = TRUE), or with absval of
+   abs(x) (Mod(x) for complex x, in the accuracy mode `accuracy`): missing
+   values are ignored. The extremum comes from the min/max kernels, then
+   the first element equal to it is looked up (so 0 and -0 tie, as in base
+   R). Raw vectors use a one-pass kernel. */
+static SEXP simd_which_impl(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
-  int dir = rsimd_arg_lgl1(max, "max");
+  int dir = rsimd_arg_lgl1(max, "max"), ab = rsimd_arg_lgl1(absval, "absval");
   int op = dir ? RSIMD_RED_WHICH_MAX : RSIMD_RED_WHICH_MIN;
 
   rsimd_in_init(&in, x, "x");
@@ -221,11 +329,12 @@ static SEXP simd_which_impl(SEXP x, SEXP max) {
   switch (in.type) {
   case RSIMD_F64: {
     double v;
-    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->minmax_f64(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
+                        { rsimd_active->minmax_f64(px, len, ab, &r, &o); });
     if (r.count == 0) break;
     v = dir ? r.f64_hi : r.f64;
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
-      R_xlen_t k = rsimd_active->find_f64(px, len, v);
+      R_xlen_t k = rsimd_active->find_f64(px, len, ab, v);
       if (k >= 0) {
         r.idx = off + k;
         break;
@@ -236,11 +345,11 @@ static SEXP simd_which_impl(SEXP x, SEXP max) {
   case RSIMD_I32:
   case RSIMD_LGL: {
     int v;
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->minmax_i32(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->minmax_i32(px, len, ab, &r, &o); });
     if (r.count == 0) break;
     v = (int) (dir ? r.i64_hi : r.i64);
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
-      R_xlen_t k = rsimd_active->find_i32(px, len, v);
+      R_xlen_t k = rsimd_active->find_i32(px, len, ab, v);
       if (k >= 0) {
         r.idx = off + k;
         break;
@@ -251,11 +360,11 @@ static SEXP simd_which_impl(SEXP x, SEXP max) {
   case RSIMD_I64: {
     int64_t v;
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
-                        { rsimd_active->minmax_i64((const int64_t *) px, len, &r, &o); });
+                        { rsimd_active->minmax_i64((const int64_t *) px, len, ab, &r, &o); });
     if (r.count == 0) break;
     v = dir ? r.i64_hi : r.i64;
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
-      R_xlen_t k = rsimd_active->find_i64((const int64_t *) px, len, v);
+      R_xlen_t k = rsimd_active->find_i64((const int64_t *) px, len, ab, v);
       if (k >= 0) {
         r.idx = off + k;
         break;
@@ -264,17 +373,23 @@ static SEXP simd_which_impl(SEXP x, SEXP max) {
     break;
   }
   case RSIMD_U8:
+    if (ab) bad_type(in.type);
     RSIMD_FOREACH_CHUNK(&in, Rbyte, px, len, off,
                         { rsimd_active->which_u8(px, len, off, dir, &r); });
+    break;
+  case RSIMD_C128:
+    if (!ab) bad_type(in.type);
+    which_mod(&in, dir, accuracy_bit(accuracy), &r, &o);
+    in.type = RSIMD_F64;
     break;
   default: bad_type(in.type);
   }
   return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
 }
 
-SEXP C_simd_which(SEXP x, SEXP max) {
+SEXP C_simd_which(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_exit(simd_which_impl(x, max));
+  return rsimd_exit(simd_which_impl(x, max, absval, accuracy));
 }
 
 /* any (all = FALSE) or all (all = TRUE) with three-valued logic. Double and
@@ -369,6 +484,33 @@ static void na_scan(rsimd_in *in, int mode, void *out, rsimd_reduce_result *r) {
   }
 }
 
+/* The 1-based indices of the `count` elements that the missing-value
+   kernels find in mode `flag` (0, or RSIMD_NAMODE_TRUE): integer, or
+   double when one of them exceeds INT_MAX. They are written as doubles
+   for a long vector, and converted to integer if the last fits after
+   all. */
+static SEXP which_indices(rsimd_in *in, int flag, R_xlen_t count) {
+  rsimd_reduce_result r;
+  rsimd_etype t = in->n > INT_MAX && count > 0 ? RSIMD_F64 : RSIMD_I32;
+  R_xlen_t i;
+  SEXP out = PROTECT(rsimd_alloc_like(t, count));
+  rsimd_reduce_result_init(&r, RSIMD_RED_COUNT_NA);
+  if (count > 0) {
+    na_scan(in, (t == RSIMD_F64 ? RSIMD_NAMODE_WHICH_F64 : RSIMD_NAMODE_WHICH_I32) | flag,
+            rsimd_out_ptr(out), &r);
+  }
+  if (t == RSIMD_F64 && ((const double *) rsimd_out_ptr(out))[count - 1] <= INT_MAX) {
+    const double *src = (const double *) rsimd_out_ptr(out);
+    SEXP small = PROTECT(rsimd_alloc_like(RSIMD_I32, count));
+    int *dst = (int *) rsimd_out_ptr(small);
+    for (i = 0; i < count; i++) dst[i] = (int) src[i];
+    UNPROTECT(2);
+    return small;
+  }
+  UNPROTECT(1);
+  return out;
+}
+
 /* any_na (mode 0, logical), count_na (mode 1, double) or which_na (mode 2,
    the 1-based indices of the missing elements: integer, or double when one
    of them exceeds INT_MAX). NaN counts as missing, and so does an integer64
@@ -378,7 +520,6 @@ static SEXP simd_na_impl(SEXP x, SEXP mode) {
   rsimd_opts o;
   rsimd_in in;
   int m = rsimd_arg_int1(mode, "mode");
-  SEXP out;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, in.no_na_hint);
@@ -386,28 +527,7 @@ static SEXP simd_na_impl(SEXP x, SEXP mode) {
   if (!in.no_na_hint) na_scan(&in, m == 0 ? RSIMD_NAMODE_ANY : RSIMD_NAMODE_COUNT, NULL, &r);
   if (m == 0) return rsimd_reduce_finish(RSIMD_RED_ANY_NA, in.type, in.n, &r, &o);
   if (m == 1) return rsimd_reduce_finish(RSIMD_RED_COUNT_NA, in.type, in.n, &r, &o);
-  /* which_na: count, then write the indices; doubles for a long vector,
-     converted to integer if the last index fits after all. */
-  {
-    R_xlen_t count = (R_xlen_t) r.i64, i;
-    rsimd_etype t = in.n > INT_MAX && count > 0 ? RSIMD_F64 : RSIMD_I32;
-    out = PROTECT(rsimd_alloc_like(t, count));
-    if (count > 0) {
-      r.i64 = 0;
-      na_scan(&in, t == RSIMD_F64 ? RSIMD_NAMODE_WHICH_F64 : RSIMD_NAMODE_WHICH_I32,
-              rsimd_out_ptr(out), &r);
-    }
-    if (t == RSIMD_F64 && ((const double *) rsimd_out_ptr(out))[count - 1] <= INT_MAX) {
-      const double *src = (const double *) rsimd_out_ptr(out);
-      SEXP small = PROTECT(rsimd_alloc_like(RSIMD_I32, count));
-      int *dst = (int *) rsimd_out_ptr(small);
-      for (i = 0; i < count; i++) dst[i] = (int) src[i];
-      UNPROTECT(2);
-      return small;
-    }
-    UNPROTECT(1);
-  }
-  return out;
+  return which_indices(&in, 0, (R_xlen_t) r.i64);
 }
 
 SEXP C_simd_na(SEXP x, SEXP mode) {
@@ -415,11 +535,36 @@ SEXP C_simd_na(SEXP x, SEXP mode) {
   return rsimd_exit(simd_na_impl(x, mode));
 }
 
-/* ---- Sums of squares, norms, distances, variance -------------------------- */
+/* sum(x) (count, mode 0) or which(x) (mode 1) of a logical x: the number
+   of TRUE elements, integer or double beyond INT_MAX, and NA_integer_ when
+   an element is NA and na.rm is FALSE; or their 1-based indices, NA
+   ignored, as which_na() gives indices. An input known to be NA-free is
+   not scanned for NA. */
+static SEXP simd_true_impl(SEXP x, SEXP mode, SEXP na_rm) {
+  rsimd_reduce_result r;
+  rsimd_in in;
+  int m = rsimd_arg_int1(mode, "mode"), narm = rsimd_arg_lgl1(na_rm, "na.rm");
+  R_xlen_t count;
 
-static int is_numeric(rsimd_etype t) {
-  return t == RSIMD_F64 || t == RSIMD_I32 || t == RSIMD_LGL;
+  rsimd_in_init(&in, x, "x");
+  if (in.type != RSIMD_LGL) bad_type(in.type);
+  rsimd_reduce_result_init(&r, RSIMD_RED_COUNT_NA);
+  if (m == 0 && !narm && !in.no_na_hint) {
+    na_scan(&in, RSIMD_NAMODE_ANY, NULL, &r);
+    if (r.saw_na) return Rf_ScalarInteger(NA_INTEGER);
+  }
+  na_scan(&in, RSIMD_NAMODE_COUNT | RSIMD_NAMODE_TRUE, NULL, &r);
+  count = (R_xlen_t) r.i64;
+  if (m == 1) return which_indices(&in, RSIMD_NAMODE_TRUE, count);
+  return count > INT_MAX ? Rf_ScalarReal((double) count) : Rf_ScalarInteger((int) count);
 }
+
+SEXP C_simd_true(SEXP x, SEXP mode, SEXP na_rm) {
+  rsimd_entry();
+  return rsimd_exit(simd_true_impl(x, mode, na_rm));
+}
+
+/* ---- Sums of squares, norms, distances, variance -------------------------- */
 
 /* sum_sq (op 0), norm (op 1) or sum_abs (op 2) of x. sum_abs is a sum of
    |x| with simd_sum's result types (integer for integer and logical x,

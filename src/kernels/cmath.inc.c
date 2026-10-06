@@ -315,11 +315,14 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_trig_(const int op, const int fast, rsim
 
 /* tanh(x + iy) by Kahan's formula: with t = tan y, s = sinh x, b = 1 + t^2
    and d = 1 + b s^2, (b sqrt(1 + s^2) s + i t) / d. tan(z) is -i tanh(iz).
-   |x| > 20 (the hyperbolic part) is left out. */
+   |x| > 20 (the hyperbolic part) is left out. Below 2^-1000 t and s are y
+   and x themselves, as SLEEF loses the sign of the smallest subnormals on
+   some tiers. */
 RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_tanh_(const int tan, const int fast, rsimd_vf64 x,
                                               rsimd_vf64 y, rsimd_vf64 *re, rsimd_vf64 *im) {
   const rsimd_vf64 h = tan ? y : x, a = tan ? x : y;
-  const rsimd_vf64 t = RSIMD_CM_F1(tan, a), s = RSIMD_CM_F1(sinh, h);
+  const rsimd_vf64 t = rsimd_math_tiny(RSIMD_CM_F1(tan, a), a);
+  const rsimd_vf64 s = rsimd_math_tiny(RSIMD_CM_F1(sinh, h), h);
   const rsimd_vf64 one = RSIMD_CM_V(1.0), ss = rsimd_vf64_mul(s, s);
   const rsimd_vf64 b = rsimd_vf64_fma(t, t, one), d = rsimd_vf64_fma(b, ss, one);
   const rsimd_vf64 p = rsimd_vf64_div(rsimd_vf64_mul(rsimd_vf64_mul(b, rsimd_vf64_sqrt(rsimd_vf64_add(one, ss))), s), d);

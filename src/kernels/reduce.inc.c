@@ -84,15 +84,41 @@ void RSIMD_KERNEL(prod_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, co
   r->count += n - removed;
 }
 
-void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(prod2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                             rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(prod2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                             rsimd_reduce_result *r, const rsimd_opts *o) {
+  int check = o->na_check || o->na_rm;
+  int xi = (flags & RSIMD_EW_I32(0)) != 0, yi = (flags & RSIMD_EW_I32(1)) != 0;
+  R_xlen_t xs = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, ys = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
+  double p = 1.0;
+  R_xlen_t i, removed = 0;
+  for (i = 0; i < n; i++) {
+    double a = rsimd_elt_f64(x, xi, i * xs), b = rsimd_elt_f64(y, yi, i * ys);
+    double v = op == RSIMD_EW_SUB ? a - b : a + b;
+    if (check && isnan(v)) {
+      r->saw_nan = 1;
+      if (rsimd_is_na_f64(a) || rsimd_is_na_f64(b)) r->saw_na = 1;
+      if (o->na_rm) {
+        removed++;
+        continue;
+      }
+    }
+    p *= v;
+  }
+  r->f64 *= p;
+  r->count += n - removed;
+}
+
+void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o);
-void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o) {
   int check = o->na_check || o->na_rm;
   double lo = r->f64, hi = r->f64_hi;
   R_xlen_t i, missing = 0;
   for (i = 0; i < n; i++) {
-    double v = x[i];
+    double v = absval ? fabs(x[i]) : x[i];
     if (isnan(v)) {
       if (check) {
         missing++;
@@ -109,41 +135,43 @@ void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *
   r->count += n - missing;
 }
 
-void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o);
-void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o) {
   int check = o->na_check || o->na_rm;
   int64_t lo = r->i64, hi = r->i64_hi;
   R_xlen_t i, missing = 0;
   for (i = 0; i < n; i++) {
-    if (check && x[i] == RSIMD_NA_I32) {
+    /* |NA| wraps to NA. */
+    int32_t v = absval ? rsimd_abs_i32(x[i]) : x[i];
+    if (check && v == RSIMD_NA_I32) {
       missing++;
       r->saw_na = 1;
       continue;
     }
-    if (x[i] < lo) lo = x[i];
-    if (x[i] > hi) hi = x[i];
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
   r->i64 = lo;
   r->i64_hi = hi;
   r->count += n - missing;
 }
 
-R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, double v);
-R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, double v) {
+R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, int absval, double v);
+R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, int absval, double v) {
   R_xlen_t i;
   for (i = 0; i < n; i++) {
-    if (x[i] == v) return i;
+    if ((absval ? fabs(x[i]) : x[i]) == v) return i;
   }
   return -1;
 }
 
-R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int v);
-R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int v) {
+R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int absval, int v);
+R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int absval, int v) {
   R_xlen_t i;
   for (i = 0; i < n; i++) {
-    if (x[i] == v) return i;
+    if ((absval ? rsimd_abs_i32(x[i]) : x[i]) == v) return i;
   }
   return -1;
 }
@@ -222,9 +250,29 @@ void RSIMD_KERNEL(na_i32)(const int *x, R_xlen_t n, int mode, R_xlen_t off, void
                           rsimd_reduce_result *r);
 void RSIMD_KERNEL(na_i32)(const int *x, R_xlen_t n, int mode, R_xlen_t off, void *out,
                           rsimd_reduce_result *r) {
-  R_xlen_t i;
+  const int32_t v = (mode & RSIMD_NAMODE_TRUE) ? 1 : RSIMD_NA_I32;
+  R_xlen_t i, j, k, buf[64];
+  mode &= ~RSIMD_NAMODE_TRUE;
+  if (v == 1 && mode != RSIMD_NAMODE_COUNT) {
+    /* TRUE is common: gather each block's indices without a branch per
+       element, as the vector tiers do. */
+    for (i = 0; i < n; i += 64) {
+      R_xlen_t len = n - i < 64 ? n - i : 64;
+      for (j = 0, k = 0; j < len; j++) {
+        buf[k] = off + i + j;
+        k += x[i + j] == 1;
+      }
+      for (j = 0; j < k; j++) RSIMD_PUT_INDEX(mode, out, r, buf[j]);
+    }
+    return;
+  }
+  if (mode == RSIMD_NAMODE_COUNT) {
+    for (i = 0, k = 0; i < n; i++) k += x[i] == v;
+    r->i64 += k;
+    return;
+  }
   for (i = 0; i < n; i++) {
-    if (x[i] != RSIMD_NA_I32) continue;
+    if (x[i] != v) continue;
     if (mode == RSIMD_NAMODE_ANY) {
       r->saw_na = 1;
       return;
@@ -247,55 +295,55 @@ void RSIMD_KERNEL(sum_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, con
 
 /* ---- Integer and logical ---- */
 
-/* Loop iterations per block of count_na_i32_(): a 32-bit lane count
+/* Loop iterations per block of count_eq_i32_(): a 32-bit lane count
    gains at most one per iteration, so it stays below INT32_MAX. The
    vector layer test sets a small value to cover the flushes. */
 #ifndef RSIMD_COUNT_BLOCK
 #define RSIMD_COUNT_BLOCK ((R_xlen_t) 1 << 24)
 #endif
 
-/* The number of NA elements among the n, counted in the lanes of four
-   accumulators (a mask count per vector is a slow horizontal step) and
-   added up once per block. */
-RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_na_i32_)(const int *x, R_xlen_t n) {
+/* The number of elements equal to v (NA, or TRUE) among the n, counted
+   in the lanes of four accumulators (a mask count per vector is a slow
+   horizontal step) and added up once per block. */
+RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_eq_i32_)(const int *x, R_xlen_t n, int32_t v) {
   const ptrdiff_t W = RSIMD_LANES_32;
-  const rsimd_vi32 zero = rsimd_vi32_zero();
+  const rsimd_vi32 zero = rsimd_vi32_zero(), vv = rsimd_vi32_set1(v);
   R_xlen_t i = 0, k = 0;
   while (i + 4 * W <= n) {
     R_xlen_t end = (n - i) / (4 * W) > RSIMD_COUNT_BLOCK ? i + RSIMD_COUNT_BLOCK * 4 * W : n;
     rsimd_vi32 c0 = zero, c1 = zero, c2 = zero, c3 = zero;
     for (; i + 4 * W <= end; i += 4 * W) {
-      c0 = rsimd_vi32_inc(c0, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i)));
-      c1 = rsimd_vi32_inc(c1, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + W)));
-      c2 = rsimd_vi32_inc(c2, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + 2 * W)));
-      c3 = rsimd_vi32_inc(c3, rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + 3 * W)));
+      c0 = rsimd_vi32_inc(c0, rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i), vv));
+      c1 = rsimd_vi32_inc(c1, rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i + W), vv));
+      c2 = rsimd_vi32_inc(c2, rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i + 2 * W), vv));
+      c3 = rsimd_vi32_inc(c3, rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i + 3 * W), vv));
     }
     k += rsimd_vi32_reduce_add(rsimd_vi32_add(rsimd_vi32_add(c0, c1), rsimd_vi32_add(c2, c3)));
   }
-  for (; i + W <= n; i += W) k += rsimd_mi32_count(rsimd_vi32_is_na(rsimd_vi32_loadu(x + i)));
-  for (; i < n; i++) k += x[i] == RSIMD_NA_I32;
+  for (; i + W <= n; i += W) k += rsimd_mi32_count(rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i), vv));
+  for (; i < n; i++) k += x[i] == v;
   return k;
 }
 
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_i32_)(const int *x, R_xlen_t n, const int check,
-                                                  rsimd_reduce_result *r) {
+                                                  const int absval, rsimd_reduce_result *r) {
   const ptrdiff_t W = RSIMD_LANES_32;
   const rsimd_vi32 big = rsimd_vi32_set1(INT32_MAX);
   rsimd_vi32 lo0 = big, lo1 = big, hi0 = rsimd_vi32_set1(INT32_MIN), hi1 = hi0;
   rsimd_mi32 mna = rsimd_mi32_none();
   R_xlen_t i = 0, missing = 0;
   /* NA (INT32_MIN) lanes cannot raise the maximum; for the minimum they
-     are replaced by INT32_MAX. */
-#define RSIMD_MINMAX_I32_(lo, hi, v)                                                     \
+     are replaced by INT32_MAX. The absolute value of NA wraps to NA. */
+#define RSIMD_MINMAX_I32_(lo, hi, v0)                                                    \
   do {                                                                                   \
-    rsimd_vi32 m_ = (v);                                                                 \
+    rsimd_vi32 v_ = absval ? rsimd_vi32_abs_wrap(v0) : (v0), m_ = v_;                    \
     if (check) {                                                                         \
-      rsimd_mi32 na_ = rsimd_vi32_is_na(v);                                              \
+      rsimd_mi32 na_ = rsimd_vi32_is_na(v_);                                             \
       mna = rsimd_mi32_or(mna, na_);                                                     \
       m_ = rsimd_vi32_blend(m_, big, na_);                                               \
     }                                                                                    \
     (lo) = rsimd_vi32_min((lo), m_);                                                     \
-    (hi) = rsimd_vi32_max((hi), (v));                                                    \
+    (hi) = rsimd_vi32_max((hi), v_);                                                     \
   } while (0)
   for (; i + 2 * W <= n; i += 2 * W) {
     rsimd_vi32 v0 = rsimd_vi32_loadu(x + i), v1 = rsimd_vi32_loadu(x + i + W);
@@ -310,7 +358,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_i32_)(const int *x, R_xlen_t n, con
 #undef RSIMD_MINMAX_I32_
   if (check && rsimd_mi32_any(mna)) {
     r->saw_na = 1;
-    missing = RSIMD_KERNEL(count_na_i32_)(x, n);
+    missing = RSIMD_KERNEL(count_eq_i32_)(x, n, RSIMD_NA_I32);
   }
   if (missing < n) {
     int32_t lo = rsimd_vi32_reduce_min(rsimd_vi32_min(lo0, lo1));
@@ -321,31 +369,45 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_i32_)(const int *x, R_xlen_t n, con
   r->count += n - missing;
 }
 
-void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o);
-void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_i32)(const int *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o) {
-  if (o->na_check || o->na_rm) RSIMD_KERNEL(minmax_i32_)(x, n, 1, r);
-  else RSIMD_KERNEL(minmax_i32_)(x, n, 0, r);
+  int check = o->na_check || o->na_rm;
+  if (absval) {
+    if (check) RSIMD_KERNEL(minmax_i32_)(x, n, 1, 1, r);
+    else RSIMD_KERNEL(minmax_i32_)(x, n, 0, 1, r);
+  } else {
+    if (check) RSIMD_KERNEL(minmax_i32_)(x, n, 1, 0, r);
+    else RSIMD_KERNEL(minmax_i32_)(x, n, 0, 0, r);
+  }
 }
 
-R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int v);
-R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int v) {
+RSIMD_ALWAYS_INLINE R_xlen_t RSIMD_KERNEL(find_i32_)(const int *x, R_xlen_t n, const int absval,
+                                                    int v) {
   const ptrdiff_t W = RSIMD_LANES_32;
   const rsimd_vi32 vv = rsimd_vi32_set1(v);
   R_xlen_t i = 0;
+#define RSIMD_FIND_I32_(j)                                                               \
+  rsimd_vi32_cmp_eq(absval ? rsimd_vi32_abs_wrap(rsimd_vi32_loadu(x + i + (j) * W))       \
+                           : rsimd_vi32_loadu(x + i + (j) * W),                          \
+                    vv)
   for (; i + 4 * W <= n; i += 4 * W) {
-    rsimd_mi32 m = rsimd_mi32_or(
-        rsimd_mi32_or(rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i), vv),
-                      rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i + W), vv)),
-        rsimd_mi32_or(rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i + 2 * W), vv),
-                      rsimd_vi32_cmp_eq(rsimd_vi32_loadu(x + i + 3 * W), vv)));
+    rsimd_mi32 m = rsimd_mi32_or(rsimd_mi32_or(RSIMD_FIND_I32_(0), RSIMD_FIND_I32_(1)),
+                                 rsimd_mi32_or(RSIMD_FIND_I32_(2), RSIMD_FIND_I32_(3)));
     if (rsimd_mi32_any(m)) break;
   }
+#undef RSIMD_FIND_I32_
   for (; i < n; i++) {
-    if (x[i] == v) return i;
+    if ((absval ? rsimd_abs_i32(x[i]) : x[i]) == v) return i;
   }
   return -1;
+}
+
+R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int absval, int v);
+R_xlen_t RSIMD_KERNEL(find_i32)(const int *x, R_xlen_t n, int absval, int v) {
+  if (absval) return RSIMD_KERNEL(find_i32_)(x, n, 1, v);
+  return RSIMD_KERNEL(find_i32_)(x, n, 0, v);
 }
 
 void RSIMD_KERNEL(anyall_i32)(const int *x, R_xlen_t n, int stop, rsimd_reduce_result *r,
@@ -396,7 +458,27 @@ void RSIMD_KERNEL(na_i32)(const int *x, R_xlen_t n, int mode, R_xlen_t off, void
                           rsimd_reduce_result *r) {
   const ptrdiff_t W = RSIMD_LANES_32;
   R_xlen_t i = 0, j;
-  if (mode == RSIMD_NAMODE_ANY) {
+  if (mode & RSIMD_NAMODE_TRUE) {
+    mode &= ~RSIMD_NAMODE_TRUE;
+    if (mode == RSIMD_NAMODE_COUNT) {
+      r->i64 += RSIMD_KERNEL(count_eq_i32_)(x, n, 1);
+      return;
+    }
+    /* TRUE is common, so the indices are gathered without a branch per
+       element: each block's candidates go to buf, the count advancing only
+       past the TRUE ones, and are then written out. */
+    {
+      R_xlen_t buf[64], k;
+      for (; i < n; i += 64) {
+        R_xlen_t len = n - i < 64 ? n - i : 64;
+        for (j = 0, k = 0; j < len; j++) {
+          buf[k] = off + i + j;
+          k += x[i + j] == 1;
+        }
+        for (j = 0; j < k; j++) RSIMD_PUT_INDEX(mode, out, r, buf[j]);
+      }
+    }
+  } else if (mode == RSIMD_NAMODE_ANY) {
     for (; i + 4 * W <= n; i += 4 * W) {
       rsimd_mi32 m = rsimd_mi32_or(rsimd_mi32_or(rsimd_vi32_is_na(rsimd_vi32_loadu(x + i)),
                                                  rsimd_vi32_is_na(rsimd_vi32_loadu(x + i + W))),
@@ -411,7 +493,7 @@ void RSIMD_KERNEL(na_i32)(const int *x, R_xlen_t n, int mode, R_xlen_t off, void
       }
     }
   } else if (mode == RSIMD_NAMODE_COUNT) {
-    r->i64 += RSIMD_KERNEL(count_na_i32_)(x, n);
+    r->i64 += RSIMD_KERNEL(count_eq_i32_)(x, n, RSIMD_NA_I32);
   } else {
     for (; i + W <= n; i += W) {
       if (!rsimd_mi32_any(rsimd_vi32_is_na(rsimd_vi32_loadu(x + i)))) continue;
@@ -528,7 +610,6 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_i32_)(const int *x, R_xlen_t n, const
   r->count += n - removed;
   r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(a0, a1));
 }
-#undef RSIMD_PROD_STEP_
 
 void RSIMD_KERNEL(prod_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o);
 void RSIMD_KERNEL(prod_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o) {
@@ -537,28 +618,110 @@ void RSIMD_KERNEL(prod_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, co
   else RSIMD_KERNEL(prod_i32_)(x, n, 0, 0, r);
 }
 
-/* The index of the first element equal to v, or -1. */
-RSIMD_INLINE R_xlen_t RSIMD_KERNEL(find_f64_)(const double *x, R_xlen_t n, double v) {
+/* Operand k of prod2 at i as doubles: its broadcast value bc, or the
+   doubles or int32 elements (NA becoming NA_real_) there. The operand
+   flags are tested per vector, as the branches always go the same way. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 RSIMD_KERNEL(prod2_ld_)(const void *p, int flags, int k,
+                                                      rsimd_vf64 bc, ptrdiff_t i) {
+  if (flags & RSIMD_EW_SCALAR(k)) return bc;
+  return rsimd_vf64_load_elt_(p, (flags & RSIMD_EW_I32(k)) != 0, i);
+}
+
+/* The product of x[i] + y[i] in four vector accumulators as prod_f64_,
+   y being negated (exactly) for x - y; the last n % W pairs are
+   multiplied in a scalar loop. A pair is missing when its sum is NaN;
+   saw_na then comes from the operands, as an NA operand makes its pair's
+   sum NaN. */
+RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod2_f64_)(int op, const void *x, const void *y,
+                                                 R_xlen_t n, int flags, const int check,
+                                                 const int narm, rsimd_reduce_result *r) {
+  const ptrdiff_t W = RSIMD_LANES_64;
+  const int xi = (flags & RSIMD_EW_I32(0)) != 0, yi = (flags & RSIMD_EW_I32(1)) != 0;
+  const R_xlen_t xs = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, ys = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0), sign = rsimd_vf64_set1(op == RSIMD_EW_SUB ? -0.0 : 0.0);
+  const rsimd_vf64 bx = rsimd_vf64_set1(rsimd_elt_f64(x, xi, 0));
+  const rsimd_vf64 by = rsimd_vf64_set1(rsimd_elt_f64(y, yi, 0));
+  rsimd_vf64 a0 = one, a1 = one, a2 = one, a3 = one;
+  rsimd_mf64 mnan = rsimd_mf64_none();
+  R_xlen_t i = 0, removed = 0;
+  double p = 1.0;
+  int tail_nan = 0;
+#define RSIMD_PROD2_LD_(j)                                                               \
+  rsimd_vf64_add(RSIMD_KERNEL(prod2_ld_)(x, flags, 0, bx, i + (j) * W),                  \
+                 rsimd_vf64_xor(RSIMD_KERNEL(prod2_ld_)(y, flags, 1, by, i + (j) * W), sign))
+  for (; i + 4 * W <= n; i += 4 * W) {
+    rsimd_vf64 v0 = RSIMD_PROD2_LD_(0), v1 = RSIMD_PROD2_LD_(1);
+    rsimd_vf64 v2 = RSIMD_PROD2_LD_(2), v3 = RSIMD_PROD2_LD_(3);
+    RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_is_nan(v0));
+    RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_is_nan(v1));
+    RSIMD_PROD_STEP_(a2, v2, rsimd_vf64_is_nan(v2));
+    RSIMD_PROD_STEP_(a3, v3, rsimd_vf64_is_nan(v3));
+  }
+  for (; i + W <= n; i += W) {
+    rsimd_vf64 v = RSIMD_PROD2_LD_(0);
+    RSIMD_PROD_STEP_(a0, v, rsimd_vf64_is_nan(v));
+  }
+#undef RSIMD_PROD2_LD_
+  for (; i < n; i++) {
+    double a = rsimd_elt_f64(x, xi, i * xs), b = rsimd_elt_f64(y, yi, i * ys);
+    double v = op == RSIMD_EW_SUB ? a - b : a + b;
+    if (check && isnan(v)) {
+      tail_nan = 1;
+      if (narm) {
+        removed++;
+        continue;
+      }
+    }
+    p *= v;
+  }
+  if (check && (tail_nan || rsimd_mf64_any(mnan))) {
+    r->saw_nan = 1;
+    if (rsimd_any_na_elt_(x, xi, xs ? n : 1) || rsimd_any_na_elt_(y, yi, ys ? n : 1)) {
+      r->saw_na = 1;
+    }
+  }
+  r->count += n - removed;
+  r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(rsimd_vf64_mul(a0, a1),
+                                                    rsimd_vf64_mul(a2, a3))) * p;
+}
+
+void RSIMD_KERNEL(prod2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                             rsimd_reduce_result *r, const rsimd_opts *o);
+void RSIMD_KERNEL(prod2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
+                             rsimd_reduce_result *r, const rsimd_opts *o) {
+  if (o->na_rm) RSIMD_KERNEL(prod2_f64_)(op, x, y, n, flags, 1, 1, r);
+  else if (o->na_check) RSIMD_KERNEL(prod2_f64_)(op, x, y, n, flags, 1, 0, r);
+  else RSIMD_KERNEL(prod2_f64_)(op, x, y, n, flags, 0, 0, r);
+}
+#undef RSIMD_PROD_STEP_
+
+/* The index of the first element equal to v (whose absolute value is,
+   with absval), or -1. */
+RSIMD_ALWAYS_INLINE R_xlen_t RSIMD_KERNEL(find_f64_)(const double *x, R_xlen_t n,
+                                                    const int absval, double v) {
   const ptrdiff_t W = RSIMD_LANES_64;
   const rsimd_vf64 vv = rsimd_vf64_set1(v);
   R_xlen_t i = 0;
+#define RSIMD_FIND_F64_(j)                                                               \
+  rsimd_vf64_cmp_eq(absval ? rsimd_vf64_abs(rsimd_vf64_loadu(x + i + (j) * W))           \
+                           : rsimd_vf64_loadu(x + i + (j) * W),                          \
+                    vv)
   for (; i + 4 * W <= n; i += 4 * W) {
-    rsimd_mf64 m = rsimd_mf64_or(
-        rsimd_mf64_or(rsimd_vf64_cmp_eq(rsimd_vf64_loadu(x + i), vv),
-                      rsimd_vf64_cmp_eq(rsimd_vf64_loadu(x + i + W), vv)),
-        rsimd_mf64_or(rsimd_vf64_cmp_eq(rsimd_vf64_loadu(x + i + 2 * W), vv),
-                      rsimd_vf64_cmp_eq(rsimd_vf64_loadu(x + i + 3 * W), vv)));
+    rsimd_mf64 m = rsimd_mf64_or(rsimd_mf64_or(RSIMD_FIND_F64_(0), RSIMD_FIND_F64_(1)),
+                                 rsimd_mf64_or(RSIMD_FIND_F64_(2), RSIMD_FIND_F64_(3)));
     if (rsimd_mf64_any(m)) break;
   }
+#undef RSIMD_FIND_F64_
   for (; i < n; i++) {
-    if (x[i] == v) return i;
+    if ((absval ? fabs(x[i]) : x[i]) == v) return i;
   }
   return -1;
 }
 
-R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, double v);
-R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, double v) {
-  return RSIMD_KERNEL(find_f64_)(x, n, v);
+R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, int absval, double v);
+R_xlen_t RSIMD_KERNEL(find_f64)(const double *x, R_xlen_t n, int absval, double v) {
+  if (absval) return RSIMD_KERNEL(find_f64_)(x, n, 1, v);
+  return RSIMD_KERNEL(find_f64_)(x, n, 0, v);
 }
 
 /* The number of NaN (NA included) elements among the n, counted in the
@@ -583,7 +746,7 @@ RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_nan_f64_)(const double *x, R_xlen_t n) 
 }
 
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, const int check,
-                                                  rsimd_reduce_result *r) {
+                                                  const int absval, rsimd_reduce_result *r) {
   const ptrdiff_t W = RSIMD_LANES_64;
   rsimd_vf64 lo0 = rsimd_vf64_set1(HUGE_VAL), lo1 = lo0;
   rsimd_vf64 hi0 = rsimd_vf64_set1(-HUGE_VAL), hi1 = hi0;
@@ -591,11 +754,12 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
   R_xlen_t i = 0, missing = 0;
   double lo, hi;
   /* min(v, lo) is v < lo ? v : lo: strict, and lo when v is NaN. */
-#define RSIMD_MINMAX_F64_(lo, hi, v)                                                     \
+#define RSIMD_MINMAX_F64_(lo, hi, v0)                                                    \
   do {                                                                                   \
-    (lo) = rsimd_vf64_min((v), (lo));                                                    \
-    (hi) = rsimd_vf64_max((v), (hi));                                                    \
-    if (check) mnan = rsimd_mf64_or(mnan, rsimd_vf64_is_nan(v));                         \
+    rsimd_vf64 v_ = absval ? rsimd_vf64_abs(v0) : (v0);                                  \
+    (lo) = rsimd_vf64_min(v_, (lo));                                                     \
+    (hi) = rsimd_vf64_max(v_, (hi));                                                     \
+    if (check) mnan = rsimd_mf64_or(mnan, rsimd_vf64_is_nan(v_));                        \
   } while (0)
   for (; i + 2 * W <= n; i += 2 * W) {
     rsimd_vf64 v0 = rsimd_vf64_loadu(x + i), v1 = rsimd_vf64_loadu(x + i + W);
@@ -615,21 +779,28 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
   }
   r->count += n - missing;
   /* The accumulators hold no NaN, so the lane order of the reduction does
-     not matter, except for the sign of zero. */
+     not matter, except for the sign of zero (always +0 for absolute
+     values). */
   lo = rsimd_vf64_reduce_min(rsimd_vf64_min(lo1, lo0));
   hi = rsimd_vf64_reduce_max(rsimd_vf64_max(hi1, hi0));
-  if (lo == 0) lo = x[RSIMD_KERNEL(find_f64_)(x, n, 0.0)];
-  if (hi == 0) hi = x[RSIMD_KERNEL(find_f64_)(x, n, 0.0)];
+  if (lo == 0 && !absval) lo = x[RSIMD_KERNEL(find_f64_)(x, n, 0, 0.0)];
+  if (hi == 0 && !absval) hi = x[RSIMD_KERNEL(find_f64_)(x, n, 0, 0.0)];
   if (lo < r->f64) r->f64 = lo;
   if (hi > r->f64_hi) r->f64_hi = hi;
 }
 
-void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o);
-void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
+void RSIMD_KERNEL(minmax_f64)(const double *x, R_xlen_t n, int absval, rsimd_reduce_result *r,
                               const rsimd_opts *o) {
-  if (o->na_check || o->na_rm) RSIMD_KERNEL(minmax_f64_)(x, n, 1, r);
-  else RSIMD_KERNEL(minmax_f64_)(x, n, 0, r);
+  int check = o->na_check || o->na_rm;
+  if (absval) {
+    if (check) RSIMD_KERNEL(minmax_f64_)(x, n, 1, 1, r);
+    else RSIMD_KERNEL(minmax_f64_)(x, n, 0, 1, r);
+  } else {
+    if (check) RSIMD_KERNEL(minmax_f64_)(x, n, 1, 0, r);
+    else RSIMD_KERNEL(minmax_f64_)(x, n, 0, 0, r);
+  }
 }
 
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(anyall_f64_)(const double *x, R_xlen_t n, int stop,
@@ -707,6 +878,7 @@ void RSIMD_KERNEL(na_f64)(const double *x, R_xlen_t n, int mode, R_xlen_t off, v
 #define RSIMD_SKIP_sum_dev_f64 1
 #define RSIMD_SKIP_prod_f64 1
 #define RSIMD_SKIP_prod_i32 1
+#define RSIMD_SKIP_prod2_f64 1
 #define RSIMD_SKIP_minmax_f64 1
 #define RSIMD_SKIP_find_f64 1
 #define RSIMD_SKIP_anyall_f64 1

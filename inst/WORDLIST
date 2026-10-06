@@ -29,6 +29,7 @@ div
 double's
 DQ
 eq
+expm
 Fairgrieve
 fallbacks
 fma
@@ -86,6 +87,7 @@ shl
 shr
 simd
 SIMDe's
+sincospi
 sinh
 sinpi
 SLEEF's

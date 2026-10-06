@@ -41,6 +41,15 @@
 #define RSIMD_MATH_PI 3.141592653589793
 /* pi - RSIMD_MATH_PI, the low part of pi in double-double. */
 #define RSIMD_MATH_PI_LO 1.2246467991473532e-16
+/* log(2), log(10), 1 / log(2) and 1 / log(10) as double-doubles. */
+#define RSIMD_MATH_LN2 0x1.62e42fefa39efp-1
+#define RSIMD_MATH_LN2_LO 0x1.abc9e3b39803fp-56
+#define RSIMD_MATH_LN10 0x1.26bb1bbb55516p+1
+#define RSIMD_MATH_LN10_LO -0x1.f48ad494ea3e9p-53
+#define RSIMD_MATH_INV_LN2 0x1.71547652b82fep+0
+#define RSIMD_MATH_INV_LN2_LO 0x1.777d0ffda0d24p-56
+#define RSIMD_MATH_INV_LN10 0x1.bcb7b1526e50ep-2
+#define RSIMD_MATH_INV_LN10_LO 0x1.95355baaafad3p-57
 
 /* ---- scalar functions ----------------------------------------------------
    Compiled in every tier: the none kernels use them, the SIMD tiers use
@@ -188,6 +197,46 @@ static inline double rsimd_sigmoid_f64(double x) {
   return (x >= 0 ? 1.0 : e) / (1.0 + e);
 }
 
+/* C23's exp2m1(x) = 2^x - 1 (ten = 0) and exp10m1(x) = 10^x - 1 (ten =
+   1), which C99 lacks. For t = x log(b), split exactly into th + tl (th =
+   x c rounded, with c log(b) rounded, and tl its rounding error plus x
+   times the low part of log(b)), expm1(t) is e + tl (1 + e) to first order,
+   with e = expm1(th): accurate within expm1's error plus a rounding. Where
+   b^x - 1 is exact (whole x in [-53, 53] for 2^x, in [1, 15] for 10^x) it
+   is b^x - 1, from base R's b^x; above 54 (17) it is b^x itself, rounded,
+   and below -1100 (-330) it is -1. Below 2^-1000 in magnitude th is
+   correctly rounded, and keeps the sign of a zero. */
+static inline double rsimd_expm1_base_f64(double x, int ten) {
+  const double c = ten ? RSIMD_MATH_LN10 : RSIMD_MATH_LN2, cl = ten ? RSIMD_MATH_LN10_LO : RSIMD_MATH_LN2_LO;
+  const double b = ten ? 10.0 : 2.0;
+  double th, tl, e;
+  if (isnan(x)) return x;
+  if (x > (ten ? 17 : 54)) return rsimd_rpow_f64(b, x);
+  if (x < (ten ? -330 : -1100)) return -1.0;
+  if (x != 0 && x == trunc(x) && x <= (ten ? 15 : 53) && x >= (ten ? 1 : -53)) {
+    return rsimd_rpow_f64(b, x) - 1.0;
+  }
+  th = x * c;
+  if (fabs(x) < 0x1p-1000) return th;
+  tl = rsimd_fma(x, c, -th) + x * cl;
+  e = expm1(th);
+  return rsimd_fma(tl, 1.0 + e, e);
+}
+
+/* C23's log2p1(x) = log2(1 + x) (ten = 0) and log10p1(x) = log10(1 + x)
+   (ten = 1): log2(u) or log10(u) when u = 1 + x is exact (exact at the
+   powers of 2 or 10), otherwise log1p(x) / log(b) with the division a
+   multiplication by 1 / log(b) in double-double, within log1p's error plus
+   a rounding. Zeros are returned as they are. */
+static inline double rsimd_log1p_base_f64(double x, int ten) {
+  double u = 1.0 + x, l;
+  if (isnan(x) || x == 0) return x;
+  if (u - 1.0 == x) return ten ? log10(u) : log2(u);
+  l = log1p(x);
+  return ten ? rsimd_fma(l, RSIMD_MATH_INV_LN10, l * RSIMD_MATH_INV_LN10_LO)
+             : rsimd_fma(l, RSIMD_MATH_INV_LN2, l * RSIMD_MATH_INV_LN2_LO);
+}
+
 /* IEEE nextUp and nextDown (C23 nextup and nextdown, which C99 lacks). */
 static inline double rsimd_next_up_f64(double x) { return nextafter(x, INFINITY); }
 static inline double rsimd_next_down_f64(double x) { return nextafter(x, -INFINITY); }
@@ -300,6 +349,10 @@ static inline double rsimd_math1_f64(int op, double x, double p) {
   case RSIMD_MATH_ACOSH: return acosh(x);
   case RSIMD_MATH_ATANH: return atanh(x);
   case RSIMD_MATH_SIGMOID: return rsimd_sigmoid_f64(x);
+  case RSIMD_MATH_EXP2M1: return rsimd_expm1_base_f64(x, 0);
+  case RSIMD_MATH_EXP10M1: return rsimd_expm1_base_f64(x, 1);
+  case RSIMD_MATH_LOG2P1: return rsimd_log1p_base_f64(x, 0);
+  case RSIMD_MATH_LOG10P1: return rsimd_log1p_base_f64(x, 1);
   case RSIMD_MATH_NEXT_UP: return rsimd_next_up_f64(x);
   case RSIMD_MATH_NEXT_DOWN: return rsimd_next_down_f64(x);
   case RSIMD_MATH_RSQRT:
@@ -496,16 +549,15 @@ int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, doubl
                              double *c);
 int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, double *s,
                              double *c) {
-  int st = 0;
+  int st = 0, pi = (op & ~RSIMD_MATH_FAST) == RSIMD_MATH_SINPI;
   R_xlen_t i;
-  (void) op;
   for (i = 0; i < n; i++) {
     double a = rsimd_math_get(x, flags, 0, i);
     if (isnan(a)) {
       s[i] = c[i] = a;
     } else {
-      s[i] = sin(a);
-      c[i] = cos(a);
+      s[i] = pi ? rsimd_sinpi_f64(a) : sin(a);
+      c[i] = pi ? rsimd_cospi_f64(a) : cos(a);
       if (isnan(s[i]) || isnan(c[i])) st = RSIMD_EW_NAN_PRODUCED;
     }
   }
@@ -799,7 +851,51 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_rsqrt_approx(rsimd_vf64 a) {
   return r;
 }
 
-/* The math1_f64 ops without a fast variant (NEXT_UP .. RSQRT_APPROX):
+/* rsimd_expm1_base_f64() lane by lane, with SLEEF's expm1, exp2 and
+   exp10 (the 1-ULP ones, which are exact at whole numbers). */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_expm1_base(rsimd_vf64 a, const int ten) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0), c = rsimd_vf64_set1(ten ? RSIMD_MATH_LN10 : RSIMD_MATH_LN2);
+  rsimd_vf64 th = rsimd_vf64_mul(a, c), tl, e, r;
+  rsimd_mf64 m;
+  tl = rsimd_vf64_add(rsimd_vf64_fma(a, c, rsimd_vf64_neg(th)),
+                      rsimd_vf64_mul(a, rsimd_vf64_set1(ten ? RSIMD_MATH_LN10_LO : RSIMD_MATH_LN2_LO)));
+  e = rsimd_sleef_expm1(th);
+  r = rsimd_vf64_fma(tl, rsimd_vf64_add(one, e), e);
+  r = rsimd_vf64_blend(r, th, rsimd_vf64_cmp_lt(rsimd_vf64_abs(a), rsimd_vf64_set1(0x1p-1000)));
+  m = rsimd_vf64_cmp_gt(a, rsimd_vf64_set1(ten ? 17.0 : 54.0));
+  if (rsimd_mf64_any(m)) r = rsimd_vf64_blend(r, ten ? rsimd_sleef_exp10(a) : rsimd_sleef_exp2(a), m);
+  r = rsimd_vf64_blend(r, rsimd_vf64_neg(one), rsimd_vf64_cmp_lt(a, rsimd_vf64_set1(ten ? -330.0 : -1100.0)));
+  /* Whole numbers with b^x - 1 exact. */
+  m = rsimd_mf64_and(rsimd_mf64_and(rsimd_vf64_cmp_eq(a, rsimd_vf64_trunc(a)),
+                                    rsimd_vf64_cmp_ne(a, rsimd_vf64_zero())),
+                     rsimd_mf64_and(rsimd_vf64_cmp_le(a, rsimd_vf64_set1(ten ? 15.0 : 53.0)),
+                                    rsimd_vf64_cmp_ge(a, rsimd_vf64_set1(ten ? 1.0 : -53.0))));
+  if (rsimd_mf64_any(m)) {
+    r = rsimd_vf64_blend(r, rsimd_vf64_sub(ten ? rsimd_sleef_exp10(a) : rsimd_sleef_exp2(a), one), m);
+  }
+  return r;
+}
+
+/* rsimd_log1p_base_f64() lane by lane, with SLEEF's log1p, log2 and
+   log10 (exact at the powers of 2 and 10); the second is computed only
+   for vectors with a lane where 1 + x is exact. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_log1p_base(rsimd_vf64 a, const int ten) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0);
+  rsimd_vf64 u = rsimd_vf64_add(one, a), l, r;
+  rsimd_mf64 exact = rsimd_mf64_and(rsimd_vf64_cmp_eq(rsimd_vf64_sub(u, one), a),
+                                    rsimd_vf64_cmp_ne(a, rsimd_vf64_zero()));
+  if (rsimd_mf64_all(exact)) return ten ? rsimd_sleef_log10(u) : rsimd_sleef_log2(u);
+  l = rsimd_math_tiny(rsimd_sleef_log1p(a), a);
+  r = rsimd_vf64_fma(l, rsimd_vf64_set1(ten ? RSIMD_MATH_INV_LN10 : RSIMD_MATH_INV_LN2),
+                     rsimd_vf64_mul(l, rsimd_vf64_set1(ten ? RSIMD_MATH_INV_LN10_LO : RSIMD_MATH_INV_LN2_LO)));
+  if (rsimd_mf64_any(exact)) {
+    r = rsimd_vf64_blend(r, ten ? rsimd_sleef_log10(u) : rsimd_sleef_log2(u), exact);
+  }
+  return r;
+}
+
+/* The math1_f64 ops without a fast variant (EXP2M1 .. LOG10P1, which
+   SLEEF has no 3.5-ULP expm1 and log1p for, and NEXT_UP .. RSQRT_APPROX):
    one instantiation. */
 static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, double *out) {
   const void *y = NULL;
@@ -808,6 +904,14 @@ static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, doubl
   int st = 0;
   (void) y;
   switch (op) {
+  case RSIMD_MATH_EXP2M1: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_expm1_base(a, 0))); break;
+  case RSIMD_MATH_EXP10M1:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_expm1_base(a, 1)));
+    break;
+  case RSIMD_MATH_LOG2P1: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_log1p_base(a, 0))); break;
+  case RSIMD_MATH_LOG10P1:
+    RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_log1p_base(a, 1)));
+    break;
   case RSIMD_MATH_NEXT_UP: RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_next_up(a))); break;
   case RSIMD_MATH_NEXT_DOWN:
     RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_vf64_neg(rsimd_math_next_up(rsimd_vf64_neg(a)))));
@@ -841,17 +945,18 @@ static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, doubl
    RSIMD_NO_MATH_LIBM=1 empties the lists, to time SLEEF against libm. */
 #if (RSIMD_TIER_IS(neon) || RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)) && !defined(_WIN32) && \
   !defined(RSIMD_NO_MATH_LIBM)
-#define RSIMD_MATH1_LIBM_FAST (1u << RSIMD_MATH_ASINH | 1u << RSIMD_MATH_ACOSH)
+#define RSIMD_MATH_BIT(op) ((uint64_t) 1 << (op))
+#define RSIMD_MATH1_LIBM_FAST (RSIMD_MATH_BIT(RSIMD_MATH_ASINH) | RSIMD_MATH_BIT(RSIMD_MATH_ACOSH))
 #define RSIMD_MATH1_LIBM                                                         \
-  (RSIMD_MATH1_LIBM_FAST | 1u << RSIMD_MATH_LOG | 1u << RSIMD_MATH_LOG2 |        \
-   1u << RSIMD_MATH_LOGB | 1u << RSIMD_MATH_COSH)
-#define RSIMD_MATH2_LIBM (1u << RSIMD_MATH_POW)
+  (RSIMD_MATH1_LIBM_FAST | RSIMD_MATH_BIT(RSIMD_MATH_LOG) | RSIMD_MATH_BIT(RSIMD_MATH_LOG2) | \
+   RSIMD_MATH_BIT(RSIMD_MATH_LOGB) | RSIMD_MATH_BIT(RSIMD_MATH_COSH))
+#define RSIMD_MATH2_LIBM RSIMD_MATH_BIT(RSIMD_MATH_POW)
 #define RSIMD_MATH2_LIBM_FAST RSIMD_MATH2_LIBM
 #else
-#define RSIMD_MATH1_LIBM 0u
-#define RSIMD_MATH1_LIBM_FAST 0u
-#define RSIMD_MATH2_LIBM 0u
-#define RSIMD_MATH2_LIBM_FAST 0u
+#define RSIMD_MATH1_LIBM ((uint64_t) 0)
+#define RSIMD_MATH1_LIBM_FAST ((uint64_t) 0)
+#define RSIMD_MATH2_LIBM ((uint64_t) 0)
+#define RSIMD_MATH2_LIBM_FAST ((uint64_t) 0)
 #endif
 
 int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double p, double *out);
@@ -860,7 +965,7 @@ int RSIMD_KERNEL(math1_f64)(int op, const void *x, R_xlen_t n, int flags, double
         (op & ~RSIMD_MATH_FAST) & 1u) {
     return rsimd_math1_libm(op & ~RSIMD_MATH_FAST, x, n, flags, p, out);
   }
-  if ((op & ~RSIMD_MATH_FAST) >= RSIMD_MATH_NEXT_UP) {
+  if ((op & ~RSIMD_MATH_FAST) >= RSIMD_MATH_EXP2M1) {
     return rsimd_math1_extra(op & ~RSIMD_MATH_FAST, x, n, flags, out);
   }
   if (op & RSIMD_MATH_FAST) return rsimd_math1_run(op & ~RSIMD_MATH_FAST, x, n, flags, p, out, 1);
@@ -1035,17 +1140,42 @@ int RSIMD_KERNEL(math2_f64)(int op, const void *x, const void *y, R_xlen_t n, in
   return rsimd_math2_run(op, x, y, n, flags, out, 0);
 }
 
-/* sincos_f64 with `fast` constant. */
+/* rsimd_math_sinpi() and rsimd_math_cospi() of a, with one call of
+   SLEEF's sincospi on the reduction of sinpi: the cosine of r is that of
+   |r|, which is cospi's reduction, and SLEEF's sincospi computes the same
+   as its sinpi and cospi, bit for bit. */
+RSIMD_ALWAYS_INLINE void rsimd_math_sincospi(rsimd_vf64 x, rsimd_vf64 *vs, rsimd_vf64 *vc,
+                                             int fast) {
+  const rsimd_vf64 one = rsimd_vf64_set1(1.0), two = rsimd_vf64_set1(2.0);
+  rsimd_vf64 r = rsimd_vf64_sub(x, rsimd_vf64_mul(two, rsimd_vf64_trunc(rsimd_vf64_mul(x, rsimd_vf64_set1(0.5)))));
+  rsimd_vf64 s, c;
+  r = rsimd_vf64_blend(r, rsimd_vf64_add(r, two), rsimd_vf64_cmp_le(r, rsimd_vf64_set1(-1.0)));
+  r = rsimd_vf64_blend(r, rsimd_vf64_sub(r, two), rsimd_vf64_cmp_gt(r, one));
+  if (fast) {
+    rsimd_sleef_sincospi_fast(r, &s, &c);
+  } else {
+    rsimd_sleef_sincospi(r, &s, &c);
+  }
+  *vs = rsimd_vf64_blend(
+    s, rsimd_math_signed_zero(x),
+    rsimd_mf64_or(rsimd_vf64_cmp_eq(r, rsimd_vf64_zero()), rsimd_vf64_cmp_eq(r, one)));
+  *vc = rsimd_vf64_blend(c, rsimd_vf64_zero(), rsimd_vf64_cmp_eq(rsimd_vf64_abs(r), rsimd_vf64_set1(0.5)));
+}
+
+/* sincos_f64 with `fast` and `pi` (op RSIMD_MATH_SINPI) constant. */
 RSIMD_ALWAYS_INLINE int rsimd_sincos_run(const void *x, R_xlen_t n, int flags, double *s,
-                                         double *c, int fast) {
+                                         double *c, int fast, int pi) {
   const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1);
   int st = 0;
   ptrdiff_t i = 0;
-/* sin and cos of a into vs and vc, with math1's rule for each. */
+/* sin and cos (sinpi and cospi) of a into vs and vc, with math1's rule for
+   each. */
 #define RSIMD_MATH_SINCOS(a, vs, vc)                                             \
   do {                                                                           \
     rsimd_mf64 in_ = rsimd_vf64_is_nan(a);                                       \
-    if (fast) {                                                                  \
+    if (pi) {                                                                    \
+      rsimd_math_sincospi(a, &vs, &vc, fast);                                    \
+    } else if (fast) {                                                           \
       rsimd_sleef_sincos_fast(a, &vs, &vc);                                      \
     } else {                                                                     \
       rsimd_sleef_sincos(a, &vs, &vc);                                           \
@@ -1054,7 +1184,7 @@ RSIMD_ALWAYS_INLINE int rsimd_sincos_run(const void *x, R_xlen_t n, int flags, d
           in_, rsimd_mf64_or(rsimd_vf64_is_nan(vs), rsimd_vf64_is_nan(vc))))) {  \
       st = RSIMD_EW_NAN_PRODUCED;                                                \
     }                                                                            \
-    vs = rsimd_math_tiny(rsimd_vf64_blend(vs, a, in_), a);                       \
+    vs = pi ? rsimd_vf64_blend(vs, a, in_) : rsimd_math_tiny(rsimd_vf64_blend(vs, a, in_), a); \
     vc = rsimd_vf64_blend(vc, a, in_);                                           \
   } while (0)
   for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
@@ -1078,8 +1208,12 @@ int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, doubl
                              double *c);
 int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, double *s,
                              double *c) {
-  if (op & RSIMD_MATH_FAST) return rsimd_sincos_run(x, n, flags, s, c, 1);
-  return rsimd_sincos_run(x, n, flags, s, c, 0);
+  if ((op & ~RSIMD_MATH_FAST) == RSIMD_MATH_SINPI) {
+    if (op & RSIMD_MATH_FAST) return rsimd_sincos_run(x, n, flags, s, c, 1, 1);
+    return rsimd_sincos_run(x, n, flags, s, c, 0, 1);
+  }
+  if (op & RSIMD_MATH_FAST) return rsimd_sincos_run(x, n, flags, s, c, 1, 0);
+  return rsimd_sincos_run(x, n, flags, s, c, 0, 0);
 }
 
 #undef RSIMD_MATH_LOOP
@@ -1093,6 +1227,7 @@ int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, doubl
 #undef RSIMD_MATH1_LIBM_FAST
 #undef RSIMD_MATH2_LIBM
 #undef RSIMD_MATH2_LIBM_FAST
+#undef RSIMD_MATH_BIT
 
 #else /* a SIMD tier without SLEEF: the slots are filled from below */
 #define RSIMD_SKIP_math1_f64 1
@@ -1145,3 +1280,11 @@ void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out) {
 
 #undef RSIMD_MATH_PI
 #undef RSIMD_MATH_PI_LO
+#undef RSIMD_MATH_LN2
+#undef RSIMD_MATH_LN2_LO
+#undef RSIMD_MATH_LN10
+#undef RSIMD_MATH_LN10_LO
+#undef RSIMD_MATH_INV_LN2
+#undef RSIMD_MATH_INV_LN2_LO
+#undef RSIMD_MATH_INV_LN10
+#undef RSIMD_MATH_INV_LN10_LO

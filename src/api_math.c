@@ -89,8 +89,9 @@ static SEXP simd_math1_impl(SEXP x, SEXP op, SEXP accuracy) {
     "exp",     "exp2",      "exp10", "expm1",        "log",         "log2",  "log10",
     "log1p",   "",          "cbrt",  "sin",          "cos",         "tan",   "asin",
     "acos",    "atan",      "sinpi", "cospi",        "tanpi",       "sinh",  "cosh",
-    "tanh",    "asinh",     "acosh", "atanh",        "sigmoid",     "next_up",
-    "next_down", "rsqrt",   "recip_approx", "rsqrt_approx"};
+    "tanh",    "asinh",     "acosh", "atanh",        "sigmoid",     "exp2m1",
+    "exp10m1", "log2p1",    "log10p1", "next_up",    "next_down",   "rsqrt",
+    "recip_approx", "rsqrt_approx"};
   int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
   if (code == RSIMD_MATH_LOGB) Rf_error("internal error: unknown op ''");
   return run_math1(x, code | accuracy_bit(accuracy), 1.0, MATH1_WARN);
@@ -168,9 +169,11 @@ SEXP C_simd_math2(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
   return rsimd_exit(rsimd_sv_result(simd_math2_impl(x, y, op, accuracy), 0));
 }
 
-/* list(sin = sin(x), cos = cos(x)), one warning for both. */
-static SEXP simd_sincos_impl(SEXP x, SEXP accuracy) {
-  int flags, st = 0, op = RSIMD_MATH_SIN | accuracy_bit(accuracy);
+/* list(sin = sin(x), cos = cos(x)), or with pi list(sin = sinpi(x), cos =
+   cospi(x)), one warning for both. */
+static SEXP simd_sincos_impl(SEXP x, SEXP accuracy, SEXP pi) {
+  int flags, st = 0;
+  int op = (rsimd_arg_lgl1(pi, "pi") ? RSIMD_MATH_SINPI : RSIMD_MATH_SIN) | accuracy_bit(accuracy);
   SEXP s, c, out, names;
   double *ps, *pc;
   rsimd_ew e;
@@ -196,10 +199,10 @@ static SEXP simd_sincos_impl(SEXP x, SEXP accuracy) {
   return out;
 }
 
-SEXP C_simd_sincos(SEXP x, SEXP accuracy) {
+SEXP C_simd_sincos(SEXP x, SEXP accuracy, SEXP pi) {
   SEXP out;
   rsimd_entry();
-  out = PROTECT(simd_sincos_impl(x, accuracy));
+  out = PROTECT(simd_sincos_impl(x, accuracy, pi));
   SET_VECTOR_ELT(out, 0, rsimd_sv_result(VECTOR_ELT(out, 0), 0));
   SET_VECTOR_ELT(out, 1, rsimd_sv_result(VECTOR_ELT(out, 1), 0));
   UNPROTECT(1);

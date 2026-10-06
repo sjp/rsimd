@@ -241,6 +241,8 @@ Call on \code{numeric(0)} & Result \\
 \code{simd\_mean} & \code{NaN} \\
 \code{simd\_var}, \code{simd\_sd} & \code{NA} \\
 \code{simd\_min}, \code{simd\_max} & \code{Inf}, \code{-Inf}, with base R's warning \\
+\code{simd\_min\_abs}, \code{simd\_max\_abs} & \code{Inf}, \code{-Inf}, with base R's warning \\
+\code{simd\_which}, \code{simd\_which\_max\_abs} & \code{integer(0)} \\
 \code{simd\_any}, \code{simd\_all} & \code{FALSE}, \code{TRUE} \\
 elementwise and cumulative functions & a zero-length vector \\
 \hline
@@ -291,6 +293,16 @@ Double sums &
   R's \code{long double} would not. &
   Speed. Use \code{prod()} when partial products may leave the double
   range. \\
+\code{simd\_prod\_sums}, \code{simd\_prod\_diffs} &
+  Integer operands are added in double, so \code{simd\_prod\_sums(x, y)} is
+  finite where \code{prod(x + y)} gives \code{NA} with an integer overflow
+  warning. &
+  The sums are formed in the product's own precision. Convert to double
+  first for base R's result. \\
+\code{simd\_which}, \code{simd\_count} &
+  Logical input only; \code{sum()} also adds numbers. &
+  They count and find \code{TRUE} values. Use \code{simd\_sum()} for
+  numbers. \\
 \code{simd\_cumsum} &
   In \code{"fast"} and \code{"pairwise"} modes, can differ from base R in
   the last bits. &
@@ -316,7 +328,7 @@ Elementary functions &
   May differ from base R in the last bit. &
   The SIMD tiers use SLEEF, within 1 ULP of the exact result, or 3.5 ULP
   in fast mode (see below); the \code{"none"} tier uses the C library as
-  base R does. \\
+  base R does. \code{simd\_exp2m1()} and its kin are within 2 ULP. \\
 Odd functions of \code{-0} &
   \code{simd\_sin(-0)} and similar return \code{-0}; base R since 4.6.0
   returns \code{0}. &
@@ -338,6 +350,11 @@ Complex \code{acosh} &
   negative real part in the lower half-plane and for real $z > 1$. &
   Correctness: base R computes \code{acos(z) * 1i}. Negate base R's value
   where its real part is negative to get \pkg{rsimd}'s. \\
+Complex \code{simd\_max\_abs} and the other magnitude functions &
+  Compare the moduli of \code{simd\_abs()}, which can differ from
+  \code{Mod()} in the last bit. &
+  Speed (SLEEF's \code{hypot}); \code{simd\_max\_abs(z)} is always
+  \code{simd\_max(simd\_abs(z))}. \\
 Complex \code{prod}, \code{mean} &
   Products multiply with base R's \code{x * y} (which recovers infinities)
   in double or, in compensated mode, double-double precision; base R
@@ -402,6 +419,10 @@ the exact value, or correctly rounded for the 0.5-ULP ones. The C library
 that base R uses is usually also within 1 ULP, but not always the same
 ULP, so results can differ from base R and between tiers in the last bit.
 The \code{"none"} tier calls the C library, as base R does.
+\code{simd\_exp2m1()}, \code{simd\_exp10m1()}, \code{simd\_log2p1()} and
+\code{simd\_log10p1()}, which neither SLEEF nor C99 has, are computed from
+\code{expm1} and \code{log1p} (SLEEF's, or the C library's on
+\code{"none"}) within 2 ULP.
 
 On arm64, the \code{"neon"}, \code{"sve"} and \code{"sve2"} tiers run
 \code{simd\_log()} (with or without a base), \code{simd\_log2()},

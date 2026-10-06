@@ -124,6 +124,15 @@ simd_log10 <- function(x) {
 
 simd_log1p <- function(x) .math1(x, "log1p")
 
+# None of these depends on rsimd.math_accuracy.
+simd_exp2m1 <- function(x) .math1(x, "exp2m1", 0L)
+
+simd_exp10m1 <- function(x) .math1(x, "exp10m1", 0L)
+
+simd_log2p1 <- function(x) .math1(x, "log2p1", 0L)
+
+simd_log10p1 <- function(x) .math1(x, "log10p1", 0L)
+
 simd_pow <- function(x, y) .math2(x, y, "pow")
 
 simd_cbrt <- function(x) .math1(x, "cbrt")
@@ -139,7 +148,7 @@ simd_tan <- function(x) .math1(x, "tan")
 simd_sincos <- function(x) {
   .sync_impl()
   .math_check("simd_sincos", list(x = x))
-  .Call(C_simd_sincos, x, .math_accuracy_code())
+  .Call(C_simd_sincos, x, .math_accuracy_code(), FALSE)
 }
 
 simd_asin <- function(x) .math1(x, "asin")
@@ -155,6 +164,12 @@ simd_sinpi <- function(x) .math1(x, "sinpi")
 simd_cospi <- function(x) .math1(x, "cospi")
 
 simd_tanpi <- function(x) .math1(x, "tanpi")
+
+simd_sincospi <- function(x) {
+  .sync_impl()
+  .math_check("simd_sincospi", list(x = x))
+  .Call(C_simd_sincos, x, .math_accuracy_code(), TRUE)
+}
 
 simd_sinh <- function(x) .math1(x, "sinh")
 
