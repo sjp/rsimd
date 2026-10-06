@@ -27,22 +27,24 @@ which_i64 <- function(a, f) {
 }
 
 test_that("simd_which and simd_count are which() and sum() of a logical vector", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    for (x in list(
-      rand_vec("logical", n, seed = seed), rand_vec("logical", n, na_frac = 0, seed = seed),
-      rep_len(c(TRUE, NA), n), rep_len(FALSE, n), rep_len(TRUE, n)
-    )) {
-      expect_tiers_give(which(x), simd_which, x)
-      expect_tiers_give(sum(x), simd_count, x)
-      expect_tiers_give(sum(x, na.rm = TRUE), simd_count, x, na.rm = TRUE)
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      for (x in sweep_inputs(n, list(
+        rand_vec("logical", n, seed = seed), rand_vec("logical", n, na_frac = 0, seed = seed),
+        rep_len(c(TRUE, NA), n), rep_len(FALSE, n), rep_len(TRUE, n)
+      ))) {
+        expect_tiers_give(which(x), simd_which, x)
+        expect_tiers_give(sum(x), simd_count, x)
+        expect_tiers_give(sum(x, na.rm = TRUE), simd_count, x, na.rm = TRUE)
+      }
     }
-  }
-  expect_identical(simd_which(logical(0)), integer(0))
-  expect_identical(simd_count(logical(0)), 0L)
-  expect_identical(simd_count(NA), NA_integer_)
-  expect_identical(simd_count(NA, na.rm = TRUE), 0L)
-  expect_identical(simd_which(c(a = TRUE, b = FALSE)), 1L)
+    check_identical(simd_which(logical(0)), integer(0))
+    check_identical(simd_count(logical(0)), 0L)
+    check_identical(simd_count(NA), NA_integer_)
+    check_identical(simd_count(NA, na.rm = TRUE), 0L)
+    check_identical(simd_which(c(a = TRUE, b = FALSE)), 1L)
+  })
 })
 
 test_that("simd_which and simd_count take only logical vectors", {
@@ -64,34 +66,36 @@ test_that("simd_count skips the NA scan for an NA-free simd_vec, and simd_which 
 })
 
 test_that("the magnitude reductions are max, min, which.max and which.min of abs(x)", {
-  base_max_abs <- function(x, ...) max(abs(x), ...)
-  base_min_abs <- function(x, ...) min(abs(x), ...)
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    d <- rand_vec("double", n, seed = seed)
-    inputs <- list(
-      d, rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed),
-      rand_vec("integer", n, seed = seed), rand_vec("integer", n, na_frac = 0, seed = seed),
-      rand_vec("logical", n, seed = seed), -abs(rand_vec("double", n, na_frac = 0, seed = seed))
-    )
-    for (x in inputs) {
-      for (na_rm in c(FALSE, TRUE)) {
-        want <- suppressWarnings(list(
-          max = base_max_abs(x, na.rm = na_rm), min = base_min_abs(x, na.rm = na_rm)
-        ))
-        # NA wins over NaN in rsimd, whatever the order (base R depends on it).
-        if (!na_rm && anyNA(x) && any(is.na(x) & !is.nan(x))) {
-          want <- lapply(want, function(w) w[NA_integer_])
+  batch_expectations({
+    base_max_abs <- function(x, ...) max(abs(x), ...)
+    base_min_abs <- function(x, ...) min(abs(x), ...)
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      d <- rand_vec("double", n, seed = seed)
+      inputs <- list(
+        d, rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed),
+        rand_vec("integer", n, seed = seed), rand_vec("integer", n, na_frac = 0, seed = seed),
+        rand_vec("logical", n, seed = seed), -abs(rand_vec("double", n, na_frac = 0, seed = seed))
+      )
+      for (x in sweep_inputs(n, inputs)) {
+        for (na_rm in c(FALSE, TRUE)) {
+          want <- suppressWarnings(list(
+            max = base_max_abs(x, na.rm = na_rm), min = base_min_abs(x, na.rm = na_rm)
+          ))
+          # NA wins over NaN in rsimd, whatever the order (base R depends on it).
+          if (!na_rm && anyNA(x) && any(is.na(x) & !is.nan(x))) {
+            want <- lapply(want, function(w) w[NA_integer_])
+          }
+          quiet_max <- function(...) suppressWarnings(simd_max_abs(...))
+          quiet_min <- function(...) suppressWarnings(simd_min_abs(...))
+          expect_tiers_give(want$max, quiet_max, x, na.rm = na_rm)
+          expect_tiers_give(want$min, quiet_min, x, na.rm = na_rm)
         }
-        quiet_max <- function(...) suppressWarnings(simd_max_abs(...))
-        quiet_min <- function(...) suppressWarnings(simd_min_abs(...))
-        expect_tiers_give(want$max, quiet_max, x, na.rm = na_rm)
-        expect_tiers_give(want$min, quiet_min, x, na.rm = na_rm)
+        expect_tiers_give(which.max(abs(x)), simd_which_max_abs, x)
+        expect_tiers_give(which.min(abs(x)), simd_which_min_abs, x)
       }
-      expect_tiers_give(which.max(abs(x)), simd_which_max_abs, x)
-      expect_tiers_give(which.min(abs(x)), simd_which_min_abs, x)
     }
-  }
+  })
 })
 
 test_that("the magnitude reductions follow base R at the edges", {
@@ -132,77 +136,81 @@ test_that("the magnitude reductions follow base R at the edges", {
 })
 
 test_that("the magnitude reductions of complex numbers use the moduli of simd_abs()", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    z <- complex(
-      real = rand_vec("double", n, seed = seed),
-      imaginary = rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed + 1L)
-    )
-    for (na_rm in c(FALSE, TRUE)) {
-      res <- with_each_tier(function() {
-        list(
-          max = suppressWarnings(simd_max_abs(z, na.rm = na_rm)),
-          min = suppressWarnings(simd_min_abs(z, na.rm = na_rm)),
-          max_ref = suppressWarnings(simd_max(simd_abs(z), na.rm = na_rm)),
-          min_ref = suppressWarnings(simd_min(simd_abs(z), na.rm = na_rm)),
-          which_max = simd_which_max_abs(z), which_min = simd_which_min_abs(z),
-          which_max_ref = simd_which_max(simd_abs(z)), which_min_ref = simd_which_min(simd_abs(z))
-        )
-      })
-      for (tier in names(res)) {
-        r <- res[[tier]]
-        expect_identical(r$max, r$max_ref, info = paste(tier, n))
-        expect_identical(r$min, r$min_ref, info = paste(tier, n))
-        expect_identical(r$which_max, r$which_max_ref, info = paste(tier, n))
-        expect_identical(r$which_min, r$which_min_ref, info = paste(tier, n))
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      z <- complex(
+        real = rand_vec("double", n, seed = seed),
+        imaginary = rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed + 1L)
+      )
+      for (na_rm in c(FALSE, TRUE)) {
+        res <- with_each_tier(function() {
+          list(
+            max = suppressWarnings(simd_max_abs(z, na.rm = na_rm)),
+            min = suppressWarnings(simd_min_abs(z, na.rm = na_rm)),
+            max_ref = suppressWarnings(simd_max(simd_abs(z), na.rm = na_rm)),
+            min_ref = suppressWarnings(simd_min(simd_abs(z), na.rm = na_rm)),
+            which_max = simd_which_max_abs(z), which_min = simd_which_min_abs(z),
+            which_max_ref = simd_which_max(simd_abs(z)), which_min_ref = simd_which_min(simd_abs(z))
+          )
+        })
+        for (tier in names(res)) {
+          r <- res[[tier]]
+          check_identical(r$max, r$max_ref, info = paste(tier, n))
+          check_identical(r$min, r$min_ref, info = paste(tier, n))
+          check_identical(r$which_max, r$which_max_ref, info = paste(tier, n))
+          check_identical(r$which_min, r$which_min_ref, info = paste(tier, n))
+        }
+      }
+      # Within an ULP of base R's Mod().
+      if (n > 0) {
+        want <- suppressWarnings(max(Mod(z), na.rm = TRUE))
+        got <- suppressWarnings(simd_max_abs(z, na.rm = TRUE))
+        if (is.finite(want)) expect_lte(abs(got - want), 2^-52 * want)
       }
     }
-    # Within an ULP of base R's Mod().
-    if (n > 0) {
-      want <- suppressWarnings(max(Mod(z), na.rm = TRUE))
-      got <- suppressWarnings(simd_max_abs(z, na.rm = TRUE))
-      if (is.finite(want)) expect_lte(abs(got - want), 2^-52 * want)
-    }
-  }
-  z <- complex(real = c(3, 0, -1, NA), imaginary = c(4, -6, 1, 0))
-  expect_identical(simd_max_abs(z), NA_real_)
-  expect_identical(simd_max_abs(z, na.rm = TRUE), 6)
-  expect_identical(simd_which_max_abs(z), 2L)
-  expect_identical(simd_which_min_abs(z), 3L)
-  # Mod(Inf + NaN i) is Inf, as in base R.
-  expect_identical(simd_max_abs(complex(real = Inf, imaginary = NaN)), Inf)
-  expect_warning(expect_identical(simd_max_abs(complex(0)), -Inf), "returning -Inf")
+    z <- complex(real = c(3, 0, -1, NA), imaginary = c(4, -6, 1, 0))
+    check_identical(simd_max_abs(z), NA_real_)
+    check_identical(simd_max_abs(z, na.rm = TRUE), 6)
+    check_identical(simd_which_max_abs(z), 2L)
+    check_identical(simd_which_min_abs(z), 3L)
+    # Mod(Inf + NaN i) is Inf, as in base R.
+    check_identical(simd_max_abs(complex(real = Inf, imaginary = NaN)), Inf)
+    expect_warning(check_identical(simd_max_abs(complex(0)), -Inf), "returning -Inf")
+  })
 })
 
 test_that("the magnitude reductions of integer64 are integer64", {
-  skip_if_not(has_bit64())
-  x <- i64_dec(c("-9223372036854775807", "5", NA, "-3"))
-  expect_tiers_i64(i64_dec("9223372036854775807"), simd_max_abs, x, na.rm = TRUE)
-  expect_tiers_i64(i64_dec("3"), simd_min_abs, x, na.rm = TRUE)
-  expect_tiers_i64(i64_dec(NA), simd_max_abs, x)
-  expect_tiers_give(1L, simd_which_max_abs, x)
-  expect_tiers_give(4L, simd_which_min_abs, x)
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    y <- rand_i64(n, seed = seed)
-    a <- abs(y)
-    expect_tiers_i64(suppressWarnings(max(a, na.rm = TRUE)),
-      function(...) suppressWarnings(simd_max_abs(...)), y,
-      na.rm = TRUE
+  batch_expectations({
+    skip_if_not(has_bit64())
+    x <- i64_dec(c("-9223372036854775807", "5", NA, "-3"))
+    expect_tiers_i64(i64_dec("9223372036854775807"), simd_max_abs, x, na.rm = TRUE)
+    expect_tiers_i64(i64_dec("3"), simd_min_abs, x, na.rm = TRUE)
+    expect_tiers_i64(i64_dec(NA), simd_max_abs, x)
+    expect_tiers_give(1L, simd_which_max_abs, x)
+    expect_tiers_give(4L, simd_which_min_abs, x)
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      y <- rand_i64(n, seed = seed)
+      a <- abs(y)
+      expect_tiers_i64(suppressWarnings(max(a, na.rm = TRUE)),
+        function(...) suppressWarnings(simd_max_abs(...)), y,
+        na.rm = TRUE
+      )
+      expect_tiers_give(which_i64(a, max), simd_which_max_abs, y)
+      expect_tiers_give(which_i64(a, min), simd_which_min_abs, y)
+    }
+    expect_warning(
+      expect_i64(
+        simd_max_abs(simd_as_integer64(c(NA, NA)), na.rm = TRUE), i64_dec("-9223372036854775807")
+      ),
+      "no non-NA value"
     )
-    expect_tiers_give(which_i64(a, max), simd_which_max_abs, y)
-    expect_tiers_give(which_i64(a, min), simd_which_min_abs, y)
-  }
-  expect_warning(
-    expect_i64(
-      simd_max_abs(simd_as_integer64(c(NA, NA)), na.rm = TRUE), i64_dec("-9223372036854775807")
-    ),
-    "no non-NA value"
-  )
+  })
 })
 
 test_that("simd_prod_sums and simd_prod_diffs are prod(x + y) and prod(x - y)", {
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     if (n > 5000) next
     seed <- as.integer(n %% 1000) + 1L
     x <- near_one(n, seed)

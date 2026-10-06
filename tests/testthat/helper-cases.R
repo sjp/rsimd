@@ -6,15 +6,30 @@
 lane_widths <- c(2, 4, 8, 16, 32)
 
 # Lengths around the vector width W: empty, single, the tail cases, the
-# fast-mode block of four vectors (4 * W * 4 + 5 crosses it), the ALTREP
-# region size (4096) and a length above the interrupt stride. For several
-# W, the sorted union. Reduced runs (helper-subset.R) keep the lengths up
-# to 1000, and 1000 itself.
+# fast-mode block of four vectors (4 * W * 4 + 5 crosses it) and the ALTREP
+# region size (4096). For several W, the sorted union. Reduced runs
+# (helper-subset.R) keep the lengths up to 1000, and 1000 itself.
 edge_lengths <- function(W = lane_widths) {
-  one <- function(W) c(0, 1, W - 1, W, W + 1, 2 * W + 3, 4 * W * 4 + 5, 4095, 4096, 4097, 1e6)
+  one <- function(W) c(0, 1, W - 1, W, W + 1, 2 * W + 3, 4 * W * 4 + 5, 4095, 4096, 4097)
   n <- sort(unique(unlist(lapply(W, one))))
   if (reduced_lengths()) c(n[n < 1000], 1000) else n
 }
+
+# A length above the interrupt stride (2^20 elements), so the default chunk
+# loop runs more than once, and with a tail on every tier. NULL in reduced
+# runs.
+long_length <- function() if (reduced_lengths()) NULL else 2^20 + 7
+
+# The lengths a sweep checks: edge_lengths(), then long_length(). At the
+# long length a sweep checks each op once, on its first and most general
+# input (sweep_inputs()): what a long input adds (chunks, deep pairwise
+# trees, large accumulators) does not depend on the input's type, which
+# the edge lengths cover.
+sweep_lengths <- function(W = lane_widths) c(edge_lengths(W), long_length())
+
+# The inputs (a list) a sweep checks at length n: all of them at the edge
+# lengths, the first only at the long length.
+sweep_inputs <- function(n, inputs) if (n > 4097) inputs[1L] else inputs
 
 # Special doubles. Sums that mix double.xmax with other large values
 # overflow or not depending on the order of additions, which differs

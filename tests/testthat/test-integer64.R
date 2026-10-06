@@ -53,21 +53,23 @@ test_that("simd_sum overflows only when the exact total leaves int64", {
 })
 
 test_that("simd_sum of integer64 agrees across tiers on random input", {
-  skip_if_not(has_bit64(), "bit64 is not installed")
-  for (n in lens) {
-    for (kind in c("mix", "full", "small")) {
-      x <- rand_i64(n, kind, seed = n + 7L)
-      expect_simd_identical(function(x) suppressWarnings(simd_sum(x)), x)
-      expect_simd_identical(function(x) suppressWarnings(simd_sum(x, na.rm = TRUE)), x)
+  batch_expectations({
+    skip_if_not(has_bit64(), "bit64 is not installed")
+    for (n in lens) {
+      for (kind in c("mix", "full", "small")) {
+        x <- rand_i64(n, kind, seed = n + 7L)
+        expect_simd_identical(function(x) suppressWarnings(simd_sum(x)), x)
+        expect_simd_identical(function(x) suppressWarnings(simd_sum(x, na.rm = TRUE)), x)
+      }
+      x <- rand_i64(n, "small", na_frac = 0, seed = n)
+      expect_simd_identical(simd_sum, x, na_check = FALSE)
     }
-    x <- rand_i64(n, "small", na_frac = 0, seed = n)
-    expect_simd_identical(simd_sum, x, na_check = FALSE)
-  }
-  # Several chunks.
-  v <- round(with_seed(11L, stats::runif(2^20 + 7, -2^31, 2^31)))
-  expect_tiers_i64(i64(sum(v)), simd_sum, i64(v))
-  x <- rand_i64(2^20 + 7, "full", seed = 12L)
-  expect_simd_identical(function(x) suppressWarnings(simd_sum(x, na.rm = TRUE)), x)
+    # Several chunks.
+    v <- round(with_seed(11L, stats::runif(2^20 + 7, -2^31, 2^31)))
+    expect_tiers_i64(i64(sum(v)), simd_sum, i64(v))
+    x <- rand_i64(2^20 + 7, "full", seed = 12L)
+    expect_simd_identical(function(x) suppressWarnings(simd_sum(x, na.rm = TRUE)), x)
+  })
 })
 
 test_that("simd_sum of 10^7 integer64 values is exact", {
@@ -164,38 +166,40 @@ test_that("predicates of integer64", {
 })
 
 test_that("number classes of integer64 follow their values; NA is in none", {
-  is_na <- function(x) i64_str(x) %in% NA
-  ref <- function(x) {
-    b <- i64_bits(x)
-    na <- is_na(x)
-    nz <- colSums(b) > 0
-    list(
-      normal = nz & !na, subnormal = rep(FALSE, length(x)), whole = !na,
-      even = b[1, ] == 0 & !na, odd = b[1, ] == 1,
-      pow2 = colSums(b) == 1 & b[64, ] == 0
-    )
-  }
-  x <- i64_dec(c(
-    "0", "1", "-1", "2", "-2", NA, "9223372036854775807", "-9223372036854775807",
-    "4611686018427387904", "4294967296", "4294967297", "6", "7", "-4611686018427387904"
-  ))
-  r <- ref(x)
-  expect_identical(r$pow2, c(FALSE, TRUE, FALSE, TRUE, rep(FALSE, 4), TRUE, TRUE, rep(FALSE, 4)))
-  for (op in names(r)) {
-    f <- get(paste0("simd_is_", op))
-    expect_tiers_give(r[[op]], f, x)
-    expect_tiers_give(any(r[[op]]), get(paste0("simd_is_", op, "_any")), x)
-    expect_tiers_give(all(r[[op]]), get(paste0("simd_is_", op, "_all")), x)
-  }
-  for (n in lens) {
-    x <- rand_i64(n, seed = n + 11L)
-    r <- ref(x)
-    for (op in names(r)) {
-      expect_tiers_give(r[[op]], get(paste0("simd_is_", op)), x)
-      expect_simd_identical(get(paste0("simd_is_", op, "_any")), x)
-      expect_simd_identical(get(paste0("simd_is_", op, "_all")), x)
+  batch_expectations({
+    is_na <- function(x) i64_str(x) %in% NA
+    ref <- function(x) {
+      b <- i64_bits(x)
+      na <- is_na(x)
+      nz <- colSums(b) > 0
+      list(
+        normal = nz & !na, subnormal = rep(FALSE, length(x)), whole = !na,
+        even = b[1, ] == 0 & !na, odd = b[1, ] == 1,
+        pow2 = colSums(b) == 1 & b[64, ] == 0
+      )
     }
-  }
+    x <- i64_dec(c(
+      "0", "1", "-1", "2", "-2", NA, "9223372036854775807", "-9223372036854775807",
+      "4611686018427387904", "4294967296", "4294967297", "6", "7", "-4611686018427387904"
+    ))
+    r <- ref(x)
+    check_identical(r$pow2, c(FALSE, TRUE, FALSE, TRUE, rep(FALSE, 4), TRUE, TRUE, rep(FALSE, 4)))
+    for (op in names(r)) {
+      f <- get(paste0("simd_is_", op))
+      expect_tiers_give(r[[op]], f, x)
+      expect_tiers_give(any(r[[op]]), get(paste0("simd_is_", op, "_any")), x)
+      expect_tiers_give(all(r[[op]]), get(paste0("simd_is_", op, "_all")), x)
+    }
+    for (n in lens) {
+      x <- rand_i64(n, seed = n + 11L)
+      r <- ref(x)
+      for (op in names(r)) {
+        expect_tiers_give(r[[op]], get(paste0("simd_is_", op)), x)
+        expect_simd_identical(get(paste0("simd_is_", op, "_any")), x)
+        expect_simd_identical(get(paste0("simd_is_", op, "_all")), x)
+      }
+    }
+  })
 })
 
 test_that("Hamming distances of integer64", {
@@ -371,34 +375,36 @@ test_that("mul_add and add_mul of integer64 count an overflow once", {
 })
 
 test_that("integer64 arithmetic agrees across tiers on random input", {
-  skip_if_not(has_bit64(), "bit64 is not installed")
-  ops <- list(
-    simd_add, simd_sub, simd_mul, simd_add_wrap, simd_sub_wrap, simd_mul_wrap, simd_idiv,
-    simd_mod, simd_pmin, simd_pmax, simd_pmin_num, simd_pmax_num
-  )
-  for (n in c(1, 3, 8, 33, 130, 4097)) {
-    for (kind in c("mix", "small")) {
-      x <- rand_i64(n, kind, seed = n + 20L)
-      y <- rand_i64(n, kind, seed = n + 21L)
-      yi <- with_seed(n, sample(c(-3:3, NA, .Machine$integer.max), n, replace = TRUE))
-      for (f in ops) {
-        g <- function(x, y) suppressWarnings(f(x, y))
-        expect_simd_identical(g, x, y)
-        expect_simd_identical(g, x, yi)
-        expect_simd_identical(g, x, i64_at(y, 1))
-        expect_simd_identical(g, i64_at(x, 1), y)
+  batch_expectations({
+    skip_if_not(has_bit64(), "bit64 is not installed")
+    ops <- list(
+      simd_add, simd_sub, simd_mul, simd_add_wrap, simd_sub_wrap, simd_mul_wrap, simd_idiv,
+      simd_mod, simd_pmin, simd_pmax, simd_pmin_num, simd_pmax_num
+    )
+    for (n in c(1, 3, 8, 33, 130, 4097)) {
+      for (kind in c("mix", "small")) {
+        x <- rand_i64(n, kind, seed = n + 20L)
+        y <- rand_i64(n, kind, seed = n + 21L)
+        yi <- with_seed(n, sample(c(-3:3, NA, .Machine$integer.max), n, replace = TRUE))
+        for (f in ops) {
+          g <- function(x, y) suppressWarnings(f(x, y))
+          expect_simd_identical(g, x, y)
+          expect_simd_identical(g, x, yi)
+          expect_simd_identical(g, x, i64_at(y, 1))
+          expect_simd_identical(g, i64_at(x, 1), y)
+        }
+        for (f in list(simd_neg, simd_abs, simd_sign)) expect_simd_identical(f, x)
+        z <- rand_i64(n, kind, seed = n + 22L)
+        for (f in list(simd_mul_add, simd_add_mul)) {
+          expect_simd_identical(function(x, y, z) suppressWarnings(f(x, y, z)), x, y, z)
+        }
+        expect_simd_identical(function(x) simd_clamp(x, i64(-2^40), .Machine$integer.max), x)
       }
-      for (f in list(simd_neg, simd_abs, simd_sign)) expect_simd_identical(f, x)
-      z <- rand_i64(n, kind, seed = n + 22L)
-      for (f in list(simd_mul_add, simd_add_mul)) {
-        expect_simd_identical(function(x, y, z) suppressWarnings(f(x, y, z)), x, y, z)
-      }
-      expect_simd_identical(function(x) simd_clamp(x, i64(-2^40), .Machine$integer.max), x)
     }
-  }
-  x <- rand_i64(2^20 + 7, "mix", seed = 30L)
-  expect_simd_identical(function(x) suppressWarnings(simd_mul(x, x)), x)
-  expect_simd_identical(function(x) suppressWarnings(simd_add(x, x, na_check = FALSE)), x)
+    x <- rand_i64(2^20 + 7, "mix", seed = 30L)
+    expect_simd_identical(function(x) suppressWarnings(simd_mul(x, x)), x)
+    expect_simd_identical(function(x) suppressWarnings(simd_add(x, x, na_check = FALSE)), x)
+  })
 })
 
 test_that("integer64 mixed with double converts to double with a warning", {
@@ -451,27 +457,29 @@ test_that("other integer64 combinations and functions are rejected", {
 # ---- Comparisons ---------------------------------------------------------------
 
 test_that("comparisons of integer64", {
-  x <- i64_dec(c("9223372036854775807", "-5", "9007199254740993", "NA", "3"))
-  y <- i64_dec(c("9223372036854775806", "-5", "9007199254740992", "1", "NA"))
-  expect_tiers_give(c(FALSE, TRUE, FALSE, NA, NA), simd_eq, x, y)
-  expect_tiers_give(c(TRUE, FALSE, TRUE, NA, NA), simd_ne, x, y)
-  expect_tiers_give(c(FALSE, FALSE, FALSE, NA, NA), simd_lt, x, y)
-  expect_tiers_give(c(FALSE, TRUE, FALSE, NA, NA), simd_le, x, y)
-  expect_tiers_give(c(TRUE, FALSE, TRUE, NA, NA), simd_gt, x, y)
-  expect_tiers_give(c(TRUE, TRUE, TRUE, NA, NA), simd_ge, x, y)
-  expect_tiers_give(c(TRUE, FALSE, NA), simd_lt, i64(c(-2^40, 2^40, 0)), c(1L, 1L, NA))
-  expect_tiers_give(c(FALSE, TRUE), simd_eq, as.raw(c(1, 3)), i64(3))
-  for (n in lens) {
-    x <- rand_i64(n, seed = n + 40L)
-    y <- rand_i64(n, seed = n + 41L)
-    yi <- with_seed(n, sample(c(-3:3, NA), n, replace = TRUE))
-    for (f in list(simd_eq, simd_ne, simd_lt, simd_le, simd_gt, simd_ge)) {
-      expect_simd_identical(f, x, y)
-      expect_simd_identical(f, x, yi)
-      expect_simd_identical(f, x, x)
-      expect_simd_identical(f, i64_at(y, 1), x)
+  batch_expectations({
+    x <- i64_dec(c("9223372036854775807", "-5", "9007199254740993", "NA", "3"))
+    y <- i64_dec(c("9223372036854775806", "-5", "9007199254740992", "1", "NA"))
+    expect_tiers_give(c(FALSE, TRUE, FALSE, NA, NA), simd_eq, x, y)
+    expect_tiers_give(c(TRUE, FALSE, TRUE, NA, NA), simd_ne, x, y)
+    expect_tiers_give(c(FALSE, FALSE, FALSE, NA, NA), simd_lt, x, y)
+    expect_tiers_give(c(FALSE, TRUE, FALSE, NA, NA), simd_le, x, y)
+    expect_tiers_give(c(TRUE, FALSE, TRUE, NA, NA), simd_gt, x, y)
+    expect_tiers_give(c(TRUE, TRUE, TRUE, NA, NA), simd_ge, x, y)
+    expect_tiers_give(c(TRUE, FALSE, NA), simd_lt, i64(c(-2^40, 2^40, 0)), c(1L, 1L, NA))
+    expect_tiers_give(c(FALSE, TRUE), simd_eq, as.raw(c(1, 3)), i64(3))
+    for (n in lens) {
+      x <- rand_i64(n, seed = n + 40L)
+      y <- rand_i64(n, seed = n + 41L)
+      yi <- with_seed(n, sample(c(-3:3, NA), n, replace = TRUE))
+      for (f in list(simd_eq, simd_ne, simd_lt, simd_le, simd_gt, simd_ge)) {
+        expect_simd_identical(f, x, y)
+        expect_simd_identical(f, x, yi)
+        expect_simd_identical(f, x, x)
+        expect_simd_identical(f, i64_at(y, 1), x)
+      }
     }
-  }
+  })
 })
 
 # ---- Bitwise ops ---------------------------------------------------------------

@@ -54,11 +54,11 @@ test_that("length-1 operands broadcast and other length mismatches are errors", 
 })
 
 test_that("simd_hamming matches base R on random vectors of edge lengths", {
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     a <- with_seed(n, sample(c(1:3, NA, NaN, -0, 0), n, replace = TRUE))
     b <- with_seed(n + 1L, sample(c(1:3, NA, 0), n, replace = TRUE))
     clean_a <- with_seed(n + 2L, sample(c(1:3, -0), n, replace = TRUE))
-    for (y in list(b, clean_a[rev(seq_len(n))])) {
+    for (y in sweep_inputs(n, list(b, clean_a[rev(seq_len(n))]))) {
       expect_hamming(a, y)
       expect_hamming(clean_a, y)
       expect_hamming(as.integer(a), as.integer(y))
@@ -103,7 +103,7 @@ test_that("simd_hamming_bits counts differing bits of integer, logical and raw",
   expect_tiers_give(20, simd_hamming_bits, r, as.raw(c(255, 0, 0, 1)))
   expect_tiers_give(13, simd_hamming_bits, r, as.raw(0))
   expect_identical(simd_hamming_bits(integer(0), integer(0)), 0)
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     a <- with_seed(n, sample(c(-50:50, NA, .Machine$integer.max), n, replace = TRUE))
     b <- with_seed(n + 1L, sample(c(-50:50, NA), n, replace = TRUE))
     expect_tiers_give(bits_ref(a, b), simd_hamming_bits, a, b)

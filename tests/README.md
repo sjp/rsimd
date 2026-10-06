@@ -30,9 +30,19 @@ The `helper-*.R` files are loaded before the tests:
   requires every tier to be bit-identical to `none`, including the sign of
   zero, for results that do not depend on the order of operations (min,
   max, which, any, all, missing-value counts).
+  Reporting an expectation costs about a millisecond, more than most of the
+  kernel calls a sweep checks, so sweeps run inside
+  `batch_expectations({ ... })`. There these helpers, and `check_identical()`,
+  `check_true()` and `check_error()` (the batched forms of `expect_identical()`,
+  `expect_true()` and `expect_error()`), record each failed check, and one
+  expectation at the end reports how many failed and the first 50.
 - `helper-cases.R`: `edge_lengths()`, `edge_doubles()`, `edge_ints()`,
   `edge_lgl()`, `altrep_inputs(n)`, `rand_vec(type, n, ..., seed)` and
-  `with_seed(seed, code)`.
+  `with_seed(seed, code)`. `edge_lengths()` are the lengths around every
+  vector width, up to 4097. Sweeps loop over `sweep_lengths()`, which adds
+  `long_length()` (2^20 + 7, above the interrupt stride). At that length a
+  sweep checks each op once, on its first and most general input
+  (`sweep_inputs(n, inputs)`).
 - `helper-extended.R`: `skip_unless_extended()`.
 - `helper-subset.R`: `test_subset()`, `reduced_lengths()` and
   `skip_if_no_subprocess()` for the reduced runs selected by
@@ -53,7 +63,7 @@ The `helper-*.R` files are loaded before the tests:
 |----------|--------|
 | `NOT_CRAN=true` | Runs the tests marked `skip_on_cran()`, such as subprocess tests and the C lint, and makes the kernel tests loop over every available tier. Without it (as on CRAN, outside an interactive session) they test only the best tier and `none`. |
 | `RSIMD_EXTENDED_TESTS=true` | Also runs the long and randomised tests. They take a few seconds more. |
-| `RSIMD_TEST_SUBSET=quick` | Caps input lengths at 1000 for slow environments (valgrind, emulators); the cases around every vector width are kept. |
+| `RSIMD_TEST_SUBSET=quick` | Caps input lengths at 1000 and drops the long length, for slow environments (valgrind, emulators) and the `fast` CI job; the cases around every vector width are kept. |
 | `RSIMD_TEST_SUBSET=tier_emulation` | As `quick`, and skips tests that start a subprocess (an emulator does not follow it). |
 | `RSIMD_TEST_TIERS=avx512,none` | The kernel tests loop over these tiers only (`none` is always added as the oracle); a tier that is not available is an error. |
 | `RSIMD_IMPL`, `RSIMD_CPU_FEATURES_MASK`, `RSIMD_DISABLE_TIERS`, `RSIMD_DEBUG_STRIDE` | Change the implementation in use, the CPU features detected, the tiers built and the chunk size (see `?rsimd_options`). |

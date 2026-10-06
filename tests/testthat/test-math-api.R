@@ -106,7 +106,7 @@ test_that("unsupported argument types error", {
 })
 
 test_that("results are bare double vectors of every length, chunked and ALTREP inputs too", {
-  for (n in c(edge_lengths(), if (!reduced_lengths()) 2^20 + 7)) {
+  for (n in sweep_lengths()) {
     x <- math_random(n, -5, 5, seed = n %% 1000)
     for (f in list(simd_exp, simd_tanh, simd_sinpi)) {
       res <- expect_tiers_close(f, x, ulps = 2)

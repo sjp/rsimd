@@ -12,6 +12,73 @@
 
 eps <- 2^-52
 
+# Batching. Reporting a testthat expectation costs about a millisecond, more
+# than most of the kernel calls a sweep checks, so sweeps over many lengths,
+# inputs and modes run inside batch_expectations(). There every helper in
+# these files, and check_identical(), records a failed check instead of
+# signalling an expectation, and one expectation at the end reports how
+# many checks failed and the first 50. Nested batches join the outermost.
+batch_state <- new.env(parent = emptyenv())
+
+batch_expectations <- function(code) {
+  if (!is.null(batch_state$problems)) {
+    return(invisible(code))
+  }
+  batch_state$problems <- character(0)
+  batch_state$checks <- 0L
+  on.exit(batch_state$problems <- NULL)
+  code
+  problems <- batch_state$problems
+  testthat::expect(length(problems) == 0L, sprintf(
+    "%d of %d checks failed:\n%s", length(problems), batch_state$checks,
+    paste(utils::head(problems, 50), collapse = "\n")
+  ))
+}
+
+# testthat::expect(ok, message), or inside batch_expectations() a check
+# recorded in the batch. `message` may be a function returning it, so that
+# it is only built on failure.
+simd_expect <- function(ok, message) {
+  if (is.function(message)) message <- if (ok) "" else message()
+  if (is.null(batch_state$problems)) {
+    return(testthat::expect(ok, message))
+  }
+  batch_state$checks <- batch_state$checks + 1L
+  if (!ok) batch_state$problems <- c(batch_state$problems, message)
+  invisible(ok)
+}
+
+# expect_identical() and expect_true() that are batched inside
+# batch_expectations(). num.eq = FALSE also tells 0 from -0 and NA from NaN.
+check_identical <- function(object, expected, info = NULL, num.eq = TRUE) {
+  simd_expect(identical(object, expected, num.eq = num.eq), function() {
+    sprintf(
+      "%s: %s not identical to %s", paste(info, collapse = " "),
+      deparse1(object), deparse1(expected)
+    )
+  })
+}
+
+# expect_error(expr, regexp) that is batched inside batch_expectations().
+check_error <- function(expr, regexp, info = NULL) {
+  msg <- tryCatch({
+    expr
+    NULL
+  }, error = conditionMessage)
+  simd_expect(!is.null(msg) && grepl(regexp, msg), function() {
+    sprintf(
+      "%s: %s", paste(info, collapse = " "),
+      if (is.null(msg)) "no error" else sprintf("error \"%s\" does not match %s", msg, regexp)
+    )
+  })
+}
+
+check_true <- function(object, info = NULL) {
+  simd_expect(isTRUE(object), function() {
+    sprintf("%s: %s is not TRUE", paste(info, collapse = " "), deparse1(object))
+  })
+}
+
 # sum(abs(x)) over the finite elements of x, as a double.
 abs_mass <- function(x) {
   if (!is.numeric(x) && !is.logical(x)) {
@@ -101,7 +168,7 @@ expect_simd_equal <- function(f, ..., tolerance = NULL, precision = simd_precisi
       ))
     }
   }
-  testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
+  simd_expect(length(problems) == 0L, paste(problems, collapse = "\n"))
   invisible(res)
 }
 
@@ -148,7 +215,7 @@ expect_simd_matches_base <- function(simd_fn, base_fn, ..., tolerance = NULL,
       ))
     }
   }
-  testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
+  simd_expect(length(problems) == 0L, paste(problems, collapse = "\n"))
   invisible(res)
 }
 
@@ -171,6 +238,6 @@ expect_simd_identical <- function(f, ...) {
       ))
     }
   }
-  testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
+  simd_expect(length(problems) == 0L, paste(problems, collapse = "\n"))
   invisible(res)
 }

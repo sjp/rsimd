@@ -24,7 +24,7 @@ test_that("every export rejects classed data in every data argument", {
   exports <- sort(setdiff(getNamespaceExports("rsimd"), no_data))
   ns <- asNamespace("rsimd")
   checked <- 0L
-  for (f in exports) {
+  batch_expectations(for (f in exports) {
     fun <- get(f, envir = ns)
     fm <- formals(fun)
     required <- setdiff(names(fm)[vapply(fm, identical, NA, quote(expr = ))], "...")
@@ -40,11 +40,11 @@ test_that("every export rejects classed data in every data argument", {
           "'", pos, "' must be an atomic vector \\(double, integer, logical, raw, complex or ",
           "integer64\\), not ", cls
         )
-        expect_error(do.call(fun, args), msg, label = paste0(f, "(", pos, " = <", cls, ">)"))
+        check_error(do.call(fun, args), msg, info = paste0(f, "(", pos, " = <", cls, ">)"))
         checked <- checked + 1L
       }
     }
-  }
+  })
   # Every export with data was reached.
   expect_gt(checked, 4L * 150L)
 })

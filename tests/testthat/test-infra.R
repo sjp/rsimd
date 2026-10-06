@@ -59,6 +59,29 @@ test_that("expect_simd_matches_base compares every tier with base R", {
   expect_success(expect_simd_matches_base(function(x) NA_real_, sum, c(NaN, NA)))
 })
 
+test_that("batch_expectations reports every failed check in one expectation", {
+  expect_success(batch_expectations({
+    check_identical(1, 1)
+    expect_simd_identical(function(x) x, 1:3)
+  }))
+  expect_failure(
+    batch_expectations({
+      check_identical(1, 2, info = "first")
+      check_identical(1, 1)
+      expect_simd_identical(function(x) x, 1:3)
+      check_identical("a", "b", info = "second")
+    }),
+    "2 of 4 checks failed:\nfirst: 1 not identical to 2\nsecond:"
+  )
+  # Nested batches join the outer one, and the state is reset after an error.
+  expect_failure(batch_expectations(batch_expectations(check_identical(1, 2))), "1 of 1")
+  expect_error(batch_expectations(stop("boom")), "boom")
+  expect_success(check_identical(1, 1))
+  expect_success(check_error(stop("bad x"), "bad"))
+  expect_failure(check_error(stop("bad x"), "good"), "does not match good")
+  expect_failure(check_error(1, "bad", info = "f(1)"), "f\\(1\\): no error")
+})
+
 test_that("edge_lengths contains the width boundaries of every tier", {
   lens <- edge_lengths()
   for (W in lane_widths) {
@@ -67,14 +90,18 @@ test_that("edge_lengths contains the width boundaries of every tier", {
   expect_false(is.unsorted(lens))
   expect_identical(lens, unique(lens))
   with_env(c(RSIMD_TEST_SUBSET = ""), {
-    expect_true(all(c(0, 1, 4095, 4096, 4097, 1e6) %in% edge_lengths()))
-    expect_identical(edge_lengths(4), c(0, 1, 3, 4, 5, 11, 69, 4095, 4096, 4097, 1e6))
+    expect_true(all(c(0, 1, 4095, 4096, 4097) %in% edge_lengths()))
+    expect_identical(edge_lengths(4), c(0, 1, 3, 4, 5, 11, 69, 4095, 4096, 4097))
+    expect_identical(sweep_lengths(4), c(edge_lengths(4), 2^20 + 7))
+    expect_identical(sweep_inputs(4097, list(1, 2)), list(1, 2))
+    expect_identical(sweep_inputs(2^20 + 7, list(1, 2)), list(1))
   })
 })
 
 test_that("RSIMD_TEST_SUBSET caps the lengths and RSIMD_TEST_TIERS narrows the tiers", {
   with_env(c(RSIMD_TEST_SUBSET = "quick"), {
     expect_identical(edge_lengths(4), c(0, 1, 3, 4, 5, 11, 69, 1000))
+    expect_identical(sweep_lengths(4), edge_lengths(4))
     expect_true(reduced_lengths())
     expect_no_condition(skip_if_no_subprocess(), class = "skip")
   })

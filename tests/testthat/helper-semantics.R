@@ -9,7 +9,7 @@ ulp <- function(x) 2^(floor(log2(abs(x))) - 52)
 expect_tiers_identical <- function(f, label = "") {
   res <- for_each_tier(function(tier) f())
   for (tier in setdiff(names(res), "none")) {
-    expect_identical(res[[tier]], res[["none"]], info = paste(label, "tier", tier))
+    check_identical(res[[tier]], res[["none"]], info = paste(label, "tier", tier))
   }
   invisible(res)
 }

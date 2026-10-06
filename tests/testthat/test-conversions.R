@@ -114,7 +114,7 @@ test_that("input of the target type is copied without attributes", {
 })
 
 test_that("conversions match base R on random vectors of edge lengths", {
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     x <- rand_vec("double", n, seed = n + 31L) * 1e6
     expect_tiers_like_base(as.integer, simd_as_integer, x)
     expect_tiers_give(trunc_int(x), simd_as_integer, x, "truncating")

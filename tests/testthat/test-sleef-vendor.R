@@ -48,7 +48,7 @@ test_that("SLEEF exp is within 2 ULP of libm on every tier, at every length", {
   )
   ref <- expect_tiers_close(simd_exp, x, ulps = 2)
   expect_identical(ref, exp(x))
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     expect_tiers_close(simd_exp, with_seed(n, stats::runif(n, -50, 50)), ulps = 2)
   }
 })

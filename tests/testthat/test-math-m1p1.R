@@ -36,7 +36,7 @@ test_that("the m1/p1 functions agree with the none tier within 2 ULP on every ti
     expect_tiers_close(m1p1[[name]]$f, x, ulps = 2, label = name, x = x)
     xi <- c(-60:60, NA)
     expect_tiers_close(m1p1[[name]]$f, xi, ulps = 2, label = paste(name, "integer"))
-    for (n in edge_lengths()) {
+    for (n in sweep_lengths()) {
       v <- rep_len(c(0.3, -0.7, 1e-12, 25, NA, NaN, -0), n)
       expect_tiers_close(m1p1[[name]]$f, v, ulps = 2, label = paste(name, n))
     }

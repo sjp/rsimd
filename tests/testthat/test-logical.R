@@ -68,7 +68,7 @@ test_that("mixing raw with another type errors with base R's message", {
 })
 
 test_that("logic matches base R on random vectors of edge lengths", {
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     x <- rand_vec("logical", n, seed = n + 11L)
     y <- rand_vec("logical", n, seed = n + 12L)
     d <- rand_vec("double", n, seed = n + 13L)

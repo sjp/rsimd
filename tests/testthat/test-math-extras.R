@@ -38,7 +38,7 @@ test_that("simd_ilogb is the binary exponent, NA for zero, infinities and missin
   expect_tiers_give(c(0L, 3L, NA, NA), simd_ilogb, c(1L, -10L, 0L, NA))
   expect_tiers_give(c(0L, NA, NA), simd_ilogb, c(TRUE, FALSE, NA))
   expect_tiers_give(integer(0), simd_ilogb, numeric(0))
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     v <- rep_len(c(3, -0.1, 0, 1e300), n)
     expect_tiers_give(ilogb_ref(v), simd_ilogb, v)
   }
@@ -299,7 +299,7 @@ test_that("the approximations are exact for special values and keep missing valu
     expect_true(abs(r[1] * 2 - 1) <= 2^-22, info = tier)
   })
   # Every length, so every tail.
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     v <- rep_len(c(3, 1e-308, 7, -0.25), n)
     for_each_tier(function(tier) {
       expect_true(all(abs(simd_recip_approx(v) * v - 1) <= 2^-22), info = paste(tier, n))

@@ -34,10 +34,10 @@ expect_fused_equal <- function(f, x, ..., mass, rel, precision = "fast") {
   res <- with_each_tier(function() f(x, ...))
   for (tier in setdiff(names(res), "none")) {
     problem <- double_mismatch(as.double(res[[tier]]), as.double(res[["none"]]), rel * mass, rel)
-    testthat::expect(is.null(problem), sprintf(
+    simd_expect(is.null(problem), sprintf(
       "tier %s differs from none (%s mode, n = %d): %s", tier, precision, length(x), problem
     ))
-    expect_identical(typeof(res[[tier]]), typeof(res[["none"]]))
+    check_identical(typeof(res[[tier]]), typeof(res[["none"]]))
   }
   invisible(res)
 }
@@ -46,174 +46,182 @@ expect_fused_equal <- function(f, x, ..., mass, rel, precision = "fast") {
 finite_mass <- function(v) sum(abs(v[is.finite(v)]))
 
 test_that("fused reductions match the oracle on every tier for all edge lengths", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 7L
-    d <- rand_vec("double", n, seed = seed)
-    d2 <- rand_vec("double", n, seed = seed + 1L)
-    clean <- rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed)
-    i <- rand_vec("integer", n, seed = seed)
-    i2 <- rand_vec("integer", n, seed = seed + 2L)
-    l <- rand_vec("logical", n, seed = seed)
-    rel <- 4 * max(n, 1) * 2^-52 + 2^-50
-    for (x in list(d, clean, i, l)) {
-      xd <- as.double(x)
-      for (na_rm in c(FALSE, TRUE)) {
-        for (mode in modes) {
-          expect_fused_equal(simd_sum_sq, x,
-            na.rm = na_rm,
-            mass = finite_mass(xd^2), rel = rel, precision = mode
-          )
-          expect_fused_equal(simd_norm, x,
-            na.rm = na_rm,
-            mass = sqrt(finite_mass(xd^2)), rel = rel, precision = mode
-          )
-          if (is.double(x)) {
-            expect_fused_equal(simd_sum_abs, x,
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 7L
+      d <- rand_vec("double", n, seed = seed)
+      d2 <- rand_vec("double", n, seed = seed + 1L)
+      clean <- rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed)
+      i <- rand_vec("integer", n, seed = seed)
+      i2 <- rand_vec("integer", n, seed = seed + 2L)
+      l <- rand_vec("logical", n, seed = seed)
+      rel <- 4 * max(n, 1) * 2^-52 + 2^-50
+      for (x in sweep_inputs(n, list(d, clean, i, l))) {
+        xd <- as.double(x)
+        for (na_rm in c(FALSE, TRUE)) {
+          for (mode in modes) {
+            expect_fused_equal(simd_sum_sq, x,
               na.rm = na_rm,
-              mass = finite_mass(xd), rel = rel, precision = mode
+              mass = finite_mass(xd^2), rel = rel, precision = mode
+            )
+            expect_fused_equal(simd_norm, x,
+              na.rm = na_rm,
+              mass = sqrt(finite_mass(xd^2)), rel = rel, precision = mode
+            )
+            if (is.double(x)) {
+              expect_fused_equal(simd_sum_abs, x,
+                na.rm = na_rm,
+                mass = finite_mass(xd), rel = rel, precision = mode
+              )
+            }
+            expect_fused_equal(simd_var, x,
+              na.rm = na_rm,
+              mass = 0, rel = 8 * rel, precision = mode
+            )
+            expect_fused_equal(simd_sd, x,
+              na.rm = na_rm,
+              mass = 0, rel = 8 * rel, precision = mode
             )
           }
-          expect_fused_equal(simd_var, x,
-            na.rm = na_rm,
-            mass = 0, rel = 8 * rel, precision = mode
-          )
-          expect_fused_equal(simd_sd, x,
-            na.rm = na_rm,
-            mass = 0, rel = 8 * rel, precision = mode
-          )
+          if (!is.double(x)) expect_simd_identical(simd_sum_abs, x, na.rm = na_rm)
         }
-        if (!is.double(x)) expect_simd_identical(simd_sum_abs, x, na.rm = na_rm)
+      }
+      pairs <- list(
+        list(d, d2), list(clean, d), list(i, i2), list(d, i), list(i, d), list(l, d),
+        list(l, i)
+      )
+      for (p in sweep_inputs(n, pairs)) {
+        x <- p[[1]]
+        y <- p[[2]]
+        xy <- as.double(x) * as.double(y)
+        sq <- (as.double(x) - as.double(y))^2
+        for (mode in modes) {
+          for (na_rm in c(FALSE, TRUE)) {
+            expect_fused_equal(simd_dot, x, y,
+              na.rm = na_rm,
+              mass = finite_mass(xy), rel = rel, precision = mode
+            )
+            expect_fused_equal(simd_dist, x, y,
+              na.rm = na_rm,
+              mass = sqrt(finite_mass(sq)), rel = rel, precision = mode
+            )
+          }
+          expect_fused_equal(simd_cosine, x, y, mass = 0, rel = 8 * rel, precision = mode)
+        }
       }
     }
-    pairs <- list(
-      list(d, d2), list(clean, d), list(i, i2), list(d, i), list(i, d), list(l, d),
-      list(l, i)
-    )
-    for (p in pairs) {
-      x <- p[[1]]
-      y <- p[[2]]
-      xy <- as.double(x) * as.double(y)
-      sq <- (as.double(x) - as.double(y))^2
-      for (mode in modes) {
-        for (na_rm in c(FALSE, TRUE)) {
-          expect_fused_equal(simd_dot, x, y,
-            na.rm = na_rm,
-            mass = finite_mass(xy), rel = rel, precision = mode
-          )
-          expect_fused_equal(simd_dist, x, y,
-            na.rm = na_rm,
-            mass = sqrt(finite_mass(sq)), rel = rel, precision = mode
-          )
-        }
-        expect_fused_equal(simd_cosine, x, y, mass = 0, rel = 8 * rel, precision = mode)
-      }
-    }
-  }
+  })
 })
 
 test_that("fused reductions agree with base R within 1e-12 on random data", {
-  for (n in c(1, 2, 3, 5, 17, 100, 1001, 4097, 1e5)) {
-    seed <- as.integer(n %% 1000) + 11L
-    # Only NA as missing value, where base R is deterministic.
-    d <- rand_vec("double", n, nan_frac = 0, inf_frac = 0, seed = seed)
-    d2 <- rand_vec("double", n, nan_frac = 0, inf_frac = 0, seed = seed + 1L)
-    pos <- abs(rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed))
-    i <- rand_vec("integer", n, seed = seed)
-    l <- rand_vec("logical", n, seed = seed)
-    for (mode in modes) {
-      for (x in list(d, pos, i, l)) {
-        for (na_rm in c(FALSE, TRUE)) {
-          expect_simd_matches_base(simd_sum_sq, base_sum_sq, x,
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
-          )
-          expect_simd_matches_base(simd_sum_abs, base_sum_abs, x,
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
-          )
-          expect_simd_matches_base(simd_norm, base_norm, x,
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
-          )
-          expect_simd_matches_base(simd_var, base_var, x,
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
-          )
-          expect_simd_matches_base(simd_sd, base_sd, x,
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
+  batch_expectations({
+    for (n in c(1, 2, 3, 5, 17, 100, 1001, 4097, 1e5)) {
+      seed <- as.integer(n %% 1000) + 11L
+      # Only NA as missing value, where base R is deterministic.
+      d <- rand_vec("double", n, nan_frac = 0, inf_frac = 0, seed = seed)
+      d2 <- rand_vec("double", n, nan_frac = 0, inf_frac = 0, seed = seed + 1L)
+      pos <- abs(rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed))
+      i <- rand_vec("integer", n, seed = seed)
+      l <- rand_vec("logical", n, seed = seed)
+      for (mode in modes) {
+        for (x in list(d, pos, i, l)) {
+          for (na_rm in c(FALSE, TRUE)) {
+            expect_simd_matches_base(simd_sum_sq, base_sum_sq, x,
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+            expect_simd_matches_base(simd_sum_abs, base_sum_abs, x,
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+            expect_simd_matches_base(simd_norm, base_norm, x,
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+            expect_simd_matches_base(simd_var, base_var, x,
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+            expect_simd_matches_base(simd_sd, base_sd, x,
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+          }
+        }
+        for (p in list(list(pos, abs(d2)), list(i, pos), list(l, i))) {
+          for (na_rm in c(FALSE, TRUE)) {
+            expect_simd_matches_base(simd_dot, base_dot, p[[1]], p[[2]],
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+          }
+        }
+        # dist and cosine are well conditioned on any data.
+        for (p in list(list(d, d2), list(i, d2), list(l, i))) {
+          for (na_rm in c(FALSE, TRUE)) {
+            expect_simd_matches_base(simd_dist, base_dist, p[[1]], p[[2]],
+              na.rm = na_rm, tolerance = 1e-12, precision = mode
+            )
+          }
+          ok <- !is.na(p[[1]]) & !is.na(p[[2]])
+          expect_simd_matches_base(simd_cosine, base_cosine, p[[1]][ok], p[[2]][ok],
+            tolerance = 1e-12, precision = mode
           )
         }
-      }
-      for (p in list(list(pos, abs(d2)), list(i, pos), list(l, i))) {
-        for (na_rm in c(FALSE, TRUE)) {
-          expect_simd_matches_base(simd_dot, base_dot, p[[1]], p[[2]],
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
-          )
-        }
-      }
-      # dist and cosine are well conditioned on any data.
-      for (p in list(list(d, d2), list(i, d2), list(l, i))) {
-        for (na_rm in c(FALSE, TRUE)) {
-          expect_simd_matches_base(simd_dist, base_dist, p[[1]], p[[2]],
-            na.rm = na_rm, tolerance = 1e-12, precision = mode
-          )
-        }
-        ok <- !is.na(p[[1]]) & !is.na(p[[2]])
-        expect_simd_matches_base(simd_cosine, base_cosine, p[[1]][ok], p[[2]][ok],
-          tolerance = 1e-12, precision = mode
-        )
       }
     }
-  }
+  })
 })
 
 test_that("products of small integers are exact on every tier, fused or not", {
-  for (n in c(3, 31, 1000, 4097)) {
-    x <- as.double(with_seed(n, sample(-1000:1000, n, replace = TRUE)))
-    y <- as.double(with_seed(n + 1, sample(-1000:1000, n, replace = TRUE)))
-    for (mode in modes) {
-      old <- simd_precision(mode)
-      expect_simd_identical(simd_sum_sq, x)
-      expect_simd_identical(simd_dot, x, y)
-      expect_simd_identical(simd_dist, x, y)
-      expect_simd_identical(simd_sum_abs, x)
-      expect_identical(simd_dot(x, y), sum(x * y))
-      expect_identical(simd_sum_sq(as.integer(x)), sum(x^2))
-      simd_precision(old)
+  batch_expectations({
+    for (n in c(3, 31, 1000, 4097)) {
+      x <- as.double(with_seed(n, sample(-1000:1000, n, replace = TRUE)))
+      y <- as.double(with_seed(n + 1, sample(-1000:1000, n, replace = TRUE)))
+      for (mode in modes) {
+        old <- simd_precision(mode)
+        expect_simd_identical(simd_sum_sq, x)
+        expect_simd_identical(simd_dot, x, y)
+        expect_simd_identical(simd_dist, x, y)
+        expect_simd_identical(simd_sum_abs, x)
+        check_identical(simd_dot(x, y), sum(x * y))
+        check_identical(simd_sum_sq(as.integer(x)), sum(x^2))
+        simd_precision(old)
+      }
     }
-  }
+  })
 })
 
 test_that("missing values: NA beats NaN, var and sd give NA, na.rm drops pairs", {
-  cases <- list(c(1, NA, NaN), c(NaN, 1, NA), c(NaN, 2), c(NA, 2), c(1:40, NaN, NA))
-  for (x in cases) {
-    want_na <- anyNA(x) && any(is.na(x) & !is.nan(x))
-    res <- with_each_tier(function() {
-      c(
-        simd_sum_sq(x), simd_sum_abs(x), simd_norm(x), simd_dot(x, x), simd_dist(x, 0 * x),
-        simd_cosine(x, x + 1)
-      )
-    })
-    for (tier in names(res)) {
-      expect_true(all(is.na(res[[tier]])), info = tier)
-      expect_identical(any(is.nan(res[[tier]])), !want_na, info = tier)
+  batch_expectations({
+    cases <- list(c(1, NA, NaN), c(NaN, 1, NA), c(NaN, 2), c(NA, 2), c(1:40, NaN, NA))
+    for (x in cases) {
+      want_na <- anyNA(x) && any(is.na(x) & !is.nan(x))
+      res <- with_each_tier(function() {
+        c(
+          simd_sum_sq(x), simd_sum_abs(x), simd_norm(x), simd_dot(x, x), simd_dist(x, 0 * x),
+          simd_cosine(x, x + 1)
+        )
+      })
+      for (tier in names(res)) {
+        check_true(all(is.na(res[[tier]])), info = tier)
+        check_identical(any(is.nan(res[[tier]])), !want_na, info = tier)
+      }
+      res <- with_each_tier(function() c(simd_var(x), simd_sd(x)))
+      for (tier in names(res)) {
+        check_identical(res[[tier]], c(NA_real_, NA_real_), info = tier)
+      }
     }
-    res <- with_each_tier(function() c(simd_var(x), simd_sd(x)))
-    for (tier in names(res)) {
-      expect_identical(res[[tier]], c(NA_real_, NA_real_), info = tier)
+    # NA in x or in y removes the pair.
+    x <- c(1, NA, 3, 4, NaN)
+    y <- c(2, 5, NA, 1, 1)
+    for (tier in tiers_to_test()) {
+      simd_with_impl(tier, {
+        check_identical(simd_dot(x, y, na.rm = TRUE), 6)
+        check_identical(simd_dist(x, y, na.rm = TRUE), sqrt(10))
+        check_identical(simd_sum_sq(x, na.rm = TRUE), 26)
+        check_identical(simd_var(c(1, 2, NaN, NA), na.rm = TRUE), 0.5)
+        check_identical(simd_dot(c(1L, NA), c(2L, 3L), na.rm = TRUE), 2)
+        check_identical(simd_sum_abs(c(-2L, NA), na.rm = TRUE), 2L)
+        check_identical(simd_sum_abs(c(-2L, NA)), NA_integer_)
+        check_identical(simd_dot(c(NA, NA), c(1, 2), na.rm = TRUE), 0)
+      })
     }
-  }
-  # NA in x or in y removes the pair.
-  x <- c(1, NA, 3, 4, NaN)
-  y <- c(2, 5, NA, 1, 1)
-  for (tier in tiers_to_test()) {
-    simd_with_impl(tier, {
-      expect_identical(simd_dot(x, y, na.rm = TRUE), 6)
-      expect_identical(simd_dist(x, y, na.rm = TRUE), sqrt(10))
-      expect_identical(simd_sum_sq(x, na.rm = TRUE), 26)
-      expect_identical(simd_var(c(1, 2, NaN, NA), na.rm = TRUE), 0.5)
-      expect_identical(simd_dot(c(1L, NA), c(2L, 3L), na.rm = TRUE), 2)
-      expect_identical(simd_sum_abs(c(-2L, NA), na.rm = TRUE), 2L)
-      expect_identical(simd_sum_abs(c(-2L, NA)), NA_integer_)
-      expect_identical(simd_dot(c(NA, NA), c(1, 2), na.rm = TRUE), 0)
-    })
-  }
+  })
 })
 
 test_that("edge values: empty, zero vectors, Inf, overflow and short input", {
@@ -255,21 +263,23 @@ test_that("edge values: empty, zero vectors, Inf, overflow and short input", {
 })
 
 test_that("var and sd are Inf when finite data overflow the mean, on every tier and length", {
-  # Every squared deviation from an infinite mean is Inf. Vector tiers used
-  # to add NaN from the tail lanes, depending on the length. Base R gives 0
-  # here through its long double mean; that difference is accepted.
-  for (n in 1:65) {
-    want <- if (n == 1L) NA_real_ else Inf
-    x <- rep(1e308, n)
-    expect_tiers_give(c(want, want), function(x) c(simd_var(x), simd_sd(x)), x)
-    expect_tiers_give(want, simd_var, -x)
-    expect_tiers_give(want, simd_var, c(x, NA), na.rm = TRUE)
-  }
-  # An infinite element makes its deviation Inf - Inf, so the result is NaN.
-  for (n in 2:17) {
-    expect_tiers_give(NaN, simd_var, c(rep(1e308, n), Inf))
-    expect_tiers_give(NaN, simd_sd, c(Inf, rep(1, n), -Inf))
-  }
+  batch_expectations({
+    # Every squared deviation from an infinite mean is Inf. Vector tiers used
+    # to add NaN from the tail lanes, depending on the length. Base R gives 0
+    # here through its long double mean; that difference is accepted.
+    for (n in 1:65) {
+      want <- if (n == 1L) NA_real_ else Inf
+      x <- rep(1e308, n)
+      expect_tiers_give(c(want, want), function(x) c(simd_var(x), simd_sd(x)), x)
+      expect_tiers_give(want, simd_var, -x)
+      expect_tiers_give(want, simd_var, c(x, NA), na.rm = TRUE)
+    }
+    # An infinite element makes its deviation Inf - Inf, so the result is NaN.
+    for (n in 2:17) {
+      expect_tiers_give(NaN, simd_var, c(rep(1e308, n), Inf))
+      expect_tiers_give(NaN, simd_sd, c(Inf, rep(1, n), -Inf))
+    }
+  })
 })
 
 test_that("the base R table rows for var and sd are reproduced", {
@@ -323,18 +333,20 @@ test_that("na_check = FALSE gives the same results on NA-free input", {
 })
 
 test_that("compact sequences give the same results as expanded vectors", {
-  for (n in c(2, 4097, 1e5)) {
-    for (x in altrep_inputs(n)) {
-      expect_true(takes_region_path(x))
-      expanded <- x + if (is.integer(x)) 0L else 0
-      for (f in list(simd_sum_sq, simd_sum_abs, simd_norm, simd_var, simd_sd)) {
-        expect_identical(f(x), f(expanded))
+  batch_expectations({
+    for (n in c(2, 4097, 1e5)) {
+      for (x in altrep_inputs(n)) {
+        check_true(takes_region_path(x))
+        expanded <- x + if (is.integer(x)) 0L else 0
+        for (f in list(simd_sum_sq, simd_sum_abs, simd_norm, simd_var, simd_sd)) {
+          check_identical(f(x), f(expanded))
+        }
+        check_identical(simd_dot(x, rev(x)), simd_dot(expanded, rev(x)))
+        check_identical(simd_dist(x, expanded), 0)
+        check_identical(simd_cosine(x, expanded), simd_cosine(expanded, expanded))
       }
-      expect_identical(simd_dot(x, rev(x)), simd_dot(expanded, rev(x)))
-      expect_identical(simd_dist(x, expanded), 0)
-      expect_identical(simd_cosine(x, expanded), simd_cosine(expanded, expanded))
     }
-  }
+  })
 })
 
 test_that("var and sd span chunks: forced small chunks match base R", {

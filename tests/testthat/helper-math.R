@@ -46,14 +46,14 @@ expect_tiers_close <- function(f, ..., ulps = 2, label = "", x = NULL, abs = 0) 
     m <- math_mismatch(res[[tier]], ref, ulps, x, abs = abs, abs_below = Inf)
     if (!is.null(m)) problems <- c(problems, sprintf("%s on %s: %s", label, tier, m))
   }
-  testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
+  simd_expect(length(problems) == 0L, paste(problems, collapse = "\n"))
   invisible(ref)
 }
 
 # Expects `got` to match base R's `want` within `ulps` (math_mismatch).
 expect_close_to <- function(got, want, ulps, label = "", ...) {
   m <- math_mismatch(got, want, ulps, ...)
-  testthat::expect(is.null(m), sprintf("%s: %s", label, m))
+  simd_expect(is.null(m), sprintf("%s: %s", label, m))
 }
 
 # Does base R's sinpi() come from the platform's math library (glibc 2.41

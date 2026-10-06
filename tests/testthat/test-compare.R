@@ -45,7 +45,7 @@ test_that("a length-1 operand is broadcast on either side", {
 })
 
 test_that("comparisons match base R on random vectors of edge lengths", {
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     xd <- rand_vec("double", n, seed = n + 5L)
     yd <- rand_vec("double", n, seed = n + 6L)
     xi <- rand_vec("integer", n, seed = n + 7L)

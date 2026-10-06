@@ -32,13 +32,15 @@ pred_doubles <- function() {
 # x as unsigned 32-bit values in doubles (NA stays NA).
 u32 <- function(x) as.double(x) %% 2^32
 
-# Reference bit counts of integers, from their unsigned values in doubles
-# (NA for NA).
+# Reference bit counts of integers (NA for NA). popcount_ref() adds the
+# counts of the four bytes, looked up in byte_pop; the others work from the
+# unsigned values in doubles.
+byte_pop <- vapply(0:255, function(b) sum(bitwAnd(b, 2L^(0:7)) != 0L), integer(1))
 popcount_ref <- function(x) {
-  u <- u32(x)
-  r <- numeric(length(u))
-  for (k in 0:31) r <- r + (u %/% 2^k) %% 2
-  as.integer(r)
+  stopifnot(is.integer(x))
+  r <- integer(length(x))
+  for (k in 0:3) r <- r + byte_pop[bitwAnd(bitwShiftR(x, 8L * k), 255L) + 1L]
+  r
 }
 lzcnt_ref <- function(x) {
   u <- u32(x)
@@ -71,6 +73,6 @@ value_and_warnings <- function(expr) {
 expect_tiers_like_base <- function(base_f, f, ...) {
   want <- value_and_warnings(base_f(...))
   got <- expect_tier_warnings(want$warnings, f, ...)
-  expect_identical(got, want$value)
+  check_identical(got, want$value)
   expect_tiers_give(want$value, function(...) suppressWarnings(f(...)), ...)
 }

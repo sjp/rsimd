@@ -63,7 +63,7 @@ expect_tiers_give <- function(expected, f, ...) {
       ))
     }
   }
-  testthat::expect(length(problems) == 0L, paste(problems, collapse = "\n"))
+  simd_expect(length(problems) == 0L, paste(problems, collapse = "\n"))
   invisible(res)
 }
 
@@ -86,7 +86,7 @@ expect_tier_warnings <- function(msgs, f, ...) {
     list(value = value, warnings = w)
   })
   for (tier in names(res)) {
-    expect_identical(res[[tier]]$warnings, msgs, info = paste("tier", tier))
+    check_identical(res[[tier]]$warnings, msgs, info = paste("tier", tier))
   }
   invisible(res[["none"]]$value)
 }

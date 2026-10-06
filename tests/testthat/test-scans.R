@@ -12,13 +12,13 @@ scans <- list(
 # infinities in the same places, and the other elements within `bound`
 # (a vector, per element) of each other.
 expect_scan_close <- function(a, b, bound, info = NULL) {
-  expect_identical(is.na(a), is.na(b), info = info)
-  expect_identical(is.nan(a), is.nan(b), info = info)
+  check_identical(is.na(a), is.na(b), info = info)
+  check_identical(is.nan(a), is.nan(b), info = info)
   inf <- is.infinite(a) | is.infinite(b)
-  expect_identical(a[inf], b[inf], info = info)
+  check_identical(a[inf], b[inf], info = info)
   ok <- !is.na(a) & !inf
   bad <- which(!(abs(a[ok] - b[ok]) <= bound[ok]))
-  testthat::expect(length(bad) == 0L, sprintf(
+  simd_expect(length(bad) == 0L, sprintf(
     "%s: element %d is %.17g, expected %.17g (bound %.3g)", paste(info, collapse = " "),
     which(ok)[bad[1]], a[ok][bad[1]], b[ok][bad[1]], bound[ok][bad[1]]
   ))
@@ -85,50 +85,54 @@ test_that("the base R behaviour table is reproduced", {
 })
 
 test_that("integer scans and cummin/cummax are bit-identical to none and base R", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 3L
-    d <- rand_vec("double", n, na_frac = 0.002, nan_frac = 0.002, seed = seed)
-    inputs <- list(
-      rand_vec("integer", n, na_frac = 0, seed = seed) %/% 1000L,
-      rand_vec("integer", n, na_frac = 0.002, seed = seed) %/% 1000L,
-      rand_vec("logical", n, na_frac = 0, seed = seed),
-      rand_vec("logical", n, na_frac = 0.002, seed = seed),
-      rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed), d,
-      round(rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed))
-    )
-    for (x in inputs) {
-      for (f in c("cummin", "cummax", if (!is.double(x)) "cumsum")) {
-        res <- expect_simd_identical(scans[[f]]$simd, x)
-        want <- scans[[f]]$base(x)
-        for (tier in names(res)) {
-          expect_true(identical(res[[tier]], want, num.eq = FALSE), info = paste(tier, f, n))
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 3L
+      d <- rand_vec("double", n, na_frac = 0.002, nan_frac = 0.002, seed = seed)
+      inputs <- list(
+        rand_vec("integer", n, na_frac = 0, seed = seed) %/% 1000L,
+        rand_vec("integer", n, na_frac = 0.002, seed = seed) %/% 1000L,
+        rand_vec("logical", n, na_frac = 0, seed = seed),
+        rand_vec("logical", n, na_frac = 0.002, seed = seed),
+        rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed), d,
+        round(rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed))
+      )
+      for (x in sweep_inputs(n, inputs)) {
+        for (f in c("cummin", "cummax", if (!is.double(x)) "cumsum")) {
+          res <- expect_simd_identical(scans[[f]]$simd, x)
+          want <- scans[[f]]$base(x)
+          for (tier in names(res)) {
+            check_identical(res[[tier]], want, info = paste(tier, f, n), num.eq = FALSE)
+          }
         }
       }
     }
-  }
+  })
 })
 
 test_that("double cumsum and cumprod are within tolerance of none and base R", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 5L
-    for (x in list(
-      rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed),
-      rand_vec("double", n, na_frac = 0.001, nan_frac = 0.001, inf_frac = 0.001, seed = seed)
-    )) {
-      res <- with_each_tier(function() simd_cumsum(x))
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 5L
+      for (x in sweep_inputs(n, list(
+        rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed),
+        rand_vec("double", n, na_frac = 0.001, nan_frac = 0.001, inf_frac = 0.001, seed = seed)
+      ))) {
+        res <- with_each_tier(function() simd_cumsum(x))
+        for (tier in names(res)) {
+          expect_scan_close(res[[tier]], res[["none"]], cumsum_bound(x), info = c(tier, n))
+          expect_scan_close(res[[tier]], cumsum(x), cumsum_bound(x), info = c(tier, n, "base"))
+        }
+      }
+      p <- near_one(n, seed)
+      want <- cumprod(p)
+      res <- with_each_tier(function() simd_cumprod(p))
       for (tier in names(res)) {
-        expect_scan_close(res[[tier]], res[["none"]], cumsum_bound(x), info = c(tier, n))
-        expect_scan_close(res[[tier]], cumsum(x), cumsum_bound(x), info = c(tier, n, "base"))
+        expect_scan_close(res[[tier]], res[["none"]], cumprod_bound(want), info = c(tier, n))
+        expect_scan_close(res[[tier]], want, cumprod_bound(want), info = c(tier, n, "base"))
       }
     }
-    p <- near_one(n, seed)
-    want <- cumprod(p)
-    res <- with_each_tier(function() simd_cumprod(p))
-    for (tier in names(res)) {
-      expect_scan_close(res[[tier]], res[["none"]], cumprod_bound(want), info = c(tier, n))
-      expect_scan_close(res[[tier]], want, cumprod_bound(want), info = c(tier, n, "base"))
-    }
-  }
+  })
 })
 
 test_that("double cumsum is within 1e-12 relative of base R on random data", {
@@ -156,79 +160,87 @@ test_that("compensated cumsum is the same sequential sum on every tier", {
 })
 
 test_that("NA and NaN are placed as in base R wherever they occur", {
-  base <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
-  for (n in c(5, 12, 40)) {
-    x0 <- rep_len(base, n)
-    for (a in seq(1, n, by = 3)) {
-      for (b in unique(c(a, a + 1, n))) {
-        for (first in list(NA, NaN)) {
-          x <- x0
-          x[a] <- first
-          x[b] <- if (is.nan(first)) NA else NaN
-          for (f in names(scans)) {
-            want <- scans[[f]]$base(x)
-            res <- with_each_tier(function() scans[[f]]$simd(x))
-            for (tier in names(res)) {
-              expect_identical(is.na(res[[tier]]), is.na(want), info = paste(tier, f, n, a, b))
-              expect_identical(is.nan(res[[tier]]), is.nan(want), info = paste(tier, f, n, a, b))
+  batch_expectations({
+    base <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+    for (n in c(5, 12, 40)) {
+      x0 <- rep_len(base, n)
+      for (a in seq(1, n, by = 3)) {
+        for (b in unique(c(a, a + 1, n))) {
+          for (first in list(NA, NaN)) {
+            x <- x0
+            x[a] <- first
+            x[b] <- if (is.nan(first)) NA else NaN
+            for (f in names(scans)) {
+              want <- scans[[f]]$base(x)
+              res <- with_each_tier(function() scans[[f]]$simd(x))
+              for (tier in names(res)) {
+                check_identical(is.na(res[[tier]]), is.na(want), info = paste(tier, f, n, a, b))
+                check_identical(is.nan(res[[tier]]), is.nan(want), info = paste(tier, f, n, a, b))
+              }
             }
           }
         }
       }
     }
-  }
+  })
 })
 
 test_that("integer cumsum overflows at the right element with one warning", {
-  for (n in c(3, 9, 40, 300)) {
-    for (pos in unique(pmax(pmin(c(2, 3, 5, n %/% 2, n), n), 2))) {
-      x <- rep(1L, n)
-      x[pos - 1L] <- .Machine$integer.max - as.integer(pos) + 2L
-      for (sign in c(1L, -1L)) {
-        y <- sign * x
-        want <- withCallingHandlers(cumsum(y), warning = function(w) invokeRestart("muffleWarning"))
-        for (tier in tiers_to_test()) {
-          w <- character(0)
-          got <- withCallingHandlers(simd_with_impl(tier, simd_cumsum(y)), warning = function(c) {
-            w <<- c(w, conditionMessage(c))
-            invokeRestart("muffleWarning")
-          })
-          expect_identical(got, want, info = paste(tier, n, pos, sign))
-          expect_identical(w, "integer overflow in 'cumsum'; use 'cumsum(as.numeric(.))'")
+  batch_expectations({
+    for (n in c(3, 9, 40, 300)) {
+      for (pos in unique(pmax(pmin(c(2, 3, 5, n %/% 2, n), n), 2))) {
+        x <- rep(1L, n)
+        x[pos - 1L] <- .Machine$integer.max - as.integer(pos) + 2L
+        for (sign in c(1L, -1L)) {
+          y <- sign * x
+          want <- withCallingHandlers(cumsum(y),
+            warning = function(w) invokeRestart("muffleWarning")
+          )
+          for (tier in tiers_to_test()) {
+            w <- character(0)
+            got <- withCallingHandlers(simd_with_impl(tier, simd_cumsum(y)), warning = function(c) {
+              w <<- c(w, conditionMessage(c))
+              invokeRestart("muffleWarning")
+            })
+            check_identical(got, want, info = paste(tier, n, pos, sign))
+            check_identical(w, "integer overflow in 'cumsum'; use 'cumsum(as.numeric(.))'")
+          }
         }
       }
     }
-  }
-  # Partial sums that leave the int32 range inside a vector while the
-  # running total stays in range are not an overflow.
-  x <- c(-2000000000L, rep(c(2000000000L, -2000000000L), 50))
-  expect_simd_identical(simd_cumsum, x)
-  expect_identical(simd_cumsum(x), cumsum(x))
-  # An NA before the overflow gives no warning.
-  y <- c(1L, NA, .Machine$integer.max, 5L)
-  expect_silent(expect_identical(simd_cumsum(y), c(1L, rep(NA, 3))))
-  expect_identical(suppressWarnings(simd_cumsum(1:70000))[65535:65536], c(2147450880L, NA))
+    # Partial sums that leave the int32 range inside a vector while the
+    # running total stays in range are not an overflow.
+    x <- c(-2000000000L, rep(c(2000000000L, -2000000000L), 50))
+    expect_simd_identical(simd_cumsum, x)
+    check_identical(simd_cumsum(x), cumsum(x))
+    # An NA before the overflow gives no warning.
+    y <- c(1L, NA, .Machine$integer.max, 5L)
+    expect_silent(check_identical(simd_cumsum(y), c(1L, rep(NA, 3))))
+    check_identical(suppressWarnings(simd_cumsum(1:70000))[65535:65536], c(2147450880L, NA))
+  })
 })
 
 test_that("compact sequences scan like expanded vectors", {
-  for (n in c(2, 4097, 65535)) {
-    for (x in altrep_inputs(n)) {
-      expect_true(takes_region_path(x))
-      expanded <- x + if (is.integer(x)) 0L else 0
-      for (f in names(scans)) {
-        # Double products are reassociated differently by each tier.
-        if (f == "cumprod") {
-          a <- with_each_tier(function() simd_cumprod(x))
-          b <- with_each_tier(function() simd_cumprod(expanded))
-        } else {
-          a <- expect_simd_identical(scans[[f]]$simd, x)
-          b <- expect_simd_identical(scans[[f]]$simd, expanded)
+  batch_expectations({
+    for (n in c(2, 4097, 65535)) {
+      for (x in altrep_inputs(n)) {
+        check_true(takes_region_path(x))
+        expanded <- x + if (is.integer(x)) 0L else 0
+        for (f in names(scans)) {
+          # Double products are reassociated differently by each tier.
+          if (f == "cumprod") {
+            a <- with_each_tier(function() simd_cumprod(x))
+            b <- with_each_tier(function() simd_cumprod(expanded))
+          } else {
+            a <- expect_simd_identical(scans[[f]]$simd, x)
+            b <- expect_simd_identical(scans[[f]]$simd, expanded)
+          }
+          check_identical(a, b, info = f)
         }
-        expect_identical(a, b, info = f)
+        check_identical(simd_cumsum(x), cumsum(expanded))
       }
-      expect_identical(simd_cumsum(x), cumsum(expanded))
     }
-  }
+  })
 })
 
 test_that("scans carry across chunk boundaries", {

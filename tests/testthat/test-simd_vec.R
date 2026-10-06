@@ -22,17 +22,18 @@ unavailable_tier <- function() {
 # x must be a simd_vec holding `value`, pinned to `impl`, with NA-free flag
 # `na_free`.
 expect_sv <- function(x, value, impl = NULL, na_free = NULL) {
-  expect_true(is_simd_vec(x))
-  expect_identical(bare(x), value)
-  expect_identical(simd_impl(x), impl)
-  expect_identical(simd_na_free(x), na_free)
+  check_true(is_simd_vec(x), info = "is_simd_vec")
+  check_identical(bare(x), value, info = c("value", impl))
+  check_identical(simd_impl(x), impl, info = c("simd_impl", impl))
+  check_identical(simd_na_free(x), na_free, info = c("simd_na_free", impl))
   # Last: attributes() marks the token shared, which voids the flag.
-  expect_identical(
+  check_identical(
     sort(names(attributes(x))),
     sort(c(
       "class", if (!is.null(impl)) "rsimd_impl",
       if (!is.null(na_free)) c("rsimd_na_free", "rsimd_na_token")
-    ))
+    )),
+    info = c("attributes", impl)
   )
 }
 
@@ -289,30 +290,32 @@ test_that("the input is not modified", {
 # ---- Ops -------------------------------------------------------------------
 
 test_that("arithmetic operators equal the simd_ functions on every tier", {
-  x <- c(1.5, -2, 0, NA, 7.25)
-  xi <- c(3L, -7L, 0L, NA, 100L)
-  xl <- c(TRUE, FALSE, NA, TRUE, TRUE)
-  ops <- list(
-    `+` = simd_add, `-` = simd_sub, `*` = simd_mul, `/` = simd_div,
-    `^` = simd_pow, `%%` = simd_mod, `%/%` = simd_idiv
-  )
-  for (t in tiers_to_test()) {
-    for (op in names(ops)) {
-      f <- get(op)
-      for (a in list(x, xi, xl)) {
-        for (b in list(a, rev(a), 2L, 0.5)) {
-          if (op == "^" && is.logical(a) && is.logical(b)) next
-          want <- simd_with_impl(t, ops[[op]](a, b))
-          expect_sv(f(simd_vec(a, impl = t), b), want, t)
-          expect_sv(f(a, simd_vec(b, impl = t)), want, t)
-          expect_sv(f(simd_vec(a, impl = t), simd_vec(b)), want, t)
+  batch_expectations({
+    x <- c(1.5, -2, 0, NA, 7.25)
+    xi <- c(3L, -7L, 0L, NA, 100L)
+    xl <- c(TRUE, FALSE, NA, TRUE, TRUE)
+    ops <- list(
+      `+` = simd_add, `-` = simd_sub, `*` = simd_mul, `/` = simd_div,
+      `^` = simd_pow, `%%` = simd_mod, `%/%` = simd_idiv
+    )
+    for (t in tiers_to_test()) {
+      for (op in names(ops)) {
+        f <- get(op)
+        for (a in list(x, xi, xl)) {
+          for (b in list(a, rev(a), 2L, 0.5)) {
+            if (op == "^" && is.logical(a) && is.logical(b)) next
+            want <- simd_with_impl(t, ops[[op]](a, b))
+            expect_sv(f(simd_vec(a, impl = t), b), want, t)
+            expect_sv(f(a, simd_vec(b, impl = t)), want, t)
+            expect_sv(f(simd_vec(a, impl = t), simd_vec(b)), want, t)
+          }
         }
       }
+      expect_sv(-simd_vec(x, impl = t), simd_with_impl(t, simd_neg(x)), t)
+      expect_sv(-simd_vec(xi, impl = t), -xi, t)
+      expect_sv(-simd_vec(xl, impl = t), -xl, t)
     }
-    expect_sv(-simd_vec(x, impl = t), simd_with_impl(t, simd_neg(x)), t)
-    expect_sv(-simd_vec(xi, impl = t), -xi, t)
-    expect_sv(-simd_vec(xl, impl = t), -xl, t)
-  }
+  })
 })
 
 test_that("operators follow base R's types and warnings", {
@@ -413,37 +416,39 @@ test_that("an operand of another class is rejected on either side", {
 # ---- Math ------------------------------------------------------------------
 
 test_that("Math functions with a kernel equal the simd_ functions", {
-  x <- c(0.25, -0.75, 3.5, NA, NaN, Inf)
-  pos <- c(0.25, 1, 3.5, NA, 1e300)
-  fns <- c(
-    "abs", "sign", "floor", "ceiling", "trunc", "exp", "expm1", "cos", "sin", "tan",
-    "cospi", "sinpi", "tanpi", "atan", "cosh", "sinh", "tanh", "asinh",
-    "cumsum", "cumprod", "cummax", "cummin"
-  )
-  on_pos <- c("sqrt", "log2", "log10", "log1p", "acosh")
-  on_unit <- c("acos", "asin", "atanh")
-  ns <- asNamespace("rsimd")
-  for (t in tiers_to_test()) {
-    for (f in c(fns, on_pos, on_unit)) {
-      arg <- if (f %in% on_pos) pos else if (f %in% on_unit) c(-0.5, 0, 0.75, NA) else x
-      if (f == "acosh") arg <- arg + 1
-      kernel <- get(paste0("simd_", f), envir = ns)
-      # Some give NaN with a warning, as base R does.
-      want <- suppressWarnings(simd_with_impl(t, kernel(arg)))
-      expect_sv(suppressWarnings(get(f)(simd_vec(arg, impl = t))), want, t)
+  batch_expectations({
+    x <- c(0.25, -0.75, 3.5, NA, NaN, Inf)
+    pos <- c(0.25, 1, 3.5, NA, 1e300)
+    fns <- c(
+      "abs", "sign", "floor", "ceiling", "trunc", "exp", "expm1", "cos", "sin", "tan",
+      "cospi", "sinpi", "tanpi", "atan", "cosh", "sinh", "tanh", "asinh",
+      "cumsum", "cumprod", "cummax", "cummin"
+    )
+    on_pos <- c("sqrt", "log2", "log10", "log1p", "acosh")
+    on_unit <- c("acos", "asin", "atanh")
+    ns <- asNamespace("rsimd")
+    for (t in tiers_to_test()) {
+      for (f in c(fns, on_pos, on_unit)) {
+        arg <- if (f %in% on_pos) pos else if (f %in% on_unit) c(-0.5, 0, 0.75, NA) else x
+        if (f == "acosh") arg <- arg + 1
+        kernel <- get(paste0("simd_", f), envir = ns)
+        # Some give NaN with a warning, as base R does.
+        want <- suppressWarnings(simd_with_impl(t, kernel(arg)))
+        expect_sv(suppressWarnings(get(f)(simd_vec(arg, impl = t))), want, t)
+      }
+      expect_sv(round(simd_vec(x, impl = t)), simd_with_impl(t, simd_round(x)), t)
+      expect_sv(round(simd_vec(x, impl = t), 2), simd_round(x, 2), t)
+      expect_sv(round(simd_vec(x, impl = t), digits = -1), simd_round(x, -1), t)
+      expect_sv(log(simd_vec(pos, impl = t)), simd_with_impl(t, simd_log(pos)), t)
+      expect_sv(log(simd_vec(pos, impl = t), 2), simd_with_impl(t, simd_log(pos, 2)), t)
+      expect_sv(log(simd_vec(pos, impl = t), base = 10), simd_with_impl(t, simd_log(pos, 10)), t)
     }
-    expect_sv(round(simd_vec(x, impl = t)), simd_with_impl(t, simd_round(x)), t)
-    expect_sv(round(simd_vec(x, impl = t), 2), simd_round(x, 2), t)
-    expect_sv(round(simd_vec(x, impl = t), digits = -1), simd_round(x, -1), t)
-    expect_sv(log(simd_vec(pos, impl = t)), simd_with_impl(t, simd_log(pos)), t)
-    expect_sv(log(simd_vec(pos, impl = t), 2), simd_with_impl(t, simd_log(pos, 2)), t)
-    expect_sv(log(simd_vec(pos, impl = t), base = 10), simd_with_impl(t, simd_log(pos, 10)), t)
-  }
-  # Integer and logical input.
-  expect_sv(exp(simd_vec(0:2)), simd_exp(0:2))
-  expect_sv(abs(simd_vec(c(-2L, NA))), c(2L, NA))
-  expect_sv(cumsum(simd_vec(c(TRUE, TRUE))), 1:2)
-  expect_error(exp(simd_vec(as.raw(1))), "non-numeric argument to mathematical function")
+    # Integer and logical input.
+    expect_sv(exp(simd_vec(0:2)), simd_exp(0:2))
+    expect_sv(abs(simd_vec(c(-2L, NA))), c(2L, NA))
+    expect_sv(cumsum(simd_vec(c(TRUE, TRUE))), 1:2)
+    expect_error(exp(simd_vec(as.raw(1))), "non-numeric argument to mathematical function")
+  })
 })
 
 test_that("Math functions without a kernel fall back to base R", {
@@ -761,119 +766,121 @@ test_that("[[<- assigns one element and drops the flag", {
 })
 
 test_that("base functions on a flagged simd_vec agree with plain data", {
-  data <- list(
-    double = c(1.5, -2, 3e10),
-    integer = c(1L, -2L, 3L),
-    logical = c(TRUE, FALSE, TRUE),
-    complex = c(1 + 1i, -2i, 3),
-    integer64 = if (has_bit64()) simd_as_integer64(c(1, -2, 3))
-  )
-  data <- Filter(Negate(is.null), data)
-  fns <- list(
-    pmin = function(x) pmin(x, NA),
-    pmax = function(x) pmax(x, NA),
-    ifelse = function(x) ifelse(c(TRUE, FALSE, TRUE), x, NA),
-    replace = function(x) replace(x, 2, NA),
-    storage_integer = function(x) {
-      storage.mode(x) <- "integer"
-      x
-    },
-    storage_double = function(x) {
-      storage.mode(x) <- "double"
-      x
-    },
-    mode_integer = function(x) {
-      mode(x) <- "integer"
-      x
-    },
-    Re = Re, Im = Im, Mod = Mod, Arg = Arg, Conj = Conj,
-    rev = rev, sort = sort, unique = unique, head = function(x) head(x, 2),
-    tail = function(x) tail(x, 2), round = function(x) round(x, 1), signif = signif,
-    sqrt = sqrt, log = log, cumsum = cumsum, diff = diff,
-    is_na_assign = function(x) {
-      is.na(x) <- 2
-      x
-    },
-    sub2_assign = function(x) {
-      x[[2]] <- NA
-      x
-    },
-    sub_assign = function(x) {
-      x[2] <- NA
-      x
-    },
-    append = function(x) append(x, NA),
-    rep = function(x) rep(x, 2),
-    rep_len = function(x) rep_len(x, 5),
-    length_assign = function(x) `length<-`(x, 5),
-    na_index = function(x) x[c(1, NA)],
-    c = function(x) c(x, NA),
-    unclass_reclass = function(x) {
-      y <- unclass(x)
-      y[2] <- NA
-      class(y) <- class(x)
-      y
-    },
-    attributes_copy = function(x) {
-      y <- c(NA, 1, 2)
-      attributes(y) <- attributes(x)
-      y
-    },
-    attr_copy = function(x) {
-      y <- x
-      attr(y, "extra") <- 1
-      y[2] <- NA
-      y
-    },
-    structure = function(x) structure(rep(NA, length(x)), class = class(x)),
-    times_na = function(x) x * NA,
-    mod_zero = function(x) x %% 0,
-    ifelse_cond = function(x) ifelse(x == 1, x, NA),
-    split_unsplit = function(x) {
-      f <- c(1, 2, 1)
-      unsplit(split(x, f), f)
-    },
-    serialize = function(x) unserialize(serialize(x, NULL)),
-    names_dim = function(x) {
-      names(x) <- c("a", "b", "c")
-      dim(x) <- c(3, 1)
-      x[2] <- NA
-      x
-    }
-  )
-  # Data without a class, which rsimd takes (structure() above gives
-  # plain data the class "numeric").
-  plain <- function(r) if (is.object(r)) bare(r) else r
-  plain_any_na <- function(r) simd_any_na(plain(r))
-  for (type in names(data)) {
-    for (f in names(fns)) {
-      label <- paste(f, "on", type)
-      want <- tryCatch(suppressWarnings(fns[[f]](data[[type]])), error = function(e) NULL)
-      if (is.null(want) || !is.atomic(unclass(want))) next
-      x <- simd_vec(data[[type]], check_na = TRUE)
-      got <- tryCatch(suppressWarnings(fns[[f]](x)), error = function(e) NULL)
-      if (is.null(got)) next
-      # The core property: a TRUE flag is never on data with a missing value.
-      if (is_simd_vec(got) && isTRUE(simd_na_free(got))) {
-        expect_false(plain_any_na(got), label = label)
+  batch_expectations({
+    data <- list(
+      double = c(1.5, -2, 3e10),
+      integer = c(1L, -2L, 3L),
+      logical = c(TRUE, FALSE, TRUE),
+      complex = c(1 + 1i, -2i, 3),
+      integer64 = if (has_bit64()) simd_as_integer64(c(1, -2, 3))
+    )
+    data <- Filter(Negate(is.null), data)
+    fns <- list(
+      pmin = function(x) pmin(x, NA),
+      pmax = function(x) pmax(x, NA),
+      ifelse = function(x) ifelse(c(TRUE, FALSE, TRUE), x, NA),
+      replace = function(x) replace(x, 2, NA),
+      storage_integer = function(x) {
+        storage.mode(x) <- "integer"
+        x
+      },
+      storage_double = function(x) {
+        storage.mode(x) <- "double"
+        x
+      },
+      mode_integer = function(x) {
+        mode(x) <- "integer"
+        x
+      },
+      Re = Re, Im = Im, Mod = Mod, Arg = Arg, Conj = Conj,
+      rev = rev, sort = sort, unique = unique, head = function(x) head(x, 2),
+      tail = function(x) tail(x, 2), round = function(x) round(x, 1), signif = signif,
+      sqrt = sqrt, log = log, cumsum = cumsum, diff = diff,
+      is_na_assign = function(x) {
+        is.na(x) <- 2
+        x
+      },
+      sub2_assign = function(x) {
+        x[[2]] <- NA
+        x
+      },
+      sub_assign = function(x) {
+        x[2] <- NA
+        x
+      },
+      append = function(x) append(x, NA),
+      rep = function(x) rep(x, 2),
+      rep_len = function(x) rep_len(x, 5),
+      length_assign = function(x) `length<-`(x, 5),
+      na_index = function(x) x[c(1, NA)],
+      c = function(x) c(x, NA),
+      unclass_reclass = function(x) {
+        y <- unclass(x)
+        y[2] <- NA
+        class(y) <- class(x)
+        y
+      },
+      attributes_copy = function(x) {
+        y <- c(NA, 1, 2)
+        attributes(y) <- attributes(x)
+        y
+      },
+      attr_copy = function(x) {
+        y <- x
+        attr(y, "extra") <- 1
+        y[2] <- NA
+        y
+      },
+      structure = function(x) structure(rep(NA, length(x)), class = class(x)),
+      times_na = function(x) x * NA,
+      mod_zero = function(x) x %% 0,
+      ifelse_cond = function(x) ifelse(x == 1, x, NA),
+      split_unsplit = function(x) {
+        f <- c(1, 2, 1)
+        unsplit(split(x, f), f)
+      },
+      serialize = function(x) unserialize(serialize(x, NULL)),
+      names_dim = function(x) {
+        names(x) <- c("a", "b", "c")
+        dim(x) <- c(3, 1)
+        x[2] <- NA
+        x
       }
-      # Base R on a plain integer64 works on its double bits without bit64;
-      # bit64 has no length<- method (base pads with double NA), and an
-      # integer64 with a double is double in rsimd (integer64 in bit64).
-      i64_differs <- !isNamespaceLoaded("bit64") || f %in% c("length_assign", "mod_zero")
-      if (type == "integer64" && i64_differs) next
-      expect_identical(anyNA(got), plain_any_na(want), label = label)
-      if (is.numeric(got) || is.complex(got) || is.logical(got)) {
-        expect_identical(simd_which_na(got), simd_which_na(plain(want)), label = label)
-        if (!inherits(got, "integer64") && !is.complex(got)) {
-          expect_identical(
-            suppressWarnings(max(got)), suppressWarnings(max(.subset(want, seq_along(want)))),
-            label = label
-          )
+    )
+    # Data without a class, which rsimd takes (structure() above gives
+    # plain data the class "numeric").
+    plain <- function(r) if (is.object(r)) bare(r) else r
+    plain_any_na <- function(r) simd_any_na(plain(r))
+    for (type in names(data)) {
+      for (f in names(fns)) {
+        label <- paste(f, "on", type)
+        want <- tryCatch(suppressWarnings(fns[[f]](data[[type]])), error = function(e) NULL)
+        if (is.null(want) || !is.atomic(unclass(want))) next
+        x <- simd_vec(data[[type]], check_na = TRUE)
+        got <- tryCatch(suppressWarnings(fns[[f]](x)), error = function(e) NULL)
+        if (is.null(got)) next
+        # The core property: a TRUE flag is never on data with a missing value.
+        if (is_simd_vec(got) && isTRUE(simd_na_free(got))) {
+          check_identical(plain_any_na(got), FALSE, info = label)
+        }
+        # Base R on a plain integer64 works on its double bits without bit64;
+        # bit64 has no length<- method (base pads with double NA), and an
+        # integer64 with a double is double in rsimd (integer64 in bit64).
+        i64_differs <- !isNamespaceLoaded("bit64") || f %in% c("length_assign", "mod_zero")
+        if (type == "integer64" && i64_differs) next
+        check_identical(anyNA(got), plain_any_na(want), info = label)
+        if (is.numeric(got) || is.complex(got) || is.logical(got)) {
+          check_identical(simd_which_na(got), simd_which_na(plain(want)), info = label)
+          if (!inherits(got, "integer64") && !is.complex(got)) {
+            check_identical(
+              suppressWarnings(max(got)), suppressWarnings(max(.subset(want, seq_along(want)))),
+              info = label
+            )
+          }
         }
       }
     }
-  }
+  })
 })
 
 # ---- Other base generics ---------------------------------------------------

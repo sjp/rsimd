@@ -75,17 +75,19 @@ test_that("_any is FALSE and _all is TRUE for empty input", {
 })
 
 test_that("predicates match base R on random vectors of edge lengths", {
-  for (n in edge_lengths()) {
-    for (type in c("double", "integer")) {
-      x <- rand_vec(type, n, seed = n + 3L)
-      for (op in names(base_pred)) {
-        expected <- base_pred[[op]](x)
-        expect_tiers_give(expected, simd_pred(op), x)
-        expect_tiers_give(any(expected), simd_pred(op, "_any"), x)
-        expect_tiers_give(all(expected), simd_pred(op, "_all"), x)
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      for (type in sweep_inputs(n, list("double", "integer"))) {
+        x <- rand_vec(type, n, seed = n + 3L)
+        for (op in names(base_pred)) {
+          expected <- base_pred[[op]](x)
+          expect_tiers_give(expected, simd_pred(op), x)
+          expect_tiers_give(any(expected), simd_pred(op, "_any"), x)
+          expect_tiers_give(all(expected), simd_pred(op, "_all"), x)
+        }
       }
     }
-  }
+  })
 })
 
 test_that("early exit does not change _any/_all when the last element decides", {
@@ -134,13 +136,13 @@ test_that("attributes are dropped and unsupported types rejected", {
 # whole double is even).
 class_ref <- local({
   whole <- function(x) !is.na(x) & is.finite(x) & x == trunc(x)
-  rem2 <- function(x) suppressWarnings(x %% 2)
+  # A whole number is even when half of it is whole (x / 2 is exact).
   list(
     normal = function(x) !is.na(x) & is.finite(x) & abs(x) >= .Machine$double.xmin,
     subnormal = function(x) !is.na(x) & x != 0 & abs(x) < .Machine$double.xmin,
     whole = whole,
-    even = function(x) whole(x) & rem2(x) %in% 0,
-    odd = function(x) whole(x) & rem2(x) %in% 1,
+    even = function(x) whole(x) & whole(x / 2),
+    odd = function(x) whole(x) & !whole(x / 2),
     pow2 = function(x) {
       ok <- !is.na(x) & is.finite(x) & x > 0
       ok & suppressWarnings(2^round(log2(x))) == x
@@ -158,31 +160,35 @@ class_doubles <- function() {
 }
 
 test_that("number classes of doubles match base R for special and boundary values", {
-  x <- class_doubles()
-  for (op in names(class_ref)) {
-    expected <- class_ref[[op]](x)
-    expect_tiers_give(expected, simd_pred(op), x)
-    expect_tiers_give(any(expected), simd_pred(op, "_any"), x)
-    expect_tiers_give(all(expected), simd_pred(op, "_all"), x)
-    # The last value alone decides _any (after NA, which is in no class)
-    # and _all (after a member of the class).
-    member <- c(normal = 1, subnormal = 2^-1074, whole = 2, even = 2, odd = 1, pow2 = 2)[[op]]
-    for (v in x) {
-      e <- class_ref[[op]](v)
-      expect_tiers_give(e, simd_pred(op, "_any"), c(rep(NA, 9), v))
-      expect_tiers_give(e, simd_pred(op, "_all"), c(rep(member, 9), v))
+  batch_expectations({
+    x <- class_doubles()
+    for (op in names(class_ref)) {
+      expected <- class_ref[[op]](x)
+      expect_tiers_give(expected, simd_pred(op), x)
+      expect_tiers_give(any(expected), simd_pred(op, "_any"), x)
+      expect_tiers_give(all(expected), simd_pred(op, "_all"), x)
+      # The last value alone decides _any (after NA, which is in no class)
+      # and _all (after a member of the class).
+      member <- c(normal = 1, subnormal = 2^-1074, whole = 2, even = 2, odd = 1, pow2 = 2)[[op]]
+      for (v in x) {
+        e <- class_ref[[op]](v)
+        expect_tiers_give(e, simd_pred(op, "_any"), c(rep(NA, 9), v))
+        expect_tiers_give(e, simd_pred(op, "_all"), c(rep(member, 9), v))
+      }
     }
-  }
-  expect_identical(
-    simd_is_pow2(c(2^-1074, 2^1023, 0.5, 0, -2, 3 * 2^-1074, Inf)),
-    c(TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE)
-  )
-  expect_identical(
-    simd_is_subnormal(c(5e-324, -5e-324, 0, -0, 2.3e-308, 2.2e-308)),
-    c(TRUE, TRUE, FALSE, FALSE, FALSE, TRUE)
-  )
-  expect_identical(simd_is_even(c(-0, 2^53 + 2, 2^1023, -3, 1.5)), c(TRUE, TRUE, TRUE, FALSE, FALSE))
-  expect_identical(simd_is_odd(c(-3, 2^53 - 1, 2^53, 0.5)), c(TRUE, TRUE, FALSE, FALSE))
+    check_identical(
+      simd_is_pow2(c(2^-1074, 2^1023, 0.5, 0, -2, 3 * 2^-1074, Inf)),
+      c(TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE)
+    )
+    check_identical(
+      simd_is_subnormal(c(5e-324, -5e-324, 0, -0, 2.3e-308, 2.2e-308)),
+      c(TRUE, TRUE, FALSE, FALSE, FALSE, TRUE)
+    )
+    check_identical(
+      simd_is_even(c(-0, 2^53 + 2, 2^1023, -3, 1.5)), c(TRUE, TRUE, TRUE, FALSE, FALSE)
+    )
+    check_identical(simd_is_odd(c(-3, 2^53 - 1, 2^53, 0.5)), c(TRUE, TRUE, FALSE, FALSE))
+  })
 })
 
 test_that("number classes of integers and logicals follow their values; NA is never in one", {
@@ -206,22 +212,24 @@ test_that("number classes of integers and logicals follow their values; NA is ne
 })
 
 test_that("number classes match base R on random vectors of edge lengths", {
-  for (n in edge_lengths()) {
-    xs <- list(
-      rand_vec("integer", n, seed = n + 5L),
-      rand_vec("double", n, seed = n + 6L),
-      with_seed(n + 7L, sample(c(class_doubles(), -5:5), n, replace = TRUE)),
-      with_seed(n + 8L, sample(c(2L^(0:30), -4:4, NA), n, replace = TRUE))
-    )
-    for (x in xs) {
-      for (op in names(class_ref)) {
-        expected <- class_ref[[op]](as.double(x))
-        expect_tiers_give(expected, simd_pred(op), x)
-        expect_tiers_give(any(expected), simd_pred(op, "_any"), x)
-        expect_tiers_give(all(expected), simd_pred(op, "_all"), x)
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      xs <- list(
+        with_seed(n + 7L, sample(c(class_doubles(), -5:5), n, replace = TRUE)),
+        rand_vec("integer", n, seed = n + 5L),
+        rand_vec("double", n, seed = n + 6L),
+        with_seed(n + 8L, sample(c(2L^(0:30), -4:4, NA), n, replace = TRUE))
+      )
+      for (x in sweep_inputs(n, xs)) {
+        for (op in names(class_ref)) {
+          expected <- class_ref[[op]](as.double(x))
+          expect_tiers_give(expected, simd_pred(op), x)
+          expect_tiers_give(any(expected), simd_pred(op, "_any"), x)
+          expect_tiers_give(all(expected), simd_pred(op, "_all"), x)
+        }
       }
     }
-  }
+  })
 })
 
 test_that("number classes: empty input, compact sequences and unsupported types", {

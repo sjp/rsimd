@@ -38,251 +38,265 @@ expect_mean_matches_base <- function(x, ..., precision) {
   want <- mean(x, ...)
   for (tier in names(got)) {
     if (is.finite(want)) {
-      expect_lte(abs(got[[tier]] - want), bound + 2^-52 * abs(want),
-        label = paste(tier, precision, length(x))
+      check_true(abs(got[[tier]] - want) <= bound + 2^-52 * abs(want),
+        info = paste(tier, precision, length(x))
       )
     }
   }
 }
 
 test_that("every reduction matches the oracle on every tier for all edge lengths", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    d <- rand_vec("double", n, seed = seed)
-    i <- rand_vec("integer", n, seed = seed)
-    l <- rand_vec("logical", n, seed = seed)
-    p <- near_one(n, seed)
-    inputs <- list(
-      d, rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed), i,
-      rand_vec("integer", n, na_frac = 0, seed = seed), l
-    )
-    for (x in inputs) {
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      d <- rand_vec("double", n, seed = seed)
+      i <- rand_vec("integer", n, seed = seed)
+      l <- rand_vec("logical", n, seed = seed)
+      p <- near_one(n, seed)
+      inputs <- list(
+        d, rand_vec("double", n, na_frac = 0, nan_frac = 0, seed = seed), i,
+        rand_vec("integer", n, na_frac = 0, seed = seed), l
+      )
+      for (x in sweep_inputs(n, inputs)) {
+        for (na_rm in c(FALSE, TRUE)) {
+          suppressWarnings({
+            expect_simd_identical(simd_min, x, na.rm = na_rm)
+            expect_simd_identical(simd_max, x, na.rm = na_rm)
+            expect_simd_identical(simd_range, x, na.rm = na_rm)
+          })
+          expect_simd_identical(simd_any, x != 0, na.rm = na_rm)
+          expect_simd_identical(simd_all, x != 0, na.rm = na_rm)
+          for (mode in if (is.double(x)) modes else "fast") {
+            expect_simd_equal(simd_mean, x, na.rm = na_rm, precision = mode)
+          }
+          if (!is.double(x)) {
+            x25 <- x[seq_len(min(n, 25))]
+            expect_simd_equal(simd_prod, x25, na.rm = na_rm, tolerance = prod_tol(25))
+          }
+        }
+        expect_simd_identical(simd_which_min, x)
+        expect_simd_identical(simd_which_max, x)
+        expect_simd_identical(simd_any_na, x)
+        expect_simd_identical(simd_count_na, x)
+        expect_simd_identical(simd_which_na, x)
+        if (!anyNA(x)) {
+          suppressWarnings(expect_simd_identical(simd_range, x, na_check = FALSE))
+          expect_simd_equal(simd_mean, x, na_check = FALSE)
+        }
+      }
+      suppressWarnings({
+        expect_simd_identical(simd_any, d)
+        expect_simd_identical(simd_all, d, na.rm = TRUE)
+        expect_simd_identical(simd_any, i)
+        expect_simd_identical(simd_all, i)
+      })
       for (na_rm in c(FALSE, TRUE)) {
-        suppressWarnings({
-          expect_simd_identical(simd_min, x, na.rm = na_rm)
-          expect_simd_identical(simd_max, x, na.rm = na_rm)
-          expect_simd_identical(simd_range, x, na.rm = na_rm)
-        })
-        expect_simd_identical(simd_any, x != 0, na.rm = na_rm)
-        expect_simd_identical(simd_all, x != 0, na.rm = na_rm)
-        for (mode in if (is.double(x)) modes else "fast") {
-          expect_simd_equal(simd_mean, x, na.rm = na_rm, precision = mode)
-        }
-        if (!is.double(x)) {
-          x25 <- x[seq_len(min(n, 25))]
-          expect_simd_equal(simd_prod, x25, na.rm = na_rm, tolerance = prod_tol(25))
-        }
-      }
-      expect_simd_identical(simd_which_min, x)
-      expect_simd_identical(simd_which_max, x)
-      expect_simd_identical(simd_any_na, x)
-      expect_simd_identical(simd_count_na, x)
-      expect_simd_identical(simd_which_na, x)
-      if (!anyNA(x)) {
-        suppressWarnings(expect_simd_identical(simd_range, x, na_check = FALSE))
-        expect_simd_equal(simd_mean, x, na_check = FALSE)
+        expect_simd_equal(simd_prod, p, na.rm = na_rm, tolerance = prod_tol(n))
       }
     }
-    suppressWarnings({
-      expect_simd_identical(simd_any, d)
-      expect_simd_identical(simd_all, d, na.rm = TRUE)
-      expect_simd_identical(simd_any, i)
-      expect_simd_identical(simd_all, i)
-    })
-    for (na_rm in c(FALSE, TRUE)) {
-      expect_simd_equal(simd_prod, p, na.rm = na_rm, tolerance = prod_tol(n))
-    }
-  }
+  })
 })
 
 test_that("reductions agree with base R across edge lengths", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    # One kind of missing value at a time, where base R is deterministic.
-    xs <- list(
-      rand_vec("double", n, nan_frac = 0, seed = seed),
-      rand_vec("double", n, na_frac = 0, seed = seed),
-      rand_vec("integer", n, seed = seed),
-      rand_vec("logical", n, seed = seed)
-    )
-    for (x in xs) {
-      for (na_rm in c(FALSE, TRUE)) {
-        suppressWarnings({
-          expect_simd_matches_base(simd_min, min, x, na.rm = na_rm)
-          expect_simd_matches_base(simd_max, max, x, na.rm = na_rm)
-          expect_simd_matches_base(simd_range, range, x, na.rm = na_rm)
-          expect_simd_matches_base(simd_any, any, x != 0, na.rm = na_rm)
-          expect_simd_matches_base(simd_all, all, x != 0, na.rm = na_rm)
-        })
-        for (mode in if (is.double(x)) modes else "fast") {
-          expect_mean_matches_base(x, na.rm = na_rm, precision = mode)
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      # One kind of missing value at a time, where base R is deterministic.
+      xs <- list(
+        rand_vec("double", n, nan_frac = 0, seed = seed),
+        rand_vec("double", n, na_frac = 0, seed = seed),
+        rand_vec("integer", n, seed = seed),
+        rand_vec("logical", n, seed = seed)
+      )
+      for (x in sweep_inputs(n, xs)) {
+        for (na_rm in c(FALSE, TRUE)) {
+          suppressWarnings({
+            expect_simd_matches_base(simd_min, min, x, na.rm = na_rm)
+            expect_simd_matches_base(simd_max, max, x, na.rm = na_rm)
+            expect_simd_matches_base(simd_range, range, x, na.rm = na_rm)
+            expect_simd_matches_base(simd_any, any, x != 0, na.rm = na_rm)
+            expect_simd_matches_base(simd_all, all, x != 0, na.rm = na_rm)
+          })
+          for (mode in if (is.double(x)) modes else "fast") {
+            expect_mean_matches_base(x, na.rm = na_rm, precision = mode)
+          }
         }
+        expect_simd_matches_base(simd_which_min, which.min, x)
+        expect_simd_matches_base(simd_which_max, which.max, x)
+        expect_simd_matches_base(simd_any_na, anyNA, x)
+        expect_simd_matches_base(simd_count_na, base_count_na, x)
+        expect_simd_matches_base(simd_which_na, base_which_na, x)
       }
-      expect_simd_matches_base(simd_which_min, which.min, x)
-      expect_simd_matches_base(simd_which_max, which.max, x)
-      expect_simd_matches_base(simd_any_na, anyNA, x)
-      expect_simd_matches_base(simd_count_na, base_count_na, x)
-      expect_simd_matches_base(simd_which_na, base_which_na, x)
+      p <- near_one(n, seed, nan_frac = 0)
+      for (na_rm in c(FALSE, TRUE)) {
+        expect_simd_matches_base(simd_prod, prod, p, na.rm = na_rm, tolerance = prod_tol(n))
+      }
+      x <- rand_vec("integer", min(n, 30), seed = seed) %/% 1000L
+      expect_simd_matches_base(simd_prod, prod, x, na.rm = TRUE, tolerance = prod_tol(30))
     }
-    p <- near_one(n, seed, nan_frac = 0)
-    for (na_rm in c(FALSE, TRUE)) {
-      expect_simd_matches_base(simd_prod, prod, p, na.rm = na_rm, tolerance = prod_tol(n))
-    }
-    x <- rand_vec("integer", min(n, 30), seed = seed) %/% 1000L
-    expect_simd_matches_base(simd_prod, prod, x, na.rm = TRUE, tolerance = prod_tol(30))
-  }
+  })
 })
 
 test_that("the base R behaviour table is reproduced", {
-  # Each case: simd call, base call. Results and warnings must be identical
-  # on every tier.
-  cases <- list(
-    quote(prod(integer(0))), quote(prod(1:3)), quote(min(integer(0))),
-    quote(max(numeric(0))), quote(range(integer(0))), quote(mean(numeric(0))),
-    quote(mean(integer(0))), quote(min(c(0, -0))), quote(min(c(-0, 0))),
-    quote(max(c(0, -0))), quote(max(c(-0, 0))), quote(max(c(1, NaN))), quote(max(c(NaN, 1))),
-    quote(min(c(NA, NaN))), quote(min(c(NaN, NA))), quote(mean(c(NA, NaN))),
-    quote(prod(c(NA, NaN))), quote(any(as.raw(1))), quote(all(as.raw(c(1, 0)))),
-    quote(any(c(0, 2.5))), quote(any(c(1L, 0L))), quote(any(c(NaN, 0))),
-    quote(any(c(NA, TRUE))), quote(any(c(NA, FALSE))), quote(all(c(NA, TRUE))),
-    quote(all(c(NA, FALSE))), quote(any(logical(0))), quote(all(logical(0))),
-    quote(any(numeric(0))), quote(all(raw(0))), quote(which.max(c(1, 3, 3))),
-    quote(which.max(c(NA, 3, NaN, 3))), quote(which.max(numeric(0))),
-    quote(which.max(c(NA, NA))), quote(which.max(c(0, -0))), quote(which.min(c(0, -0))),
-    quote(which.min(c(TRUE, FALSE))), quote(anyNA(c(1, NaN))), quote(anyNA(as.raw(1))),
-    quote(which.max(as.raw(1:3))), quote(which.min(as.raw(c(3, 1, 1)))),
-    quote(which.max(raw(0))), quote(min(c(TRUE, FALSE))),
-    quote(range(c(TRUE, NA), na.rm = TRUE)), quote(min(NA_integer_, na.rm = TRUE)),
-    quote(range(NA_real_, na.rm = TRUE)), quote(range(c(1, NaN, 3))),
-    quote(range(c(NaN, 1, NA))), quote(mean(c(TRUE, FALSE, TRUE))),
-    quote(prod(c(TRUE, NA))), quote(mean(c(1L, NA), na.rm = TRUE)),
-    quote(which.max(c(-Inf, NA))), quote(which.min(c(Inf, Inf))),
-    quote(which.min(c(-Inf, NA, -Inf))), quote(max(c(-Inf, NaN))),
-    quote(min(c(Inf, NaN), na.rm = TRUE)), quote(all(c(NaN, 1))),
-    quote(all(c(NA_integer_, 0L), na.rm = TRUE)), quote(any(c(NA_real_, 1), na.rm = TRUE)),
-    quote(mean(c(.Machine$integer.max, .Machine$integer.max))), quote(prod(c(TRUE, TRUE))),
-    quote(min(c(1, NA, NaN))), quote(max(c(NaN, NA, 1))),
-    quote(1 / min(c(0, -0, NA), na.rm = TRUE)), quote(sum(c(NA, NaN)))
-  )
-  simd_name <- c(
-    prod = "simd_prod", min = "simd_min", max = "simd_max", range = "simd_range",
-    mean = "simd_mean", any = "simd_any", all = "simd_all", which.max = "simd_which_max",
-    which.min = "simd_which_min", anyNA = "simd_any_na", sum = "simd_sum"
-  )
-  to_simd <- function(e) {
-    if (is.call(e)) {
-      f <- as.character(e[[1L]])
-      if (f %in% names(simd_name)) e[[1L]] <- as.name(simd_name[[f]])
-      e[-1L] <- lapply(as.list(e[-1L]), to_simd)
+  batch_expectations({
+    # Each case: simd call, base call. Results and warnings must be identical
+    # on every tier.
+    cases <- list(
+      quote(prod(integer(0))), quote(prod(1:3)), quote(min(integer(0))),
+      quote(max(numeric(0))), quote(range(integer(0))), quote(mean(numeric(0))),
+      quote(mean(integer(0))), quote(min(c(0, -0))), quote(min(c(-0, 0))),
+      quote(max(c(0, -0))), quote(max(c(-0, 0))), quote(max(c(1, NaN))), quote(max(c(NaN, 1))),
+      quote(min(c(NA, NaN))), quote(min(c(NaN, NA))), quote(mean(c(NA, NaN))),
+      quote(prod(c(NA, NaN))), quote(any(as.raw(1))), quote(all(as.raw(c(1, 0)))),
+      quote(any(c(0, 2.5))), quote(any(c(1L, 0L))), quote(any(c(NaN, 0))),
+      quote(any(c(NA, TRUE))), quote(any(c(NA, FALSE))), quote(all(c(NA, TRUE))),
+      quote(all(c(NA, FALSE))), quote(any(logical(0))), quote(all(logical(0))),
+      quote(any(numeric(0))), quote(all(raw(0))), quote(which.max(c(1, 3, 3))),
+      quote(which.max(c(NA, 3, NaN, 3))), quote(which.max(numeric(0))),
+      quote(which.max(c(NA, NA))), quote(which.max(c(0, -0))), quote(which.min(c(0, -0))),
+      quote(which.min(c(TRUE, FALSE))), quote(anyNA(c(1, NaN))), quote(anyNA(as.raw(1))),
+      quote(which.max(as.raw(1:3))), quote(which.min(as.raw(c(3, 1, 1)))),
+      quote(which.max(raw(0))), quote(min(c(TRUE, FALSE))),
+      quote(range(c(TRUE, NA), na.rm = TRUE)), quote(min(NA_integer_, na.rm = TRUE)),
+      quote(range(NA_real_, na.rm = TRUE)), quote(range(c(1, NaN, 3))),
+      quote(range(c(NaN, 1, NA))), quote(mean(c(TRUE, FALSE, TRUE))),
+      quote(prod(c(TRUE, NA))), quote(mean(c(1L, NA), na.rm = TRUE)),
+      quote(which.max(c(-Inf, NA))), quote(which.min(c(Inf, Inf))),
+      quote(which.min(c(-Inf, NA, -Inf))), quote(max(c(-Inf, NaN))),
+      quote(min(c(Inf, NaN), na.rm = TRUE)), quote(all(c(NaN, 1))),
+      quote(all(c(NA_integer_, 0L), na.rm = TRUE)), quote(any(c(NA_real_, 1), na.rm = TRUE)),
+      quote(mean(c(.Machine$integer.max, .Machine$integer.max))), quote(prod(c(TRUE, TRUE))),
+      quote(min(c(1, NA, NaN))), quote(max(c(NaN, NA, 1))),
+      quote(1 / min(c(0, -0, NA), na.rm = TRUE)), quote(sum(c(NA, NaN)))
+    )
+    simd_name <- c(
+      prod = "simd_prod", min = "simd_min", max = "simd_max", range = "simd_range",
+      mean = "simd_mean", any = "simd_any", all = "simd_all", which.max = "simd_which_max",
+      which.min = "simd_which_min", anyNA = "simd_any_na", sum = "simd_sum"
+    )
+    to_simd <- function(e) {
+      if (is.call(e)) {
+        f <- as.character(e[[1L]])
+        if (f %in% names(simd_name)) e[[1L]] <- as.name(simd_name[[f]])
+        e[-1L] <- lapply(as.list(e[-1L]), to_simd)
+      }
+      e
     }
-    e
-  }
-  # The value and the warnings of evaluating e in env.
-  outcome <- function(e, env) {
-    w <- character(0)
-    r <- withCallingHandlers(eval(e, env), warning = function(c) {
-      w <<- c(w, conditionMessage(c))
-      invokeRestart("muffleWarning")
-    })
-    list(r, w)
-  }
-  here <- environment()
-  for (e in cases) {
-    want <- outcome(e, baseenv())
-    simd_e <- to_simd(e)
-    got <- with_each_tier(function() outcome(simd_e, here))
-    for (tier in names(got)) {
-      g <- got[[tier]]
-      expect_identical(g, want, info = paste(tier, deparse1(e)))
-      expect_true(identical(g[[1L]], want[[1L]], num.eq = FALSE), info = paste(tier, deparse1(e)))
+    # The value and the warnings of evaluating e in env.
+    outcome <- function(e, env) {
+      w <- character(0)
+      r <- withCallingHandlers(eval(e, env), warning = function(c) {
+        w <<- c(w, conditionMessage(c))
+        invokeRestart("muffleWarning")
+      })
+      list(r, w)
     }
-  }
+    here <- environment()
+    for (e in cases) {
+      want <- outcome(e, baseenv())
+      simd_e <- to_simd(e)
+      got <- with_each_tier(function() outcome(simd_e, here))
+      for (tier in names(got)) {
+        g <- got[[tier]]
+        check_identical(g, want, info = paste(tier, deparse1(e)))
+        check_identical(g[[1L]], want[[1L]], info = paste(tier, deparse1(e)), num.eq = FALSE)
+      }
+    }
+  })
 })
 
 test_that("NA beats NaN in either order for prod, mean, min, max and range", {
-  for (x in list(c(NA, NaN), c(NaN, NA), c(1, NaN, 2, NA), c(NA, 1:40, NaN), c(NaN, 1:40, NA))) {
-    for (f in list(simd_prod, simd_mean, simd_min, simd_max, simd_range)) {
-      res <- with_each_tier(function() f(x))
-      for (tier in names(res)) {
-        expect_true(all(is.na(res[[tier]]) & !is.nan(res[[tier]])), info = tier)
+  batch_expectations({
+    for (x in list(c(NA, NaN), c(NaN, NA), c(1, NaN, 2, NA), c(NA, 1:40, NaN), c(NaN, 1:40, NA))) {
+      for (f in list(simd_prod, simd_mean, simd_min, simd_max, simd_range)) {
+        res <- with_each_tier(function() f(x))
+        for (tier in names(res)) {
+          check_true(all(is.na(res[[tier]]) & !is.nan(res[[tier]])), info = tier)
+        }
       }
     }
-  }
+  })
 })
 
 test_that("a zero extremum has the sign of the first zero, wherever the zeros are", {
-  for (n in c(2, 3, 5, 9, 17, 33, 65, 130, 300)) {
-    for (k in 1:12) {
-      pos <- with_seed(n * 100 + k, sort(sample.int(n, min(n, 4))))
-      x <- with_seed(k, stats::runif(n, 1, 2))
-      signs <- with_seed(k + 7, sample(c(0, -0), length(pos), replace = TRUE))
-      x[pos] <- signs
-      lo <- expect_simd_identical(simd_min, x)
-      for (tier in names(lo)) {
-        expect_true(identical(lo[[tier]], min(x), num.eq = FALSE), info = paste(tier, n, k))
+  batch_expectations({
+    for (n in c(2, 3, 5, 9, 17, 33, 65, 130, 300)) {
+      for (k in 1:12) {
+        pos <- with_seed(n * 100 + k, sort(sample.int(n, min(n, 4))))
+        x <- with_seed(k, stats::runif(n, 1, 2))
+        signs <- with_seed(k + 7, sample(c(0, -0), length(pos), replace = TRUE))
+        x[pos] <- signs
+        lo <- expect_simd_identical(simd_min, x)
+        for (tier in names(lo)) {
+          check_identical(lo[[tier]], min(x), info = paste(tier, n, k), num.eq = FALSE)
+        }
+        y <- -x
+        hi <- expect_simd_identical(simd_max, y)
+        for (tier in names(hi)) {
+          check_identical(hi[[tier]], max(y), info = paste(tier, n, k), num.eq = FALSE)
+        }
+        r <- expect_simd_identical(simd_range, c(x, y))
+        for (tier in names(r)) {
+          check_identical(r[[tier]], range(c(x, y)), info = tier, num.eq = FALSE)
+        }
+        expect_simd_identical(simd_which_min, x)
+        expect_simd_matches_base(simd_which_min, which.min, x)
+        expect_simd_matches_base(simd_which_max, which.max, y)
       }
-      y <- -x
-      hi <- expect_simd_identical(simd_max, y)
-      for (tier in names(hi)) {
-        expect_true(identical(hi[[tier]], max(y), num.eq = FALSE), info = paste(tier, n, k))
-      }
-      r <- expect_simd_identical(simd_range, c(x, y))
-      for (tier in names(r)) {
-        expect_true(identical(r[[tier]], range(c(x, y)), num.eq = FALSE), info = tier)
-      }
-      expect_simd_identical(simd_which_min, x)
-      expect_simd_matches_base(simd_which_min, which.min, x)
-      expect_simd_matches_base(simd_which_max, which.max, y)
     }
-  }
+  })
 })
 
 test_that("which_*: first of ties, NA and NaN ignored, empty gives integer(0)", {
-  cases <- list(
-    c(1, 3, 3), c(3, 1, 3, 1), c(NA, 3, NaN, 3), c(NaN, NaN), c(NA, NA), numeric(0),
-    c(rep(NA, 40), 2, 2), c(rep(5L, 70), 9L, 9L), c(NA_integer_, NA_integer_), integer(0),
-    c(FALSE, NA, TRUE, TRUE), c(-Inf, -Inf, NA), c(Inf, NaN, Inf), as.raw(c(0, 255, 255, 0))
-  )
-  for (x in cases) {
-    expect_simd_matches_base(simd_which_min, which.min, x)
-    expect_simd_matches_base(simd_which_max, which.max, x)
-    expect_simd_identical(simd_which_min, x)
-    expect_simd_identical(simd_which_max, x)
-  }
-  # A tie between lanes, chunks and vector blocks: the first wins.
-  for (n in c(7, 64, 1000, 5000)) {
-    x <- rep(1, n)
-    x[c(n, n %/% 2, 3)] <- 0
-    expect_simd_matches_base(simd_which_min, which.min, x)
-    expect_simd_matches_base(simd_which_max, which.max, -x)
-    xi <- as.integer(x)
-    expect_simd_matches_base(simd_which_min, which.min, xi)
-  }
+  batch_expectations({
+    cases <- list(
+      c(1, 3, 3), c(3, 1, 3, 1), c(NA, 3, NaN, 3), c(NaN, NaN), c(NA, NA), numeric(0),
+      c(rep(NA, 40), 2, 2), c(rep(5L, 70), 9L, 9L), c(NA_integer_, NA_integer_), integer(0),
+      c(FALSE, NA, TRUE, TRUE), c(-Inf, -Inf, NA), c(Inf, NaN, Inf), as.raw(c(0, 255, 255, 0))
+    )
+    for (x in cases) {
+      expect_simd_matches_base(simd_which_min, which.min, x)
+      expect_simd_matches_base(simd_which_max, which.max, x)
+      expect_simd_identical(simd_which_min, x)
+      expect_simd_identical(simd_which_max, x)
+    }
+    # A tie between lanes, chunks and vector blocks: the first wins.
+    for (n in c(7, 64, 1000, 5000)) {
+      x <- rep(1, n)
+      x[c(n, n %/% 2, 3)] <- 0
+      expect_simd_matches_base(simd_which_min, which.min, x)
+      expect_simd_matches_base(simd_which_max, which.max, -x)
+      xi <- as.integer(x)
+      expect_simd_matches_base(simd_which_min, which.min, xi)
+    }
+  })
 })
 
 test_that("compact sequences give the same results as expanded vectors", {
-  for (n in c(2, 4097, 1e6)) {
-    for (x in altrep_inputs(n)) {
-      expect_true(takes_region_path(x))
-      expanded <- x + if (is.integer(x)) 0L else 0
-      expect_false(takes_region_path(expanded))
-      for (f in list(
-        simd_min, simd_max, simd_range, simd_which_min, simd_which_max,
-        simd_any_na, simd_count_na, simd_which_na
-      )) {
-        a <- expect_simd_identical(f, x)
-        b <- expect_simd_identical(f, expanded)
-        expect_identical(a, b)
+  batch_expectations({
+    for (n in c(2, 4097, long_length())) {
+      for (x in altrep_inputs(n)) {
+        check_true(takes_region_path(x))
+        expanded <- x + if (is.integer(x)) 0L else 0
+        expect_false(takes_region_path(expanded))
+        for (f in list(
+          simd_min, simd_max, simd_range, simd_which_min, simd_which_max,
+          simd_any_na, simd_count_na, simd_which_na
+        )) {
+          a <- expect_simd_identical(f, x)
+          b <- expect_simd_identical(f, expanded)
+          check_identical(a, b)
+        }
+        for (mode in modes) {
+          a <- expect_simd_equal(simd_mean, x, precision = mode)
+          b <- expect_simd_equal(simd_mean, expanded, precision = mode)
+          check_identical(a, b, info = mode)
+        }
+        check_identical(simd_which_max(x), which.max(expanded))
+        check_identical(simd_mean(x), mean(expanded))
       }
-      for (mode in modes) {
-        a <- expect_simd_equal(simd_mean, x, precision = mode)
-        b <- expect_simd_equal(simd_mean, expanded, precision = mode)
-        expect_identical(a, b, info = mode)
-      }
-      expect_identical(simd_which_max(x), which.max(expanded))
-      expect_identical(simd_mean(x), mean(expanded))
     }
-  }
+  })
 })
 
 test_that("na.rm = TRUE on all-missing input follows base R", {
@@ -340,44 +354,48 @@ test_that("mean: pairwise and compensated refine with a second pass", {
 })
 
 test_that("raw any/all find a zero or non-zero byte at every position", {
-  for (n in c(1:70, 127, 128, 129, 1000)) {
-    ones <- as.raw(rep(c(1, 128, 255, 129), length.out = n))
-    expect_simd_identical(function(x) suppressWarnings(simd_all(x)), ones)
-    for (p in unique(c(1, max(n %/% 2, 1), n, seq_len(min(n, 40))))) {
-      x <- ones
-      x[p] <- as.raw(0)
-      res <- with_each_tier(function() suppressWarnings(c(simd_all(x), simd_any(x))))
-      want <- c(FALSE, n > 1)
-      for (tier in names(res)) expect_identical(res[[tier]], want, info = paste(tier, n, p))
-      z <- raw(n)
-      z[p] <- as.raw(1)
-      res <- with_each_tier(function() suppressWarnings(c(simd_all(z), simd_any(z))))
-      want <- c(n == 1, TRUE)
-      for (tier in names(res)) expect_identical(res[[tier]], want, info = paste(tier, n, p))
+  batch_expectations({
+    for (n in c(1:70, 127, 128, 129, 1000)) {
+      ones <- as.raw(rep(c(1, 128, 255, 129), length.out = n))
+      expect_simd_identical(function(x) suppressWarnings(simd_all(x)), ones)
+      for (p in unique(c(1, max(n %/% 2, 1), n, seq_len(min(n, 40))))) {
+        x <- ones
+        x[p] <- as.raw(0)
+        res <- with_each_tier(function() suppressWarnings(c(simd_all(x), simd_any(x))))
+        want <- c(FALSE, n > 1)
+        for (tier in names(res)) check_identical(res[[tier]], want, info = paste(tier, n, p))
+        z <- raw(n)
+        z[p] <- as.raw(1)
+        res <- with_each_tier(function() suppressWarnings(c(simd_all(z), simd_any(z))))
+        want <- c(n == 1, TRUE)
+        for (tier in names(res)) check_identical(res[[tier]], want, info = paste(tier, n, p))
+      }
+      res <- with_each_tier(function() suppressWarnings(c(simd_all(ones), simd_any(raw(n)))))
+      for (tier in names(res)) check_identical(res[[tier]], c(TRUE, FALSE), info = paste(tier, n))
     }
-    res <- with_each_tier(function() suppressWarnings(c(simd_all(ones), simd_any(raw(n)))))
-    for (tier in names(res)) expect_identical(res[[tier]], c(TRUE, FALSE), info = paste(tier, n))
-  }
+  })
 })
 
 test_that("missing-value queries cover doubles, integers, logicals, complex and raw", {
-  for (n in c(1, 2, 3, 7, 33, 129, 4097)) {
-    for (k in 1:3) {
-      d <- rand_vec("double", n, na_frac = 0.1, nan_frac = 0.1, seed = n + k)
-      z <- complex(real = d, imaginary = rev(d))
-      for (x in list(d, rand_vec("integer", n, na_frac = 0.2, seed = k), z)) {
-        expect_simd_matches_base(simd_any_na, anyNA, x)
-        expect_simd_matches_base(simd_count_na, base_count_na, x)
-        expect_simd_matches_base(simd_which_na, base_which_na, x)
+  batch_expectations({
+    for (n in c(1, 2, 3, 7, 33, 129, 4097)) {
+      for (k in 1:3) {
+        d <- rand_vec("double", n, na_frac = 0.1, nan_frac = 0.1, seed = n + k)
+        z <- complex(real = d, imaginary = rev(d))
+        for (x in list(d, rand_vec("integer", n, na_frac = 0.2, seed = k), z)) {
+          expect_simd_matches_base(simd_any_na, anyNA, x)
+          expect_simd_matches_base(simd_count_na, base_count_na, x)
+          expect_simd_matches_base(simd_which_na, base_which_na, x)
+        }
       }
     }
-  }
-  expect_identical(simd_any_na(as.raw(1:3)), FALSE)
-  expect_identical(simd_count_na(as.raw(1:3)), 0)
-  expect_identical(simd_which_na(as.raw(1:3)), integer(0))
-  expect_identical(simd_which_na(numeric(0)), integer(0))
-  expect_identical(simd_count_na(integer(0)), 0)
-  expect_identical(simd_any_na(complex(real = 1, imaginary = NaN)), TRUE)
+    check_identical(simd_any_na(as.raw(1:3)), FALSE)
+    check_identical(simd_count_na(as.raw(1:3)), 0)
+    check_identical(simd_which_na(as.raw(1:3)), integer(0))
+    check_identical(simd_which_na(numeric(0)), integer(0))
+    check_identical(simd_count_na(integer(0)), 0)
+    check_identical(simd_any_na(complex(real = 1, imaginary = NaN)), TRUE)
+  })
 })
 
 test_that("chunked results equal unchunked ones", {

@@ -131,7 +131,7 @@ test_that("every raw op and count matches base R or the reference, exhaustively"
 })
 
 test_that("ops match on random vectors of edge lengths and compact sequences", {
-  for (n in edge_lengths()) {
+  for (n in sweep_lengths()) {
     x <- rand_vec("integer", n, seed = n + 21L) * 1000L
     y <- rand_vec("integer", n, seed = n + 22L)
     expect_tiers_give(bitwAnd(x, y), simd_bit_and, x, y)

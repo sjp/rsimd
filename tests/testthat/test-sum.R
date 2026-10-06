@@ -8,74 +8,80 @@ expected_missing <- function(x) {
 }
 
 test_that("simd_sum matches the oracle on every tier for all edge lengths", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    inputs <- list(
-      double = rand_vec("double", n, seed = seed),
-      double_clean = rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed),
-      integer = rand_vec("integer", n, seed = seed),
-      integer_clean = rand_vec("integer", n, na_frac = 0, seed = seed),
-      logical = rand_vec("logical", n, seed = seed)
-    )
-    for (nm in names(inputs)) {
-      x <- inputs[[nm]]
-      for (na_rm in c(FALSE, TRUE)) {
-        # Precision only affects doubles.
-        for (mode in if (is.double(x)) modes else "fast") {
-          expect_simd_equal(simd_sum, x, na.rm = na_rm, precision = mode)
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      inputs <- list(
+        double = rand_vec("double", n, seed = seed),
+        double_clean = rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = seed),
+        integer = rand_vec("integer", n, seed = seed),
+        integer_clean = rand_vec("integer", n, na_frac = 0, seed = seed),
+        logical = rand_vec("logical", n, seed = seed)
+      )
+      for (nm in names(sweep_inputs(n, inputs))) {
+        x <- inputs[[nm]]
+        for (na_rm in c(FALSE, TRUE)) {
+          # Precision only affects doubles.
+          for (mode in if (is.double(x)) modes else "fast") {
+            expect_simd_equal(simd_sum, x, na.rm = na_rm, precision = mode)
+          }
         }
+        if (!anyNA(x)) expect_simd_equal(simd_sum, x, na_check = FALSE)
       }
-      if (!anyNA(x)) expect_simd_equal(simd_sum, x, na_check = FALSE)
     }
-  }
+  })
 })
 
 test_that("simd_sum agrees with base R across edge lengths", {
-  for (n in edge_lengths()) {
-    seed <- as.integer(n %% 1000) + 1L
-    # One kind of missing value at a time, where base R is deterministic.
-    xs <- list(
-      rand_vec("double", n, nan_frac = 0, seed = seed),
-      rand_vec("double", n, na_frac = 0, seed = seed),
-      rand_vec("integer", n, seed = seed),
-      rand_vec("logical", n, seed = seed)
-    )
-    for (x in xs) {
-      for (na_rm in c(FALSE, TRUE)) {
-        for (mode in if (is.double(x)) modes else "fast") {
-          expect_simd_matches_base(simd_sum, sum, x, na.rm = na_rm, precision = mode)
+  batch_expectations({
+    for (n in sweep_lengths()) {
+      seed <- as.integer(n %% 1000) + 1L
+      # One kind of missing value at a time, where base R is deterministic.
+      xs <- list(
+        rand_vec("double", n, nan_frac = 0, seed = seed),
+        rand_vec("double", n, na_frac = 0, seed = seed),
+        rand_vec("integer", n, seed = seed),
+        rand_vec("logical", n, seed = seed)
+      )
+      for (x in sweep_inputs(n, xs)) {
+        for (na_rm in c(FALSE, TRUE)) {
+          for (mode in if (is.double(x)) modes else "fast") {
+            expect_simd_matches_base(simd_sum, sum, x, na.rm = na_rm, precision = mode)
+          }
         }
       }
     }
-  }
+  })
 })
 
 test_that("edge doubles in every order agree with the oracle and the NA rules", {
-  d <- edge_doubles(xmax = FALSE)
-  check <- function(x) {
-    for (mode in modes) {
-      res <- expect_simd_equal(simd_sum, x, precision = mode)
-      if (anyNA(x)) {
-        expect_identical(is.nan(res$none), is.nan(expected_missing(x)), info = deparse(x))
-      } else {
-        # Without missing values only Inf + -Inf gives NaN.
-        expect_identical(is.nan(res$none), Inf %in% x && -Inf %in% x, info = deparse(x))
+  batch_expectations({
+    d <- edge_doubles(xmax = FALSE)
+    check <- function(x) {
+      for (mode in modes) {
+        res <- expect_simd_equal(simd_sum, x, precision = mode)
+        if (anyNA(x)) {
+          check_identical(is.nan(res$none), is.nan(expected_missing(x)), info = deparse(x))
+        } else {
+          # Without missing values only Inf + -Inf gives NaN.
+          check_identical(is.nan(res$none), Inf %in% x && -Inf %in% x, info = deparse(x))
+        }
+        expect_simd_equal(simd_sum, x, na.rm = TRUE, precision = mode)
       }
-      expect_simd_equal(simd_sum, x, na.rm = TRUE, precision = mode)
     }
-  }
-  for (i in seq_along(d)) {
-    for (j in seq_along(d)) check(d[c(i, j)])
-  }
-  for (k in 1:10) {
-    p <- with_seed(k, sample(d))
-    check(p)
-    check(rev(p))
-    # Spread over a longer vector so the values land in different lanes.
-    long <- numeric(16 * 32 + 5)
-    long[with_seed(k, sort(sample.int(length(long), length(p))))] <- p
-    check(long)
-  }
+    for (i in seq_along(d)) {
+      for (j in seq_along(d)) check(d[c(i, j)])
+    }
+    for (k in 1:10) {
+      p <- with_seed(k, sample(d))
+      check(p)
+      check(rev(p))
+      # Spread over a longer vector so the values land in different lanes.
+      long <- numeric(16 * 32 + 5)
+      long[with_seed(k, sort(sample.int(length(long), length(p))))] <- p
+      check(long)
+    }
+  })
 })
 
 test_that("NA and NaN in either order give NA on every tier", {
@@ -158,20 +164,22 @@ test_that("cancellation: compensated gives 1, fast depends only on the lane widt
 })
 
 test_that("compact sequences are summed in regions and equal the expanded vector", {
-  expect_true(takes_region_path(1:1e6))
-  expect_simd_matches_base(simd_sum, sum, 1:1e6)
-  for (n in c(2, 4097, 1e6)) {
-    for (x in altrep_inputs(n)) {
-      expect_true(takes_region_path(x))
-      expanded <- x + if (is.integer(x)) 0L else 0
-      expect_false(takes_region_path(expanded))
-      for (mode in modes) {
-        res <- expect_simd_equal(simd_sum, x, precision = mode)
-        res2 <- expect_simd_equal(simd_sum, expanded, precision = mode)
-        expect_identical(res, res2, info = paste(typeof(x), n, mode))
+  batch_expectations({
+    check_true(takes_region_path(1:1e6))
+    expect_simd_matches_base(simd_sum, sum, 1:1e6)
+    for (n in c(2, 4097, 1e6)) {
+      for (x in altrep_inputs(n)) {
+        check_true(takes_region_path(x))
+        expanded <- x + if (is.integer(x)) 0L else 0
+        expect_false(takes_region_path(expanded))
+        for (mode in modes) {
+          res <- expect_simd_equal(simd_sum, x, precision = mode)
+          res2 <- expect_simd_equal(simd_sum, expanded, precision = mode)
+          check_identical(res, res2, info = paste(typeof(x), n, mode))
+        }
       }
     }
-  }
+  })
 })
 
 test_that("compensated sum of 1e6 random doubles is within 1 ULP of the exact sum", {

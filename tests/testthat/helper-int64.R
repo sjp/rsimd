@@ -28,11 +28,19 @@ i64_from_bits <- function(bits) i64_from_bytes(packBits(as.integer(bits), "raw")
 # (doubles); missing halves give NA.
 i64_halves <- function(hi, lo) {
   n <- max(length(hi), length(lo))
-  hi <- rep_len(hi, n) %% 2^32
+  hi <- rep_len(hi, n)
   lo <- rep_len(lo, n)
-  bytes <- function(u) vapply(0:3, function(k) floor(u / 256^k) %% 256, numeric(n))
-  b <- cbind(matrix(bytes(lo), n), matrix(bytes(hi), n))
-  i64_from_bytes(as.raw(t(b)))
+  na <- is.na(hi) | is.na(lo)
+  hi[na] <- -2^31
+  lo[na] <- 0
+  # Each half as the integer with its bit pattern (0x80000000 is NA_integer_),
+  # low word first.
+  word <- function(u) {
+    u <- u %% 2^32
+    suppressWarnings(as.integer(u - (u >= 2^31) * 2^32))
+  }
+  w <- as.vector(rbind(word(lo), word(hi)))
+  i64_from_bytes(writeBin(w, raw(), size = 4, endian = "little"))
 }
 
 # The halves of each element: list(hi = signed high word, lo = unsigned
@@ -162,11 +170,13 @@ rand_i64 <- function(n, kind = c("mix", "full", "small"), na_frac = 0.05, seed =
 expect_i64 <- function(got, want, info = NULL) {
   ok <- inherits(got, "integer64") && identical(attributes(got), attributes(want)) &&
     identical(as.vector(unclass(got)), as.vector(unclass(want)), num.eq = FALSE)
-  testthat::expect(ok, sprintf(
-    "%s: got %s, want %s", paste(info, collapse = " "),
-    if (inherits(got, "integer64")) paste(i64_str(got), collapse = " ") else deparse1(got),
-    paste(i64_str(want), collapse = " ")
-  ))
+  simd_expect(ok, function() {
+    sprintf(
+      "%s: got %s, want %s", paste(info, collapse = " "),
+      if (inherits(got, "integer64")) paste(i64_str(got), collapse = " ") else deparse1(got),
+      paste(i64_str(want), collapse = " ")
+    )
+  })
   invisible(got)
 }
 
@@ -176,7 +186,7 @@ expect_tiers_i64 <- function(want, f, ..., msgs = character(0)) {
   res <- with_each_tier(function() value_and_warnings(f(...)))
   for (tier in names(res)) {
     expect_i64(res[[tier]]$value, want, info = paste("tier", tier))
-    expect_identical(res[[tier]]$warnings, msgs, info = paste("tier", tier))
+    check_identical(res[[tier]]$warnings, msgs, info = paste("tier", tier))
   }
   invisible(res)
 }
