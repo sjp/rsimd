@@ -100,10 +100,10 @@ static SEXP simd_ew2_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   if (check_numeric(&e, binop_msg, code <= RSIMD_EW_DIV,
                     code != RSIMD_EW_DIV && code != RSIMD_EW_COPYSIGN)) {
     if (code == RSIMD_EW_MUL || code == RSIMD_EW_DIV) return rsimd_c128_muldiv(code, x, y);
-    rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, 0);
+    rsimd_opts_init(&o, R_NilValue, na_check, 0);
     return rsimd_c128_add(code, x, y, &o);
   }
-  rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, na_check, e.no_na_hint);
   if (any_i64(&e)) {
     double *po;
     int flags = e.flags | i32_flags(&e);
@@ -169,7 +169,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   rsimd_ew_init(&e, 3, sargs,
                 code == RSIMD_EW_CLAMP ? xlohi : code == RSIMD_EW_LERP ? xyt : xyz);
   check_numeric(&e, binop_msg, 0, code != RSIMD_EW_FMA && code != RSIMD_EW_LERP);
-  rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, na_check, e.no_na_hint);
   if (any_i64(&e)) {
     double *po;
     int flags = e.flags | i32_flags(&e);
@@ -236,7 +236,7 @@ static SEXP simd_ew1_impl(SEXP x, SEXP op) {
                     code == RSIMD_EW_NEG, code <= RSIMD_EW_SIGN)) {
     return rsimd_c128_neg(&e.in[0]);
   }
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, e.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), e.no_na_hint);
   if (e.in[0].type == RSIMD_I64) {
     double *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));

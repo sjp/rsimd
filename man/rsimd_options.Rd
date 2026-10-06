@@ -17,13 +17,17 @@ directly takes effect on the next call of an \pkg{rsimd} function.}
 SIMD implementations of the elementary functions use: \code{"accurate"}
 (the default) or \code{"fast"}, which is faster and less accurate in the
 last bits. See \code{\link{simd_math_accuracy}()}.}
-\item{\code{rsimd.na_check}}{\code{TRUE} (the default) or \code{FALSE}. The
-default for the \code{na_check} argument: \code{FALSE} promises that inputs
-contain no missing values, so functions skip looking for them. See
-\sQuote{Missing values and integer overflow} below.}
+\item{\code{rsimd.na_check}}{\code{TRUE} (the default) or \code{FALSE}. Used
+when the \code{na_check} argument is \code{NULL} (its default):
+\code{FALSE} promises that inputs contain no missing values, so functions
+skip looking for them. See \sQuote{Missing values and integer overflow}
+below.}
 }
 The options are set to their defaults when the package is loaded, unless
-they are already set.
+they are already set. An option already set to a value that is not valid
+gives a warning naming it, and is set to its default. A value that is not
+valid set after loading makes the next call of a function that reads the
+option an error naming it.
 }
 \section{Environment variables}{
 \describe{

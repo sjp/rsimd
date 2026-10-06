@@ -208,8 +208,10 @@ table in which every empty slot is taken from the next lower available tier
 (`avx512 > avx2 > sse2 > none`, `sve2 > sve > neon > none`). `simd_use()`
 makes one of them active, and the `.Call` entry points call kernels through
 `rsimd_active`. The internal `simd_kernel_tiers()` shows which tier each slot
-of a table really runs. Every exported compute function starts with
-`.sync_impl()`, so that a change to `options(rsimd.impl =)` takes effect.
+of a table really runs. `rsimd_entry()`, which every entry point calls
+first, evaluates `.sync_impl()` when `options(rsimd.impl =)` has changed
+since it last looked, so that a change made without `simd_use()` takes
+effect.
 
 `src/kernels/common.inc.h` documents the vector layer that kernels are written
 against: types such as `rsimd_vf64`, operations such as `rsimd_vf64_add`, and
@@ -249,6 +251,16 @@ A grep, also run in CI, keeps raw accessors (`REAL()`, `DATAPTR_OR_NULL()`,
 ```sh
 sh tools/lint_c.sh
 ```
+
+Each exported R function makes its own `.Call()`, so that warnings and
+errors from C name the user's call rather than an internal helper. Below a
+few thousand elements the R wrapper is a large part of the time, so wrappers
+check arguments in R only when an operand has a class or a type the C side
+cannot name the function for (`if (is.object(x) || is.complex(x)) ...`), and
+pass `NULL` for `na_check`, the precision and the math accuracy, which the C
+side then reads from the options (`rsimd_opts_init()`, `rsimd_arg_precision()`
+and `rsimd_arg_accuracy()` in `src/rvec.h`). `bench/run.R` has a per-call
+overhead table at n = 1, 10 and 100.
 
 Setting `RSIMD_DEBUG_STRIDE=<n>` before loading the package shrinks the chunk
 and interrupt stride to `n` elements, to test chunking on small inputs.

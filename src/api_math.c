@@ -2,8 +2,8 @@
    (double, integer or logical, read lane-wise by the kernels), apply the
    length-1 broadcast rule to the two-operand functions, run the kernel
    chunk by chunk through the active implementation and warn "NaNs
-   produced" as base R does. `accuracy` is the code of option
-   rsimd.math_accuracy (0 accurate, 1 fast). Results are bare double
+   produced" as base R does. `accuracy` is a math accuracy code
+   (0 accurate, 1 fast), or NULL to read option rsimd.math_accuracy. Results are bare double
    vectors, except ilogb's integer one. */
 
 #include <math.h>
@@ -31,11 +31,10 @@ static int check_operands(const rsimd_ew *e, const char *msg) {
   return f;
 }
 
-/* RSIMD_MATH_FAST for accuracy code 1 (fast), 0 for 0 (accurate). */
+/* RSIMD_MATH_FAST for accuracy code 1 (fast), 0 for 0 (accurate); NULL
+   reads option rsimd.math_accuracy. */
 static int accuracy_bit(SEXP accuracy) {
-  int a = rsimd_arg_int1(accuracy, "accuracy");
-  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
-  return a ? RSIMD_MATH_FAST : 0;
+  return rsimd_arg_accuracy(accuracy) ? RSIMD_MATH_FAST : 0;
 }
 
 static void warn_nan(int st) {

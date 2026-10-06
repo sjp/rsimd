@@ -11,10 +11,7 @@
 
 # The tier a call with operands x and y runs its kernels on (the selected
 # one, or the simd_vec operands' pin).
-.debug_active <- function(x, y = NULL) {
-  .sync_impl()
-  .Call(C_simd_debug_active, x, y)
-}
+.debug_active <- function(x, y = NULL) .Call(C_simd_debug_active, x, y)
 
 # x + y as double through the binary chunk loop and broadcast rule:
 # list(value, n, x_scalar, y_scalar, regions).
@@ -27,7 +24,8 @@
   .Call(C_simd_debug_finish, op, type, n, fields, precision, na_rm)
 }
 
-# The options an entry point would derive from these arguments.
+# The options an entry point would derive from these arguments (NULL
+# na_check and precision: the options).
 .debug_opts <- function(x, na_rm = NULL, na_check = NULL, precision = NULL) {
   .Call(C_simd_debug_opts, x, na_rm, na_check, precision)
 }
@@ -38,9 +36,9 @@
 # A sum-like reduction folded chunk by chunk with term "x" (sum), "sq"
 # (sum_sq), "abs" (sum_abs) or "xy" (dot, with y): list(value, count,
 # saw_na, saw_nan, any_true, any_false). Precision defaults to the current
-# mode.
+# mode (NULL: option rsimd.precision).
 .debug_fold <- function(x, y = NULL, term = "x", na_rm = FALSE, na_check = TRUE,
-                        precision = .precision_code()) {
+                        precision = NULL) {
   .Call(C_simd_debug_fold, x, y, term, na_rm, na_check, precision)
 }
 

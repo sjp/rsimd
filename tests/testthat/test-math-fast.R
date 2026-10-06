@@ -54,17 +54,14 @@ test_that("simd_math_accuracy() gets, sets and validates the mode", {
   old <- options(rsimd.math_accuracy = NULL)
   on.exit(options(old))
   expect_identical(simd_math_accuracy(), "accurate")
-  expect_identical(.math_accuracy_code(), 0L)
   expect_invisible(prev <- simd_math_accuracy("fast"))
   expect_identical(prev, "accurate")
   expect_identical(simd_math_accuracy(), "fast")
   expect_identical(getOption("rsimd.math_accuracy"), "fast")
-  expect_identical(.math_accuracy_code(), 1L)
   expect_identical(simd_math_accuracy("accurate"), "fast")
   # Setting the option directly is honoured.
   options(rsimd.math_accuracy = "fast")
   expect_identical(simd_math_accuracy(), "fast")
-  expect_identical(.math_accuracy_code(), 1L)
 
   for (bad in list("bogus", NA_character_, c("fast", "accurate"), 1, NULL, "FAST")) {
     expect_error(simd_math_accuracy(bad), "math accuracy mode must be one of",
@@ -76,6 +73,10 @@ test_that("simd_math_accuracy() gets, sets and validates the mode", {
   expect_error(simd_math_accuracy(), "invalid option rsimd.math_accuracy")
   expect_error(simd_sin(1), "invalid option rsimd.math_accuracy")
   expect_error(simd_sincos(1), "invalid option rsimd.math_accuracy")
+  expect_error(simd_exp(1i), "invalid option rsimd.math_accuracy")
+  expect_error(simd_max_abs(1i), "invalid option rsimd.math_accuracy")
+  # Functions the mode does not affect do not read it.
+  expect_identical(simd_next_up(0), 4.9406564584124654e-324)
 })
 
 test_that("fast unary functions are within 3.5 ULP of SLEEF's bound of the none tier", {

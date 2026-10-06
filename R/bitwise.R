@@ -3,26 +3,44 @@
 # calls the entry point with the op's name; shift and rotate counts are
 # checked here.
 
-.logic <- function(x, y, op, fun) {
-  .sync_impl()
+# The logic ops take neither integer64 nor complex operands.
+.logic_check <- function(fun, x, y = NULL) {
   .check_supported(x, fun, c("integer64", "complex"), character(0))
   if (!is.null(y)) .check_supported(y, fun, c("integer64", "complex"), character(0), "y")
-  .Call(C_simd_logic, x, y, op)
+  invisible()
 }
 
-simd_and <- function(x, y) .logic(x, y, "and", "simd_and")
-simd_or <- function(x, y) .logic(x, y, "or", "simd_or")
-simd_xor <- function(x, y) .logic(x, y, "xor", "simd_xor")
-simd_not <- function(x) .logic(x, NULL, "not", "simd_not")
+simd_and <- function(x, y) {
+  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) .logic_check("simd_and", x, y)
+  .Call(C_simd_logic, x, y, "and")
+}
 
-# The bit ops take integer, logical, integer64 and raw vectors.
-.bit <- function(x, y, op, fun, na_check, k = NULL, raw = TRUE) {
-  .sync_impl()
+simd_or <- function(x, y) {
+  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) .logic_check("simd_or", x, y)
+  .Call(C_simd_logic, x, y, "or")
+}
+
+simd_xor <- function(x, y) {
+  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) .logic_check("simd_xor", x, y)
+  .Call(C_simd_logic, x, y, "xor")
+}
+
+simd_not <- function(x) {
+  if (is.object(x) || is.complex(x)) .logic_check("simd_not", x)
+  .Call(C_simd_logic, x, NULL, "not")
+}
+
+# The bit ops take integer, logical, integer64 and raw vectors (sar not
+# raw); operands with a class or of another type are checked here.
+.bit_check <- function(fun, x, y = NULL, raw = TRUE) {
   unsupported <- c("complex", "double", if (!raw) "raw")
   .check_supported(x, fun, unsupported, character(0))
   if (!is.null(y)) .check_supported(y, fun, unsupported, character(0), "y")
-  .Call(C_simd_bit, x, y, op, k, na_check)
+  invisible()
 }
+
+# TRUE for a bit-op operand that needs .bit_check().
+.bit_odd <- function(x) is.object(x) || is.double(x) || is.complex(x)
 
 # n as a single number truncated toward zero, or an error.
 .count_arg <- function(n) {
@@ -56,56 +74,69 @@ simd_not <- function(x) .logic(x, NULL, "not", "simd_not")
   as.integer(n - w * floor(n / w))
 }
 
-simd_bit_and <- function(x, y, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, y, "and", "simd_bit_and", na_check)
+simd_bit_and <- function(x, y, na_check = NULL) {
+  if (.bit_odd(x) || .bit_odd(y)) .bit_check("simd_bit_and", x, y)
+  .Call(C_simd_bit, x, y, "and", NULL, na_check)
 }
 
-simd_bit_or <- function(x, y, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, y, "or", "simd_bit_or", na_check)
+simd_bit_or <- function(x, y, na_check = NULL) {
+  if (.bit_odd(x) || .bit_odd(y)) .bit_check("simd_bit_or", x, y)
+  .Call(C_simd_bit, x, y, "or", NULL, na_check)
 }
 
-simd_bit_xor <- function(x, y, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, y, "xor", "simd_bit_xor", na_check)
+simd_bit_xor <- function(x, y, na_check = NULL) {
+  if (.bit_odd(x) || .bit_odd(y)) .bit_check("simd_bit_xor", x, y)
+  .Call(C_simd_bit, x, y, "xor", NULL, na_check)
 }
 
-simd_bit_not <- function(x, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "not", "simd_bit_not", na_check)
+simd_bit_not <- function(x, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_bit_not", x)
+  .Call(C_simd_bit, x, NULL, "not", NULL, na_check)
 }
 
-simd_shl <- function(x, n, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "shl", "simd_shl", na_check, .shift_count(n, x))
+simd_shl <- function(x, n, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_shl", x)
+  .Call(C_simd_bit, x, NULL, "shl", .shift_count(n, x), na_check)
 }
 
-simd_shr <- function(x, n, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "shr", "simd_shr", na_check, .shift_count(n, x))
+simd_shr <- function(x, n, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_shr", x)
+  .Call(C_simd_bit, x, NULL, "shr", .shift_count(n, x), na_check)
 }
 
-simd_sar <- function(x, n, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "sar", "simd_sar", na_check, .shift_count(n, x), raw = FALSE)
+simd_sar <- function(x, n, na_check = NULL) {
+  if (.bit_odd(x) || is.raw(x)) .bit_check("simd_sar", x, raw = FALSE)
+  .Call(C_simd_bit, x, NULL, "sar", .shift_count(n, x), na_check)
 }
 
-simd_rotl <- function(x, n, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "rotl", "simd_rotl", na_check, .rotate_count(n, x))
+simd_rotl <- function(x, n, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_rotl", x)
+  .Call(C_simd_bit, x, NULL, "rotl", .rotate_count(n, x), na_check)
 }
 
-simd_rotr <- function(x, n, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "rotr", "simd_rotr", na_check, .rotate_count(n, x))
+simd_rotr <- function(x, n, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_rotr", x)
+  .Call(C_simd_bit, x, NULL, "rotr", .rotate_count(n, x), na_check)
 }
 
-simd_popcount <- function(x, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "popcount", "simd_popcount", na_check)
+simd_popcount <- function(x, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_popcount", x)
+  .Call(C_simd_bit, x, NULL, "popcount", NULL, na_check)
 }
 
-simd_lzcnt <- function(x, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "lzcnt", "simd_lzcnt", na_check)
+simd_lzcnt <- function(x, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_lzcnt", x)
+  .Call(C_simd_bit, x, NULL, "lzcnt", NULL, na_check)
 }
 
-simd_tzcnt <- function(x, na_check = getOption("rsimd.na_check", TRUE)) {
-  .bit(x, NULL, "tzcnt", "simd_tzcnt", na_check)
+simd_tzcnt <- function(x, na_check = NULL) {
+  if (.bit_odd(x)) .bit_check("simd_tzcnt", x)
+  .Call(C_simd_bit, x, NULL, "tzcnt", NULL, na_check)
 }
 
-simd_popcount_total <- function(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE)) {
-  .sync_impl()
-  .check_supported(x, "simd_popcount_total", c("complex", "double"), character(0))
+simd_popcount_total <- function(x, na.rm = FALSE, na_check = NULL) {
+  if (.bit_odd(x)) {
+    .check_supported(x, "simd_popcount_total", c("complex", "double"), character(0))
+  }
   .Call(C_simd_popcount_total, x, na.rm, na_check)
 }

@@ -110,7 +110,7 @@ static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
     Rf_error("internal error: operands of '%s'", names[code]);
   }
   init_operands(&e, x, y);
-  rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, e.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, na_check, e.no_na_hint);
   if (e.in[0].type == RSIMD_I64 || (e.k == 2 && e.in[1].type == RSIMD_I64)) {
     int i, flags = e.flags;
     all_raw(&e, 0, 1);
@@ -184,7 +184,7 @@ static SEXP simd_popcount_total_impl(SEXP x, SEXP na_rm, SEXP na_check) {
   rsimd_in in;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
   memset(&r, 0, sizeof r);
   if (in.type == RSIMD_U8) {
     RSIMD_FOREACH_CHUNK(&in, Rbyte, px, len, off, { rsimd_active->popcnt_sum_u8(px, len, &r); });

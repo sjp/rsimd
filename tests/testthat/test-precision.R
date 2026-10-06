@@ -13,9 +13,9 @@ test_that("simd_precision() gets, sets and validates the mode", {
   # Setting the option directly is honoured.
   options(rsimd.precision = "fast")
   expect_identical(simd_precision(), "fast")
-  expect_identical(.precision_code(), 0L)
+  expect_identical(.debug_opts(1)$precision, 0L)
   options(rsimd.precision = "compensated")
-  expect_identical(.precision_code(), 2L)
+  expect_identical(.debug_opts(1)$precision, 2L)
 
   for (bad in list("bogus", NA_character_, c("fast", "pairwise"), 1, NULL)) {
     expect_error(simd_precision(bad), "precision mode must be one of", info = deparse(bad))
@@ -23,6 +23,18 @@ test_that("simd_precision() gets, sets and validates the mode", {
   expect_identical(simd_precision(), "compensated")
   options(rsimd.precision = "bogus")
   expect_error(simd_precision(), "invalid option rsimd.precision")
+  # Functions that sum read the option on every call.
+  msg <- paste(
+    "invalid option rsimd.precision: precision mode must be one of",
+    "\"fast\", \"pairwise\", \"compensated\""
+  )
+  expect_error(simd_sum(1), msg, fixed = TRUE)
+  expect_error(simd_dot(1, 1), msg, fixed = TRUE)
+  expect_error(simd_softmax(1), msg, fixed = TRUE)
+  # Those that do not sum do not read it.
+  expect_identical(simd_max(c(1, 2)), 2)
+  options(rsimd.precision = NULL)
+  expect_identical(.debug_opts(1)$precision, 0L)
 })
 
 test_that("cancellation: fast loses the 1, compensated keeps it, on every tier", {

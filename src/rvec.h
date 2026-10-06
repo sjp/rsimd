@@ -386,6 +386,11 @@ void rsimd_warn_i64_overflow(void);
    A plain operand of length 1 is checked for NA directly, so that a scalar
    does not stop an NA-free call from skipping its checks. */
 void rsimd_entry(void);
+/* rsimd_entry() first honours a change to option rsimd.impl made without
+   simd_use() (by evaluating .sync_impl() when the option differs from the
+   value it last synced with); a selection (C_simd_select) calls
+   rsimd_impl_selected() so that the next call checks again. */
+void rsimd_impl_selected(void);
 
 /* Warnings are deferred to the end of the call. Rf_warning() can run R
    code (a calling handler), which could call rsimd again and overwrite
@@ -443,12 +448,22 @@ SEXP rsimd_sv_result(SEXP out, int keeps_na_free);
 
 /* ---- Options and arguments ---------------------------------------------- */
 
-/* Fills o from the entry point's arguments; pass R_NilValue for an argument
-   the op does not take (na.rm -> FALSE, na_check -> TRUE, precision ->
-   fast). na_check is cleared when no_na_hint is set: an input known to be
-   NA-free needs no check even when one was asked for. precision is the
-   integer code RSIMD_PREC_*. */
-void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, SEXP precision, int no_na_hint);
+/* Fills o from the entry point's arguments, with precision fast (set
+   o->precision from rsimd_arg_precision() for an op that takes it). Pass
+   R_NilValue for na.rm when the op does not take it (FALSE), and for
+   na_check to read option rsimd.na_check (TRUE when unset); an op without
+   na_check passes Rf_ScalarLogical(TRUE) (R's shared TRUE, not an
+   allocation). na_check is cleared when no_na_hint is set:
+   an input known to be NA-free needs no check even when one was asked
+   for. */
+void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, int no_na_hint);
+/* The precision code RSIMD_PREC_* from an argument holding one, or from
+   option rsimd.precision for R_NilValue (fast when unset). */
+int rsimd_arg_precision(SEXP precision);
+/* The math accuracy code (0 accurate, 1 fast) from an argument holding
+   one, or from option rsimd.math_accuracy for R_NilValue (accurate when
+   unset). */
+int rsimd_arg_accuracy(SEXP accuracy);
 
 /* Scalar argument readers; each errors naming the argument:
    "'<name>' must be TRUE or FALSE", "... a single integer",

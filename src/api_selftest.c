@@ -41,7 +41,8 @@ static SEXP simd_debug_fold_impl(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_
     if (b.x.type != RSIMD_F64 || b.y.type != RSIMD_F64 || b.x_scalar || b.y_scalar) {
       Rf_error("'x' and 'y' must be double vectors of equal length");
     }
-    rsimd_opts_init(&o, na_rm, na_check, precision, b.x.no_na_hint && b.y.no_na_hint);
+    rsimd_opts_init(&o, na_rm, na_check, b.x.no_na_hint && b.y.no_na_hint);
+    o.precision = rsimd_arg_precision(precision);
     RSIMD_FOREACH_CHUNK2(&b, double, px, py, len, off, {
       rsimd_active->selftest_fold_f64(px, py, len, t, &r, &o);
     });
@@ -49,7 +50,8 @@ static SEXP simd_debug_fold_impl(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_
   } else {
     rsimd_in in;
     rsimd_in_init(&in, x, "x");
-    rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+    rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+    o.precision = rsimd_arg_precision(precision);
     if (in.type == RSIMD_F64) {
       RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
         rsimd_active->selftest_fold_f64(px, NULL, len, t, &r, &o);
@@ -90,7 +92,7 @@ static SEXP simd_debug_lgl_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   if (in.type != RSIMD_LGL && in.type != RSIMD_I32) {
     Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
   }
-  rsimd_opts_init(&o, na_rm, na_check, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
   rsimd_reduce_result_init(&r, red);
   RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
     rsimd_active->selftest_lgl(px, len, stop, &r, &o);
@@ -127,7 +129,7 @@ static SEXP simd_debug_arith_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
 
   rsimd_bin_init(&b, x, y);
   if (b.x.type != b.y.type) Rf_error("'x' and 'y' must have the same type");
-  rsimd_opts_init(&o, R_NilValue, na_check, R_NilValue, b.x.no_na_hint && b.y.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, na_check, b.x.no_na_hint && b.y.no_na_hint);
   out = PROTECT(rsimd_alloc_like(b.x.type == RSIMD_LGL ? RSIMD_I32 : b.x.type, b.n));
   switch (b.x.type) {
   case RSIMD_I32:

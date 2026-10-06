@@ -374,11 +374,25 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
     return(x)
   }
   if (...length() > 0L) stop("incorrect number of dimensions", call. = FALSE)
-  j <- seq_along(x)[i]
-  out <- .sv_take(x, j)
   flag <- .sv_flag(x)
-  na_free <- if (isTRUE(flag) && !anyNA(j)) TRUE else NULL
-  .sv_new(out, attr(x, "rsimd_impl", exact = TRUE), na_free)
+  impl <- attr(x, "rsimd_impl", exact = TRUE)
+  # A logical or non-negative index selects the data directly, without the
+  # vector of positions; the result is NA-free when x is and the index
+  # neither is NA nor goes past the end.
+  if (!inherits(x, "integer64") && !is.object(i) && !anyNA(i)) {
+    if (is.logical(i)) {
+      return(.sv_new(.subset(x, i), impl, if (isTRUE(flag) && length(i) <= length(x)) TRUE))
+    }
+    if (is.numeric(i)) {
+      r <- if (length(i)) range(i) else c(0, 0)
+      if (r[[1L]] >= 0) {
+        return(.sv_new(.subset(x, i), impl, if (isTRUE(flag) && r[[2L]] < length(x) + 1) TRUE))
+      }
+    }
+  }
+  j <- seq_along(x)[i]
+  na_free <- if (isTRUE(flag) && !anyNA(j)) TRUE
+  .sv_new(.sv_take(x, j), impl, na_free)
 }
 
 # The data of x (a simd_vec or its data) at positions j (NA giving a

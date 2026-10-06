@@ -69,7 +69,7 @@ parse_args <- function(args) {
 opts <- parse_args(commandArgs(TRUE))
 
 # Input sizes as written on the command line (1e5, not 1e+05).
-fmt_n <- function(n) sub("e\\+?0*", "e", format(n, scientific = TRUE))
+fmt_n <- function(n) sub("e\\+?0*([0-9])", "e\\1", format(n, scientific = TRUE))
 
 # ---------------------------------------------------------------------------
 # Operations: one row per op x type. `simd` and `base` are expressions over
@@ -227,7 +227,27 @@ math_ops <- list(
   )
 )
 math_modes <- c("accurate", "fast")
-op_names <- unique(vapply(c(ops, math_ops), `[[`, "", "op"))
+
+# Per-call overhead: small inputs, timed on the auto tier only against base
+# R, with a bare .Call() of the sum entry point as the floor (the
+# "overhead" table). Not in the main table.
+overhead_ops <- list(
+  list(
+    op = "sum", type = "double", simd = quote(simd_sum(x)), base = quote(sum(x)),
+    ref = quote(.Call(rsimd:::C_simd_sum, x, FALSE, NULL, NULL)), ref_name = "bare"
+  ),
+  list(op = "add", type = "double", simd = quote(simd_add(x, y)), base = quote(x + y)),
+  list(op = "exp", type = "double", simd = quote(simd_exp(xe)), base = quote(exp(xe))),
+  list(op = "eq", type = "double", simd = quote(simd_eq(x, y)), base = quote(x == y)),
+  list(
+    op = "as_integer", type = "double", simd = quote(simd_as_integer(xc)),
+    base = quote(as.integer(xc))
+  ),
+  list(op = "dot", type = "double", simd = quote(simd_dot(x, y)), base = quote(sum(x * y))),
+  list(op = "mul", type = "complex", simd = quote(simd_mul(cx, cy)), base = quote(cx * cy))
+)
+overhead_sizes <- c(1, 10, 100)
+op_names <- unique(vapply(c(ops, math_ops, overhead_ops), `[[`, "", "op"))
 
 if (!is.null(opts$ops)) {
   unknown <- setdiff(opts$ops, op_names)
@@ -239,6 +259,7 @@ if (!is.null(opts$ops)) {
   }
   ops <- Filter(function(o) o$op %in% opts$ops, ops)
   math_ops <- Filter(function(o) o$op %in% opts$ops, math_ops)
+  overhead_ops <- Filter(function(o) o$op %in% opts$ops, overhead_ops)
 }
 
 sizes <- opts$sizes
@@ -382,6 +403,20 @@ for (n in sizes) {
     message(sprintf("n = %s: math accuracy table", fmt_n(n)))
     for (spec in math_ops) {
       for (mode in math_modes) run_spec("math", spec, env, n, mode, simd_math_accuracy)
+    }
+  }
+}
+
+if (length(overhead_ops) > 0L) {
+  message("overhead table")
+  for (n in overhead_sizes) {
+    env <- make_inputs(n)
+    for (spec in overhead_ops) {
+      record("overhead", spec, "fast", n, "auto", time_expr(spec$simd, env, n, "auto"))
+      record("overhead", spec, "fast", n, "base", time_expr(spec$base, env, n))
+      if (!is.null(spec$ref)) {
+        record("overhead", spec, "fast", n, spec$ref_name, time_expr(spec$ref, env, n))
+      }
     }
   }
 }
@@ -564,11 +599,16 @@ md_table <- function(sub, row_key) {
   c(head, body)
 }
 
-base_names <- vapply(c(ops, math_ops), function(o) {
+# Keyed "op type", "overhead:op type" for the overhead table, whose
+# expressions differ.
+base_names <- vapply(c(ops, math_ops, overhead_ops), function(o) {
   ref <- if (is.null(o$ref)) "" else sprintf("; %s: `%s`", o$ref_name, deparse(o$ref))
   sprintf("`%s` vs base `%s`%s", deparse(o$simd), deparse(o$base), ref)
 }, "")
-names(base_names) <- vapply(c(ops, math_ops), function(o) paste(o$op, o$type), "")
+names(base_names) <- c(
+  vapply(c(ops, math_ops), function(o) paste(o$op, o$type), ""),
+  vapply(overhead_ops, function(o) paste0("overhead:", o$op, " ", o$type), "")
+)
 
 md_section <- function(table, title, row_key) {
   sub_all <- res[res$table == table, , drop = FALSE]
@@ -581,7 +621,8 @@ md_section <- function(table, title, row_key) {
     if (row_key == "mode") sub$mode <- as.character(sub$mode)
     out <- c(
       out, sprintf("### %s (%s)", sub$op[1L], sub$type[1L]), "",
-      base_names[[g]], "", md_table(sub, row_key), ""
+      base_names[[if (table == "overhead") paste0("overhead:", g) else g]], "",
+      md_table(sub, row_key), ""
     )
   }
   out
@@ -619,7 +660,8 @@ md <- c(
   md_section("main", "Main table (precision \"fast\", no NAs)", "n"),
   md_section("na", "Inputs with 1% NA (precision \"fast\")", "n"),
   md_section("precision", sprintf("Precision modes (n = %s)", fmt_n(max(sizes))), "mode"),
-  md_section("math", sprintf("Math accuracy modes (n = %s)", fmt_n(max(sizes))), "mode")
+  md_section("math", sprintf("Math accuracy modes (n = %s)", fmt_n(max(sizes))), "mode"),
+  md_section("overhead", "Per-call overhead (auto tier)", "n")
 )
 writeLines(md, file.path(out_dir, paste0(stem, ".md")), useBytes = TRUE)
 invisible(file.copy(

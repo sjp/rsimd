@@ -116,7 +116,128 @@ SEXP rsimd_exit(SEXP out) {
   return out;
 }
 
+/* ---- Options ------------------------------------------------------------ */
+
+/* Option and attribute symbols, installed by rsimd_rvec_init(). */
+static SEXP sym_impl, sym_precision, sym_math_accuracy, sym_na_check;
+static SEXP sym_sv_impl, sym_sv_na_free, sym_sv_na_token;
+
+/* The value of option rsimd.impl that rsimd_entry() last synced with: its
+   CHARSXP (preserved, so that its address is not reused), or R_NilValue
+   when the option was unset. impl_synced is 0 before the first sync and
+   after every selection (rsimd_impl_selected()). */
+static SEXP impl_seen = NULL;
+static int impl_synced = 0, impl_syncing = 0;
+
+/* The CHARSXP of option rsimd.impl, R_NilValue when it is unset, or
+   R_UnboundValue for any other value (which never counts as synced). */
+static SEXP impl_option(void) {
+  SEXP v = Rf_GetOption1(sym_impl);
+  if (TYPEOF(v) == STRSXP && XLENGTH(v) == 1) return STRING_ELT(v, 0);
+  return v == R_NilValue ? R_NilValue : R_UnboundValue;
+}
+
+static SEXP impl_sync_eval(void *data) {
+  SEXP ns, call;
+  (void) data;
+  ns = PROTECT(R_FindNamespace(PROTECT(Rf_mkString("rsimd"))));
+  call = PROTECT(Rf_lang1(Rf_install(".sync_impl")));
+  Rf_eval(call, ns);
+  UNPROTECT(3);
+  return R_NilValue;
+}
+
+static void impl_sync_done(void *data, Rboolean jump) {
+  (void) data;
+  (void) jump;
+  impl_syncing = 0;
+}
+
+/* Honours a change to option rsimd.impl made without simd_use(): when the
+   option differs from the value last synced, evaluates .sync_impl() in the
+   namespace, which selects it (or errors, naming the option, for a value
+   that cannot be selected). One option lookup when nothing changed. R code
+   run by the sync cannot sync again, and an error leaves nothing set, so
+   the next call tries again. */
+static void impl_sync(void) {
+  SEXP c = impl_option(), cont;
+  if (impl_syncing || (impl_synced && c == impl_seen)) return;
+  impl_syncing = 1;
+  cont = PROTECT(R_MakeUnwindCont());
+  R_UnwindProtect(impl_sync_eval, NULL, impl_sync_done, NULL, cont);
+  UNPROTECT(1);
+  c = impl_option();
+  if (c == R_UnboundValue) return;
+  if (impl_seen != NULL && impl_seen != R_NilValue) R_ReleaseObject(impl_seen);
+  if (c != R_NilValue) R_PreserveObject(c);
+  impl_seen = c;
+  impl_synced = 1;
+}
+
+void rsimd_impl_selected(void) {
+  impl_synced = 0;
+}
+
+/* The index of the single string v in names (count entries), or -1. */
+static int option_choice(SEXP v, const char *const *names, int count) {
+  int i;
+  if (TYPEOF(v) != STRSXP || XLENGTH(v) != 1 || STRING_ELT(v, 0) == NA_STRING) return -1;
+  for (i = 0; i < count; i++) {
+    if (strcmp(CHAR(STRING_ELT(v, 0)), names[i]) == 0) return i;
+  }
+  return -1;
+}
+
+int rsimd_arg_precision(SEXP precision) {
+  static const char *const modes[] = {"fast", "pairwise", "compensated"};
+  int p;
+  if (precision == R_NilValue) {
+    SEXP v = Rf_GetOption1(sym_precision);
+    if (v == R_NilValue) return RSIMD_PREC_FAST;
+    p = option_choice(v, modes, 3);
+    if (p < 0) {
+      Rf_errorcall(R_NilValue, "invalid option rsimd.precision: precision mode must be one "
+                               "of \"fast\", \"pairwise\", \"compensated\"");
+    }
+    return p;
+  }
+  p = rsimd_arg_int1(precision, "precision");
+  if (p < RSIMD_PREC_FAST || p > RSIMD_PREC_COMPENSATED) {
+    Rf_error("internal error: invalid precision code %d", p);
+  }
+  return p;
+}
+
+int rsimd_arg_accuracy(SEXP accuracy) {
+  static const char *const modes[] = {"accurate", "fast"};
+  int a;
+  if (accuracy == R_NilValue) {
+    SEXP v = Rf_GetOption1(sym_math_accuracy);
+    if (v == R_NilValue) return 0;
+    a = option_choice(v, modes, 2);
+    if (a < 0) {
+      Rf_errorcall(R_NilValue, "invalid option rsimd.math_accuracy: math accuracy mode must "
+                               "be one of \"accurate\", \"fast\"");
+    }
+    return a;
+  }
+  a = rsimd_arg_int1(accuracy, "accuracy");
+  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
+  return a;
+}
+
+/* Option rsimd.na_check: TRUE when unset. */
+static int na_check_option(void) {
+  SEXP v = Rf_GetOption1(sym_na_check);
+  if (v == R_NilValue) return 1;
+  if (TYPEOF(v) != LGLSXP || XLENGTH(v) != 1 || LOGICAL_ELT(v, 0) == NA_LOGICAL) {
+    Rf_errorcall(R_NilValue, "invalid option rsimd.na_check: must be TRUE or FALSE");
+  }
+  return LOGICAL_ELT(v, 0);
+}
+
 void rsimd_entry(void) {
+  impl_sync();
   rsimd_active = rsimd_selected;
   warn_pending.n = 0;
   sv_call.seen = 0;
@@ -152,7 +273,7 @@ static void sv_note(rsimd_in *v, const char *arg) {
   if (Rf_inherits(x, "simd_vec")) {
     sv_call.seen = 1;
     if (rsimd_sv_flag(x) == 1) v->no_na_hint = 1;
-    impl = Rf_getAttrib(x, Rf_install("rsimd_impl"));
+    impl = Rf_getAttrib(x, sym_sv_impl);
     if (impl != R_NilValue) {
       rsimd_tier t = RSIMD_TIER_COUNT;
       if (TYPEOF(impl) == STRSXP && XLENGTH(impl) == 1 && STRING_ELT(impl, 0) != NA_STRING) {
@@ -215,11 +336,11 @@ static SEXP sv_attr(SEXP x, SEXP name) {
 int rsimd_sv_flag(SEXP x) {
   SEXP flag, token;
   if (TYPEOF(x) == RAWSXP) return 1;
-  flag = sv_attr(x, Rf_install("rsimd_na_free"));
+  flag = sv_attr(x, sym_sv_na_free);
   if (TYPEOF(flag) != LGLSXP || XLENGTH(flag) != 1 || LOGICAL_ELT(flag, 0) == NA_LOGICAL) {
     return -1;
   }
-  token = sv_attr(x, Rf_install("rsimd_na_token"));
+  token = sv_attr(x, sym_sv_na_token);
   if (TYPEOF(token) != EXTPTRSXP || R_ExternalPtrAddr(token) != (void *) x ||
       MAYBE_SHARED(token)) {
     return -1;
@@ -238,7 +359,7 @@ static void sv_drop_token(SEXP x, SEXP token_sym) {
 }
 
 SEXP rsimd_sv_stamp(SEXP x, int flag) {
-  SEXP flag_sym = Rf_install("rsimd_na_free"), token_sym = Rf_install("rsimd_na_token");
+  SEXP flag_sym = sym_sv_na_free, token_sym = sym_sv_na_token;
   PROTECT(x);
   if (flag < 0) {
     Rf_setAttrib(x, flag_sym, R_NilValue);
@@ -253,13 +374,13 @@ SEXP rsimd_sv_stamp(SEXP x, int flag) {
 }
 
 SEXP rsimd_sv_release(SEXP x) {
-  SEXP token_sym = Rf_install("rsimd_na_token"), token = sv_attr(x, token_sym);
+  SEXP token_sym = sym_sv_na_token, token = sv_attr(x, token_sym);
   if (token == R_NilValue || (TYPEOF(token) == EXTPTRSXP && R_ExternalPtrAddr(token) == x)) {
     return x;
   }
   PROTECT(x);
   sv_drop_token(x, token_sym);
-  Rf_setAttrib(x, Rf_install("rsimd_na_free"), R_NilValue);
+  Rf_setAttrib(x, sym_sv_na_free, R_NilValue);
   UNPROTECT(1);
   return x;
 }
@@ -298,7 +419,7 @@ SEXP rsimd_sv_result(SEXP out, int keeps_na_free) {
     cls = PROTECT(Rf_mkString("simd_vec"));
   }
   Rf_setAttrib(out, R_ClassSymbol, cls);
-  impl_sym = Rf_install("rsimd_impl");
+  impl_sym = sym_sv_impl;
   impl = PROTECT(sv_call.pin == RSIMD_TIER_COUNT ? R_NilValue
                                                  : Rf_mkString(rsimd_tier_names[sv_call.pin]));
   Rf_setAttrib(out, impl_sym, impl);
@@ -360,6 +481,13 @@ void rsimd_rvec_init(void) {
   /* Invalid values are ignored here; .onLoad warns about them. */
   const char *s = getenv("RSIMD_DEBUG_STRIDE"), *p;
   long long v;
+  sym_impl = Rf_install("rsimd.impl");
+  sym_precision = Rf_install("rsimd.precision");
+  sym_math_accuracy = Rf_install("rsimd.math_accuracy");
+  sym_na_check = Rf_install("rsimd.na_check");
+  sym_sv_impl = Rf_install("rsimd_impl");
+  sym_sv_na_free = Rf_install("rsimd_na_free");
+  sym_sv_na_token = Rf_install("rsimd_na_token");
   if (s == NULL || *s == '\0') return;
   for (p = s; *p != '\0'; p++) {
     if (*p < '0' || *p > '9') return;
@@ -677,13 +805,11 @@ void *rsimd_out_ptr(SEXP out) {
 
 /* ---- Options and arguments ---------------------------------------------- */
 
-void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, SEXP precision, int no_na_hint) {
+void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, int no_na_hint) {
   o->na_rm = Rf_isNull(na_rm) ? 0 : rsimd_arg_lgl1(na_rm, "na.rm");
-  o->na_check = (Rf_isNull(na_check) ? 1 : rsimd_arg_lgl1(na_check, "na_check")) && !no_na_hint;
-  o->precision = Rf_isNull(precision) ? RSIMD_PREC_FAST : rsimd_arg_int1(precision, "precision");
-  if (o->precision < RSIMD_PREC_FAST || o->precision > RSIMD_PREC_COMPENSATED) {
-    Rf_error("internal error: invalid precision code %d", o->precision);
-  }
+  o->na_check = (Rf_isNull(na_check) ? na_check_option() : rsimd_arg_lgl1(na_check, "na_check")) &&
+                !no_na_hint;
+  o->precision = RSIMD_PREC_FAST;
 }
 
 int rsimd_arg_lgl1(SEXP x, const char *name) {

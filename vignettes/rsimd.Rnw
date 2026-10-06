@@ -259,9 +259,10 @@ vectors are long enough. Three effects decide what you see; the vignette
 
 \begin{itemize}
 \item \emph{Call overhead.} Each call goes from R into C, checks its
-  arguments and selects a kernel, which costs a few microseconds. For
-  vectors of a thousand elements this is most of the time, and base R's
-  built-in operators, which have less to do per call, are often faster.
+  arguments and selects a kernel, which costs about half a microsecond. For
+  vectors of a thousand elements this is a large part of the time, and
+  base R's built-in operators, which have less to do per call, are often
+  faster for simple elementwise operations.
 \item \emph{Memory-bound operations.} Elementwise arithmetic such as
   \code{simd\_add()} reads two vectors and writes one. Once the vectors are
   larger than the CPU caches, memory bandwidth limits both base R and

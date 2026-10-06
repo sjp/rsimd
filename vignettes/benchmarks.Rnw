@@ -204,10 +204,11 @@ code.
 
 \begin{itemize}
 \item \emph{Small vectors.} At $10^3$ elements the fixed cost of calling
-  into C, checking arguments and selecting a kernel, a few microseconds,
-  is most of the time, and base R's built-in operators, which have less to
-  do per call, are often faster. Compare the $10^3$ rows across operations:
-  they take about the same time whatever the operation.
+  into C, checking arguments and selecting a kernel, about half a
+  microsecond, is a large part of the time, and base R's built-in
+  operators, which have less to do per call, are often faster for simple
+  elementwise work such as \code{add} and \code{is\_na}. Reductions are
+  already faster than base R there.
 \item \emph{Memory-bound operations.} \code{add}, \code{fma} and
   \code{is\_na} read and write whole vectors. At $10^7$ elements they are
   limited by memory bandwidth, for base R as much as for \pkg{rsimd}, so the

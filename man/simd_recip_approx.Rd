@@ -8,13 +8,13 @@ simd_recip_approx(x)
 
 simd_rsqrt_approx(x)
 
-simd_mul_add_approx(x, y, z, na_check = getOption("rsimd.na_check", TRUE))
+simd_mul_add_approx(x, y, z, na_check = NULL)
 }
 \arguments{
 \item{x}{A double, integer or logical vector; for
 \code{simd_mul_add_approx()} also a \pkg{bit64} \code{integer64} vector.}
 \item{y, z}{As \code{x} for \code{simd_mul_add_approx()}.}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that the
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that the
 operands have no missing values; see \code{\link{simd_mul_add}}.}
 }
 \description{

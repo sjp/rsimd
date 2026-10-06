@@ -6,15 +6,15 @@
 \alias{simd_prod_diffs}
 \title{Sums, Products and Means of Vector Elements}
 \usage{
-simd_sum(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_sum(x, na.rm = FALSE, na_check = NULL)
 
-simd_prod(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_prod(x, na.rm = FALSE, na_check = NULL)
 
-simd_mean(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_mean(x, na.rm = FALSE, na_check = NULL)
 
-simd_prod_sums(x, y, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_prod_sums(x, y, na.rm = FALSE, na_check = NULL)
 
-simd_prod_diffs(x, y, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_prod_diffs(x, y, na.rm = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x, y}{A double, integer, logical or complex vector, or for
@@ -23,7 +23,7 @@ simd_prod_diffs(x, y, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE
 of \code{x}, or either may have length 1.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} (and \code{y}) have no missing values, so they are not looked
 for; see Details.}
 }

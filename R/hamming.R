@@ -4,10 +4,13 @@
 
 # The operands are converted as for the comparisons (.cmp_operands()).
 simd_hamming <- function(x, y, na.rm = FALSE) {
-  .sync_impl()
   na.rm <- .arg_flag(na.rm, "na.rm")
-  p <- .cmp_operands(x, y, sys.call())
-  .Call(C_simd_hamming, p[[1L]], p[[2L]], na.rm)
+  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
+    p <- .cmp_operands(x, y, sys.call())
+    x <- p[[1L]]
+    y <- p[[2L]]
+  }
+  .Call(C_simd_hamming, x, y, na.rm)
 }
 
 # The width class of an operand of simd_hamming_bits: 32-bit integers
@@ -26,7 +29,6 @@ simd_hamming <- function(x, y, na.rm = FALSE) {
 }
 
 simd_hamming_bits <- function(x, y) {
-  .sync_impl()
   cx <- .bits_class(x, "x")
   cy <- .bits_class(y, "y")
   if (cx != cy) {

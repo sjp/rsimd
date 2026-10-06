@@ -5,19 +5,19 @@
 \alias{simd_tzcnt}
 \title{Bit Counts}
 \usage{
-simd_popcount(x, na_check = getOption("rsimd.na_check", TRUE))
+simd_popcount(x, na_check = NULL)
 
-simd_popcount_total(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_popcount_total(x, na.rm = FALSE, na_check = NULL)
 
-simd_lzcnt(x, na_check = getOption("rsimd.na_check", TRUE))
+simd_lzcnt(x, na_check = NULL)
 
-simd_tzcnt(x, na_check = getOption("rsimd.na_check", TRUE))
+simd_tzcnt(x, na_check = NULL)
 }
 \arguments{
 \item{x}{An integer, logical, raw or \pkg{bit64} \code{integer64} vector.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: should \code{NA} elements be
 skipped?}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} has no \code{NA}, so it is not looked for; an \code{NA} is then
 counted as its bit pattern \code{0x80000000}. \code{na.rm = TRUE} always
 looks for \code{NA}.}

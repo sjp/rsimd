@@ -5,20 +5,20 @@
 \alias{simd_lerp}
 \title{Fused and Unfused Multiply-Add, Linear Interpolation}
 \usage{
-simd_fma(x, y, z, na_check = getOption("rsimd.na_check", TRUE))
+simd_fma(x, y, z, na_check = NULL)
 
-simd_mul_add(x, y, z, na_check = getOption("rsimd.na_check", TRUE))
+simd_mul_add(x, y, z, na_check = NULL)
 
-simd_add_mul(x, y, z, na_check = getOption("rsimd.na_check", TRUE))
+simd_add_mul(x, y, z, na_check = NULL)
 
-simd_lerp(x, y, t, na_check = getOption("rsimd.na_check", TRUE))
+simd_lerp(x, y, t, na_check = NULL)
 }
 \arguments{
 \item{x, y, z}{Double, integer or logical vectors, or for
 \code{simd_mul_add()} and \code{simd_add_mul()} \pkg{bit64}
 \code{integer64} vectors.}
 \item{t}{A double, integer or logical vector of interpolation weights.}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that the
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that the
 operands have no missing values, so they are not looked for; see Details.}
 }
 \description{

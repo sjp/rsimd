@@ -4,22 +4,19 @@
 # simd_div, simd_neg, simd_abs, simd_sum, simd_prod, simd_mean,
 # simd_cumsum, simd_cumprod, simd_eq, simd_ne and the predicates).
 
-.cplx <- function(z, op, fun) {
-  .sync_impl()
-  .check_supported(z, fun, "integer64", character(), "z")
-  .Call(C_simd_cplx, z, op)
+simd_conj <- function(z) {
+  if (is.object(z)) .check_supported(z, "simd_conj", "integer64", character(), "z")
+  .Call(C_simd_cplx, z, "conj")
 }
 
-simd_conj <- function(z) .cplx(z, "conj", "simd_conj")
+simd_re <- function(z) {
+  if (is.object(z)) .check_supported(z, "simd_re", "integer64", character(), "z")
+  .Call(C_simd_cplx, z, "re")
+}
 
-simd_re <- function(z) .cplx(z, "re", "simd_re")
-
-simd_im <- function(z) .cplx(z, "im", "simd_im")
-
-# Mod (op "mod") or Arg ("arg") of complex z, in the math accuracy mode.
-.cmath <- function(z, op) {
-  .sync_impl()
-  .Call(C_simd_cmath, z, op, .math_accuracy_code())
+simd_im <- function(z) {
+  if (is.object(z)) .check_supported(z, "simd_im", "integer64", character(), "z")
+  .Call(C_simd_cplx, z, "im")
 }
 
 # Arg of complex z; double, integer and logical x are complex with a zero
@@ -30,7 +27,7 @@ simd_arg <- function(z) {
     if (!is.numeric(z) && !is.logical(z)) stop("non-numeric argument to function", call. = FALSE)
     z <- .sv_like(as.complex(z), z)
   }
-  .cmath(z, "arg")
+  .Call(C_simd_cmath, z, "arg", NULL)
 }
 
 # Base R rounds complex products, quotients and cumprod as the compiler

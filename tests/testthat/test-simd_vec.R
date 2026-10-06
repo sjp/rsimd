@@ -640,6 +640,30 @@ test_that("assignment and length<- keep the class and pin", {
   expect_sv(z, c(1, 2, NA, NA), "none")
 })
 
+test_that("[ with a logical or non-negative index keeps base R's values and the flag", {
+  d <- c(1.5, 2.5, 3.5, 4.5)
+  x <- simd_vec(d, check_na = TRUE)
+  for (i in list(
+    c(TRUE, FALSE), c(TRUE, FALSE, TRUE, TRUE), logical(), c(3, 1), c(0, 2), 2.9,
+    integer(), c(4L, 4L)
+  )) {
+    out <- x[i]
+    expect_identical(simd_unwrap(out), d[i], info = deparse(i))
+    expect_true(simd_na_free(out), info = deparse(i))
+  }
+  # Past the end or NA in the index: NA elements, so the flag is unknown.
+  for (i in list(c(TRUE, FALSE, TRUE, TRUE, TRUE), c(TRUE, NA), 5, c(1, NA), 2^40)) {
+    out <- x[i]
+    expect_identical(simd_unwrap(out), d[i], info = deparse(i))
+    expect_null(simd_na_free(out), info = deparse(i))
+  }
+  # Negative indices take the general path.
+  expect_identical(simd_unwrap(x[-1]), d[-1])
+  expect_true(simd_na_free(x[-1]))
+  y <- simd_vec(d, "none")
+  expect_identical(simd_impl(y[c(TRUE, FALSE)]), "none")
+})
+
 test_that("[[ returns a plain element", {
   x <- simd_vec(c(1, 2), impl = "none")
   expect_identical(x[[2]], 2)

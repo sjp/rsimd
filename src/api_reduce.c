@@ -21,11 +21,9 @@ static int is_numeric(rsimd_etype t) {
 #define RSIMD_MOD_BLOCK 1024
 
 /* RSIMD_MATH_FAST for accuracy code 1 (option rsimd.math_accuracy =
-   "fast"), 0 for 0. */
+   "fast"), 0 for 0; NULL reads the option. */
 static int accuracy_bit(SEXP accuracy) {
-  int a = rsimd_arg_int1(accuracy, "accuracy");
-  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
-  return a ? RSIMD_MATH_FAST : 0;
+  return rsimd_arg_accuracy(accuracy) ? RSIMD_MATH_FAST : 0;
 }
 
 /* sum(x, na.rm): double for double x; integer for integer and logical x,
@@ -40,7 +38,8 @@ static SEXP simd_sum_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_in in;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:
@@ -73,7 +72,8 @@ static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_in in;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, RSIMD_RED_PROD);
   switch (in.type) {
   case RSIMD_C128: return rsimd_c128_prod(&in, &o);
@@ -108,7 +108,8 @@ static SEXP simd_prod2_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, 
   int ew = rsimd_arg_int1(op, "op") ? RSIMD_EW_SUB : RSIMD_EW_ADD, flags;
 
   rsimd_bin_init(&b, x, y);
-  rsimd_opts_init(&o, na_rm, na_check, precision, b.x.no_na_hint && b.y.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, b.x.no_na_hint && b.y.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   if (b.x.type == RSIMD_C128 && b.y.type == RSIMD_C128) return rsimd_c128_prod2(ew, &b, &o);
   if (!is_numeric(b.x.type)) bad_type(b.x.type);
   if (!is_numeric(b.y.type)) bad_type(b.y.type);
@@ -169,7 +170,8 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   double m;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, RSIMD_RED_MEAN);
   switch (in.type) {
   case RSIMD_C128: return rsimd_c128_mean(&in, &o);
@@ -226,7 +228,7 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP ab
   SEXP lo, hi, out;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
   rsimd_reduce_result_init(&r, RSIMD_RED_MIN);
   switch (in.type) {
   case RSIMD_F64:
@@ -323,7 +325,7 @@ static SEXP simd_which_impl(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   int op = dir ? RSIMD_RED_WHICH_MAX : RSIMD_RED_WHICH_MIN;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
   o.na_rm = 1;
   rsimd_reduce_result_init(&r, op);
   switch (in.type) {
@@ -405,7 +407,7 @@ static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
   int stop = is_all ? RSIMD_STOP_FALSE : RSIMD_STOP_TRUE;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, R_NilValue, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, Rf_ScalarLogical(TRUE), in.no_na_hint);
   rsimd_reduce_result_init(&r, op);
 #define RSIMD_DONE_ (is_all ? r.any_false : r.any_true)
   switch (in.type) {
@@ -522,7 +524,7 @@ static SEXP simd_na_impl(SEXP x, SEXP mode) {
   int m = rsimd_arg_int1(mode, "mode");
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, in.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
   rsimd_reduce_result_init(&r, m == 0 ? RSIMD_RED_ANY_NA : RSIMD_RED_COUNT_NA);
   if (!in.no_na_hint) na_scan(&in, m == 0 ? RSIMD_NAMODE_ANY : RSIMD_NAMODE_COUNT, NULL, &r);
   if (m == 0) return rsimd_reduce_finish(RSIMD_RED_ANY_NA, in.type, in.n, &r, &o);
@@ -576,7 +578,8 @@ static SEXP simd_sum_sq_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP pr
   int which = rsimd_arg_int1(op, "op");
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:
@@ -632,8 +635,9 @@ static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SE
   }
   b.n = b.x.n;
   b.x_scalar = b.y_scalar = 0;
-  rsimd_opts_init(&o, which == 2 ? R_NilValue : na_rm, na_check, precision,
+  rsimd_opts_init(&o, which == 2 ? R_NilValue : na_rm, na_check,
                   b.x.no_na_hint && b.y.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   /* The ops are symmetric, so a double operand goes first. */
   if (b.x.type != RSIMD_F64 && b.y.type == RSIMD_F64) {
     rsimd_in t = b.x;
@@ -699,7 +703,8 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
   double m, v;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:
@@ -786,7 +791,8 @@ static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
   SEXP out;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, precision, in.no_na_hint);
+  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   s.f64 = which == 1 ? 1.0 : which == 2 ? R_PosInf : which == 3 ? R_NegInf : 0.0;
   s.comp = 0.0;
   s.i64 = which == 2 ? INT64_MAX : which == 3 ? -INT64_MAX : 0;

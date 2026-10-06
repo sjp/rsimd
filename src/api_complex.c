@@ -569,12 +569,11 @@ void rsimd_c128_cmp(int op, SEXP x, SEXP y, int *po) {
    accurate, 1 fast). Complex z only; the R side handles the others. */
 static SEXP simd_cmath_impl(SEXP z, SEXP op, SEXP accuracy) {
   static const char *const names[] = {"mod", "arg"};
-  int code = rsimd_arg_choice(op, names, 2), a = rsimd_arg_int1(accuracy, "accuracy");
+  int code = rsimd_arg_choice(op, names, 2), a = rsimd_arg_accuracy(accuracy);
   SEXP out;
   double *po;
   rsimd_in in;
 
-  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
   rsimd_in_init(&in, z, "z");
   if (in.type != RSIMD_C128) Rf_error("internal error: Mod/Arg of %s", rsimd_etype_names[in.type]);
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, in.n));
@@ -596,7 +595,7 @@ SEXP rsimd_c128_neg(const rsimd_in *in) {
   Rcomplex *po = (Rcomplex *) rsimd_out_ptr(out);
   rsimd_opts o;
 
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, R_NilValue, 0);
+  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), 0);
   RSIMD_FOREACH_CHUNK(in, Rcomplex, px, len, off, {
     rsimd_active->ew1_f64(RSIMD_EW_NEG, rsimd_c128_as_f64(px, len), 2 * len, 0,
                           (double *) (po + off), &o);

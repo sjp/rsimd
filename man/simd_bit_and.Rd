@@ -10,23 +10,23 @@
 \alias{simd_rotr}
 \title{Bitwise Operations, Shifts and Rotates}
 \usage{
-simd_bit_and(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_bit_and(x, y, na_check = NULL)
 
-simd_bit_or(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_bit_or(x, y, na_check = NULL)
 
-simd_bit_xor(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_bit_xor(x, y, na_check = NULL)
 
-simd_bit_not(x, na_check = getOption("rsimd.na_check", TRUE))
+simd_bit_not(x, na_check = NULL)
 
-simd_shl(x, n, na_check = getOption("rsimd.na_check", TRUE))
+simd_shl(x, n, na_check = NULL)
 
-simd_shr(x, n, na_check = getOption("rsimd.na_check", TRUE))
+simd_shr(x, n, na_check = NULL)
 
-simd_sar(x, n, na_check = getOption("rsimd.na_check", TRUE))
+simd_sar(x, n, na_check = NULL)
 
-simd_rotl(x, n, na_check = getOption("rsimd.na_check", TRUE))
+simd_rotl(x, n, na_check = NULL)
 
-simd_rotr(x, n, na_check = getOption("rsimd.na_check", TRUE))
+simd_rotr(x, n, na_check = NULL)
 }
 \arguments{
 \item{x, y}{Integer, logical or \pkg{bit64} \code{integer64} vectors, or
@@ -34,7 +34,7 @@ raw vectors (not for \code{simd_sar}). \code{x} and \code{y} must both be
 raw or both not.}
 \item{n}{The number of bit positions, a single number (truncated toward
 zero); see Details for its range.}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that the
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that the
 integer operands have no \code{NA}, so they are not looked for; an
 \code{NA} is then treated as its bit pattern \code{0x80000000}.}
 }

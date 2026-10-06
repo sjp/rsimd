@@ -267,9 +267,7 @@ static const rsimd_cmath_base *cmath_base_get(void) {
 /* ---- Entry points --------------------------------------------------------- */
 
 static int fast_bit(SEXP accuracy) {
-  int a = rsimd_arg_int1(accuracy, "accuracy");
-  if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
-  return a ? RSIMD_MATH_FAST : 0;
+  return rsimd_arg_accuracy(accuracy) ? RSIMD_MATH_FAST : 0;
 }
 
 /* Base R's names of the functions, for the warning. */

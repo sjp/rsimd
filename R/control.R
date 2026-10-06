@@ -95,9 +95,12 @@ simd_precision <- function(mode) {
   mode
 }
 
-# The precision mode as the integer code the C side takes (RSIMD_PREC_*).
-.precision_code <- function() {
-  match(.precision_mode(), .precision_modes) - 1L
+# For a candidate value of rsimd.na_check: NULL if valid, else the error.
+.na_check_problem <- function(value) {
+  if (!is.logical(value) || length(value) != 1L || is.na(value)) {
+    return("must be TRUE or FALSE")
+  }
+  NULL
 }
 
 simd_math_accuracy <- function(mode) {
@@ -139,20 +142,6 @@ simd_math_accuracy <- function(mode) {
   mode
 }
 
-# The math accuracy mode as the integer code the C side takes (0 accurate,
-# 1 fast). Called by every elementary function, so the valid values are
-# checked first.
-.math_accuracy_code <- function() {
-  mode <- getOption("rsimd.math_accuracy")
-  if (is.null(mode) || identical(mode, "accurate")) {
-    return(0L)
-  }
-  if (identical(mode, "fast")) {
-    return(1L)
-  }
-  match(.math_accuracy_mode(), .math_accuracy_modes) - 1L
-}
-
 simd_with_impl <- function(impl, expr) {
   old <- simd_use(impl)
   on.exit(simd_use(old))
@@ -192,12 +181,17 @@ simd_with_impl <- function(impl, expr) {
   if (!is.null(opt) && is.null(.impl_problem(opt))) opt else .impl_state$requested
 }
 
-# Called first by every exported compute function: honours a change to the
-# rsimd.impl option made without simd_use(). Costs one getOption() and one
-# comparison when nothing changed.
+# Honours a change to the rsimd.impl option made without simd_use(). The C
+# side (rsimd_entry() in src/rvec.c) evaluates this at the start of a call
+# when the option differs from the value it last saw, so the R wrappers
+# need not.
 .sync_impl <- function() {
   impl <- getOption("rsimd.impl", "auto")
   if (!identical(impl, .impl_state$requested)) {
+    problem <- .impl_problem(impl)
+    if (!is.null(problem)) {
+      stop("invalid option rsimd.impl: ", problem, call. = FALSE)
+    }
     simd_use(impl)
   }
   invisible()

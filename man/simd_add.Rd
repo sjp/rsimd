@@ -10,30 +10,30 @@
 \alias{simd_mul_wrap}
 \title{Elementwise Arithmetic}
 \usage{
-simd_add(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_add(x, y, na_check = NULL)
 
-simd_sub(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_sub(x, y, na_check = NULL)
 
-simd_mul(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_mul(x, y, na_check = NULL)
 
-simd_div(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_div(x, y, na_check = NULL)
 
-simd_idiv(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_idiv(x, y, na_check = NULL)
 
-simd_mod(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_mod(x, y, na_check = NULL)
 
-simd_add_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_add_wrap(x, y, na_check = NULL)
 
-simd_sub_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_sub_wrap(x, y, na_check = NULL)
 
-simd_mul_wrap(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_mul_wrap(x, y, na_check = NULL)
 }
 \arguments{
 \item{x, y}{Double, integer, logical or \pkg{bit64} \code{integer64}
 vectors; not double for the \code{_wrap} functions. \code{simd_add()},
 \code{simd_sub()}, \code{simd_mul()} and \code{simd_div()} also take
 complex vectors.}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} and \code{y} have no missing values, so they are not looked for; see
 Details.}
 }

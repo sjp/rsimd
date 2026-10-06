@@ -4,11 +4,11 @@
 \alias{simd_cosine}
 \title{Dot Products, Euclidean Distances and Cosine Similarity}
 \usage{
-simd_dot(x, y, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_dot(x, y, na.rm = FALSE, na_check = NULL)
 
-simd_dist(x, y, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_dist(x, y, na.rm = FALSE, na_check = NULL)
 
-simd_cosine(x, y, na_check = getOption("rsimd.na_check", TRUE))
+simd_cosine(x, y, na_check = NULL)
 }
 \arguments{
 \item{x, y}{Double, integer or logical vectors of the same length. The
@@ -16,7 +16,7 @@ types may differ.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove the pairs
 \code{(x[i], y[i])} in which either element is missing (\code{NA} or
 \code{NaN}) first?}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} and \code{y} have no missing values, so they are not looked for; see
 Details.}
 }

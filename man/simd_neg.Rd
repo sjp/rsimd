@@ -19,7 +19,7 @@ simd_abs_wrap(x)
 
 simd_sign(x)
 
-simd_copysign(x, sign, na_check = getOption("rsimd.na_check", TRUE))
+simd_copysign(x, sign, na_check = NULL)
 
 simd_recip(x)
 
@@ -32,7 +32,7 @@ the \code{_wrap} functions. \code{simd_neg()}, \code{simd_abs()} and
 \code{_wrap} functions a \pkg{bit64} \code{integer64} vector.}
 \item{sign}{A double, integer or logical vector whose signs are copied to
 \code{x}.}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} and \code{sign} have no missing values, so they are not looked for;
 see Details.}
 }

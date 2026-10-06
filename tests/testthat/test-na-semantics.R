@@ -92,6 +92,33 @@ test_that("integer and logical sums: NA unless na.rm, exact 64-bit accumulation"
   expect_identical(fold(numeric(0)), 0)
 })
 
+test_that("na_check = NULL reads option rsimd.na_check on every call", {
+  old <- options(rsimd.na_check = TRUE)
+  on.exit(options(old))
+  x <- c(1, NA, 3)
+  expect_true(.debug_opts(x)$na_check)
+  options(rsimd.na_check = FALSE)
+  expect_false(.debug_opts(x)$na_check)
+  expect_true(.debug_opts(x, na_check = TRUE)$na_check)
+  # Integer NA is its bit pattern without the check.
+  expect_identical(simd_sum(c(1L, NA)), 1L - .Machine$integer.max - 1L)
+  expect_identical(simd_sum(c(1L, NA), na_check = TRUE), NA_integer_)
+  options(rsimd.na_check = NULL)
+  expect_true(.debug_opts(x)$na_check)
+
+  for (bad in list("yes", NA, c(TRUE, FALSE), 1)) {
+    options(rsimd.na_check = bad)
+    expect_error(simd_sum(x), "invalid option rsimd.na_check: must be TRUE or FALSE",
+      fixed = TRUE, info = deparse(bad)
+    )
+    expect_error(simd_add(x, 1), "invalid option rsimd.na_check", info = deparse(bad))
+    # An explicit argument does not read the option; nor do functions
+    # without na_check.
+    expect_identical(simd_sum(x, na_check = TRUE), NA_real_)
+    expect_identical(simd_pmin(x, 2), c(1, NA, 2))
+  }
+})
+
 test_that("na_check = FALSE skips detection but stays memory safe", {
   x <- c(1L, NA, 3L)
   for_each_tier(function(tier) {

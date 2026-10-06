@@ -222,7 +222,8 @@ static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP
   rsimd_opts o;
   R_xlen_t i;
 
-  rsimd_opts_init(&o, na_rm, R_NilValue, precision, 0);
+  rsimd_opts_init(&o, na_rm, Rf_ScalarLogical(TRUE), 0);
+  o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, o_idx);
   out = PROTECT(Rf_mkNamed(VECSXP, names));
   SET_VECTOR_ELT(out, 0, result_fields(&r));
@@ -263,7 +264,8 @@ static SEXP simd_debug_opts_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precisi
   rsimd_opts o;
   SEXP out;
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, na_check, precision, in.no_na_hint);
+  rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.precision = rsimd_arg_precision(precision);
   out = PROTECT(Rf_mkNamed(VECSXP, names));
   SET_VECTOR_ELT(out, 0, Rf_ScalarLogical(o.na_rm));
   SET_VECTOR_ELT(out, 1, Rf_ScalarLogical(o.na_check));

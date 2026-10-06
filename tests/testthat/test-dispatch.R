@@ -160,6 +160,61 @@ test_that("setting the rsimd.impl option directly is honoured", {
   expect_identical(as.vector(simd_current()), "none")
 })
 
+test_that("compute functions honour rsimd.impl set directly, without simd_current()", {
+  old_impl <- attr(simd_current(), "requested")
+  on.exit(simd_use(old_impl), add = TRUE)
+  old <- options(rsimd.impl = "auto")
+  on.exit(options(old), add = TRUE)
+  simd_use("auto")
+  best <- simd_available()[1]
+
+  # The C side syncs at the start of each call (.debug_active() is one).
+  options(rsimd.impl = "none")
+  expect_identical(.debug_active(1), "none")
+  options(rsimd.impl = "auto")
+  expect_identical(.debug_active(1), best)
+
+  # Back to the value last synced, after a simd_use() in between.
+  options(rsimd.impl = "none")
+  expect_identical(.debug_active(1), "none")
+  simd_use("auto")
+  options(rsimd.impl = "none")
+  expect_identical(.debug_active(1), "none")
+
+  # An unset option means "auto".
+  options(rsimd.impl = NULL)
+  expect_identical(.debug_active(1), best)
+
+  # A value that cannot be selected is an error naming the option, on every
+  # call until it is fixed; the selection is unchanged.
+  simd_use("none")
+  options(rsimd.impl = "bogus")
+  expect_error(simd_sum(1), "invalid option rsimd.impl: unknown implementation 'bogus'",
+    fixed = TRUE
+  )
+  expect_error(simd_add(1, 2), "invalid option rsimd.impl: unknown implementation 'bogus'",
+    fixed = TRUE
+  )
+  options(rsimd.impl = 1)
+  expect_error(simd_sum(1), "invalid option rsimd.impl: 'impl' must be a single string",
+    fixed = TRUE
+  )
+  options(rsimd.impl = "rvv")
+  expect_error(simd_sum(1), "invalid option rsimd.impl: implementation 'rvv' is not available")
+  options(rsimd.impl = "auto")
+  expect_identical(simd_sum(c(1, 2)), 3)
+  expect_identical(.debug_active(1), best)
+})
+
+test_that("simd_with_impl() restores the selection when a compute call errors", {
+  old_impl <- attr(simd_current(), "requested")
+  on.exit(simd_use(old_impl), add = TRUE)
+  simd_use("auto")
+  expect_error(simd_with_impl("none", simd_add(1:3, 1:2)), "lengths")
+  expect_identical(.debug_active(1), simd_available()[1])
+  expect_identical(getOption("rsimd.impl"), "auto")
+})
+
 test_that("RSIMD_IMPL and rsimd.impl initialise a fresh session", {
   skip_if_no_subprocess()
   skip_on_cran()

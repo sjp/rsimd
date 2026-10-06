@@ -19,7 +19,7 @@ Rscript bench/run.R --ops sum,exp --sizes 1e4,1e6 --out /tmp/bench
 | Option | Meaning |
 |--------|---------|
 | `--quick` | Sizes 1e3 and 1e5 and half the timing budget (at least 10, at most 100 iterations). |
-| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`. |
+| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`, and the overhead-table op `eq` (the overhead table also has `sum`, `add`, `exp`, `as_integer`, `dot` and complex `mul`). |
 | `--sizes a,b` | Input lengths (default `1e3,1e5,1e7`: L1-resident, cache-resident, DRAM-bound). |
 | `--out dir` | Output directory (default `bench/results/`, which git ignores). |
 
@@ -39,7 +39,7 @@ and once as the base R equivalent:
 | is_na | `simd_is_na(x)` | `is.na(x)` | double |
 | as_integer | `simd_as_integer(x, mode = "truncating")` | `as.integer(x)` | double |
 
-There are four tables:
+There are five tables:
 
 - **Main**: every op at every size, precision mode `"fast"`, no missing values.
 - **1% NA**: `sum` and `any_na` with 1% of the elements set to `NA`, which exercises the
@@ -55,6 +55,11 @@ There are four tables:
   variant (`pow`, `asinh`). Base R's `hypot` is `sqrt(x * x + y * y)`, which can
   overflow. On `neon`, `sve` and `sve2`, `log`, `pow` and `asinh` in accurate mode run the C math library,
   as `none` does (see `math_paths.R` below).
+- **Per-call overhead**: `simd_sum`, `simd_add`, `simd_exp`, `simd_eq`, `simd_as_integer`
+  (default mode), `simd_dot` and complex `simd_mul` at n = 1, 10 and 100 on the auto tier,
+  against base R, with a bare `.Call()` of the sum entry point (`bare`) as the floor. At
+  these sizes the time is almost all the R wrapper and the entry point's set-up, so a
+  regression in either shows here first.
 
 Inputs are generated once per size with `set.seed(20261003)`: doubles from
 `runif(n, -100, 100)` (`x`, `y`, `z` independent), `exp` on `runif(n, -50, 50)`,

@@ -3,15 +3,15 @@
 \alias{simd_sd}
 \title{Variance and Standard Deviation}
 \usage{
-simd_var(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_var(x, na.rm = FALSE, na_check = NULL)
 
-simd_sd(x, na.rm = FALSE, na_check = getOption("rsimd.na_check", TRUE))
+simd_sd(x, na.rm = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x}{A double, integer or logical vector.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
-\item{na_check}{\code{TRUE} or \code{FALSE}. \code{FALSE} promises that
+\item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} has no missing values, so they are not looked for; see Details.}
 }
 \description{

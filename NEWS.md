@@ -129,6 +129,15 @@ First release.
   (SVE gave a zero of the other sign). A function called from a warning handler
   in the middle of another rsimd call no longer changes that call's
   implementation or `simd_vec` result.
+* **Per-call overhead.** The options `rsimd.impl`, `rsimd.precision`,
+  `rsimd.math_accuracy` and `rsimd.na_check` are read in C and each function
+  makes its own call into C, so a call on a short vector costs well under a
+  microsecond more than the C code itself. The `na_check` argument defaults
+  to `NULL`, meaning option `rsimd.na_check`. Warnings and errors name the
+  user's call (`simd_log(-1)`). An invalid value of one of the four options
+  set before loading gives a warning naming the option, and the default is
+  used; one set after loading makes the next call that reads it an error
+  naming the option (`?rsimd_options`).
 * Results follow base R's types, warnings and missing-value rules; `NA` and
   `NaN` stay distinct. Where a result can differ from base R's (the last
   bits of floating-point sums and elementary functions, and a few

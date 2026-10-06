@@ -65,6 +65,64 @@ test_that(".onLoad keeps user-set precision and NA-check options", {
   expect_identical(getOption("rsimd.na_check"), FALSE)
 })
 
+test_that(".onLoad warns about invalid option values and uses the defaults", {
+  onload <- get(".onLoad", envir = asNamespace("rsimd"))
+  old_opts <- options(
+    rsimd.precision = "bogus", rsimd.math_accuracy = "FAST", rsimd.na_check = "yes"
+  )
+  on.exit(options(old_opts))
+  warnings <- character()
+  withCallingHandlers(onload(NULL, "rsimd"), warning = function(w) {
+    warnings <<- c(warnings, conditionMessage(w))
+    invokeRestart("muffleWarning")
+  })
+  expect_identical(warnings, c(
+    paste(
+      "option rsimd.precision: precision mode must be one of \"fast\", \"pairwise\",",
+      "\"compensated\"; using \"fast\""
+    ),
+    paste(
+      "option rsimd.math_accuracy: math accuracy mode must be one of \"accurate\",",
+      "\"fast\"; using \"accurate\""
+    ),
+    "option rsimd.na_check: must be TRUE or FALSE; using TRUE"
+  ))
+  expect_identical(getOption("rsimd.precision"), "fast")
+  expect_identical(getOption("rsimd.math_accuracy"), "accurate")
+  expect_identical(getOption("rsimd.na_check"), TRUE)
+})
+
+test_that("invalid options set before library(rsimd) warn and fall back", {
+  skip_if_no_subprocess()
+  skip_on_cran()
+  child <- function(opts) {
+    options(opts)
+    warnings <- character()
+    withCallingHandlers(library(rsimd), warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+    list(
+      warnings = warnings,
+      options = options()[c("rsimd.impl", "rsimd.precision", "rsimd.math_accuracy", "rsimd.na_check")],
+      sum = simd_sum(c(1, 2))
+    )
+  }
+  cases <- list(
+    list("rsimd.impl", "bogus", "auto"),
+    list("rsimd.precision", "bogus", "fast"),
+    list("rsimd.math_accuracy", "bogus", "accurate"),
+    list("rsimd.na_check", "bogus", TRUE)
+  )
+  for (case in cases) {
+    res <- callr::r(child, list(structure(list(case[[2]]), names = case[[1]])))
+    expect_length(res$warnings, 1)
+    expect_match(res$warnings, paste0("^option ", case[[1]], ": "), info = case[[1]])
+    expect_identical(res$options[[case[[1]]]], case[[3]], info = case[[1]])
+    expect_identical(res$sum, 3, info = case[[1]])
+  }
+})
+
 test_that("unloading the namespace unloads the shared library", {
   skip_if_not_installed("callr")
   child <- function() {
