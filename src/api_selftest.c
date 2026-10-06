@@ -3,20 +3,10 @@
    overflow rules of na.h on every tier. Not part of the package's
    interface. */
 
-#include <string.h>
 #include "rsimd.h"
 #include "dispatch.h"
 #include "rvec.h"
 #include "selftest.h"
-
-static int lookup_name(const char *name, const char *const *table, int count, const char *what) {
-  int i;
-  for (i = 0; i < count; i++) {
-    if (table[i] != NULL && strcmp(name, table[i]) == 0) return i;
-  }
-  Rf_error("unknown %s '%s'", what, name);
-  return -1; /* not reached */
-}
 
 static SEXP finished(SEXP value, const rsimd_reduce_result *r) {
   const char *names[] = {"value", "count", "saw_na", "saw_nan", "any_true", "any_false", ""};
@@ -39,7 +29,7 @@ static SEXP simd_debug_fold_impl(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_
                                  SEXP precision) {
   static const char *const terms[] = {"x", "sq", "abs", "xy"};
   static const int ops[] = {RSIMD_RED_SUM, RSIMD_RED_SUM_SQ, RSIMD_RED_SUM_ABS, RSIMD_RED_DOT};
-  int t = lookup_name(rsimd_arg_str(term, "term"), terms, 4, "term");
+  int t = rsimd_lookup(rsimd_arg_str(term, "term"), terms, 4, "term");
   rsimd_reduce_result r;
   rsimd_opts o;
   SEXP value;
@@ -88,7 +78,7 @@ SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEX
    (op "scan"), for logical or integer x. */
 static SEXP simd_debug_lgl_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   static const char *const ops[] = {"any", "all", "scan"};
-  int k = lookup_name(rsimd_arg_str(op, "op"), ops, 3, "op");
+  int k = rsimd_lookup(rsimd_arg_str(op, "op"), ops, 3, "op");
   int stop = k == 0 ? RSIMD_STOP_TRUE : k == 1 ? RSIMD_STOP_FALSE : RSIMD_STOP_NONE;
   int red = k == 1 ? RSIMD_RED_ALL : RSIMD_RED_ANY;
   rsimd_reduce_result r;
@@ -143,7 +133,7 @@ static SEXP simd_debug_arith_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   case RSIMD_I32:
   case RSIMD_LGL: {
     int *po = (int *) rsimd_out_ptr(out);
-    code = lookup_name(name, i32_ops, RSIMD_ST_I32_COUNT, "integer op");
+    code = rsimd_lookup(name, i32_ops, RSIMD_ST_I32_COUNT, "integer op");
     RSIMD_FOREACH_CHUNK2(&b, int, px, py, len, off, {
       overflow |= rsimd_active->selftest_arith_i32(code, px, py, len, b.x_scalar, b.y_scalar,
                                                    po + off, &o);
@@ -152,7 +142,7 @@ static SEXP simd_debug_arith_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   }
   case RSIMD_F64: {
     double *po = (double *) rsimd_out_ptr(out);
-    code = lookup_name(name, f64_ops, RSIMD_ST_F64_COUNT, "double op");
+    code = rsimd_lookup(name, f64_ops, RSIMD_ST_F64_COUNT, "double op");
     RSIMD_FOREACH_CHUNK2(&b, double, px, py, len, off, {
       rsimd_active->selftest_arith_f64(code, px, py, len, b.x_scalar, b.y_scalar, po + off, &o);
     });

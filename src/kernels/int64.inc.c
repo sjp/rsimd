@@ -485,6 +485,12 @@ static inline void RSIMD_KERNEL(i64_put_index_)(int mode, void *out, rsimd_reduc
   r->i64++;
 }
 
+/* pmin, pmax and their _num forms read int32 NA as NA whatever na_check
+   says, as the int32 kernels do. */
+static inline int rsimd_ew_i64_check(int op, const rsimd_opts *o) {
+  return op >= RSIMD_EW_PMIN && op <= RSIMD_EW_PMAX_NUM ? 1 : o->na_check;
+}
+
 #if RSIMD_TIER_IS(none)
 
 void RSIMD_KERNEL(sum_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_result *r,
@@ -598,12 +604,6 @@ int RSIMD_KERNEL(ew1_i64)(int op, const int64_t *x, R_xlen_t n, int64_t *out,
     }
   }
   return 0;
-}
-
-/* pmin, pmax and their _num forms read int32 NA as NA whatever na_check
-   says, as the int32 kernels do. */
-static inline int rsimd_ew_i64_check(int op, const rsimd_opts *o) {
-  return op >= RSIMD_EW_PMIN && op <= RSIMD_EW_PMAX_NUM ? 1 : o->na_check;
 }
 
 int RSIMD_KERNEL(ew2_i64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
@@ -1186,12 +1186,6 @@ int RSIMD_KERNEL(ew1_i64)(int op, const int64_t *x, R_xlen_t n, int64_t *out,
     break;
   }
   return 0;
-}
-
-/* pmin, pmax and their _num forms read int32 NA as NA whatever na_check
-   says, as the int32 kernels do. */
-static inline int rsimd_ew_i64_check(int op, const rsimd_opts *o) {
-  return op >= RSIMD_EW_PMIN && op <= RSIMD_EW_PMAX_NUM ? 1 : o->na_check;
 }
 
 /* Checked add or sub of a and b into r, NA where an operand is NA (with

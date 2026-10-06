@@ -9,18 +9,6 @@
 #include "dispatch.h"
 #include "rvec.h"
 
-static int is_int_like(rsimd_etype t) { return t == RSIMD_I32 || t == RSIMD_LGL; }
-
-static int lookup_op(SEXP op, const char *const *names, int count) {
-  const char *name = rsimd_arg_str(op, "op");
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, names[i]) == 0) return i;
-  }
-  Rf_error("internal error: unknown op '%s'", name);
-  return -1; /* not reached */
-}
-
 static const char *const raw_mix_msg =
   "operations are possible only for numeric, logical or complex types";
 
@@ -31,7 +19,7 @@ static int all_raw(const rsimd_ew *e, int allow_double, int allow_i64) {
   for (i = 0; i < e->k; i++) {
     rsimd_etype t = e->in[i].type;
     if (t == RSIMD_U8) raw++;
-    else if (!is_int_like(t) && !(allow_double && t == RSIMD_F64) &&
+    else if (!rsimd_is_int_like(t) && !(allow_double && t == RSIMD_F64) &&
              !(allow_i64 && t == RSIMD_I64)) {
       Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
     }
@@ -53,7 +41,7 @@ static int init_operands(rsimd_ew *e, SEXP x, SEXP y) {
    give a logical result; two raw operands give raw (bytewise). */
 static SEXP simd_logic_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"and", "or", "xor", "not"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
   SEXP out;
   rsimd_ew e;
 
@@ -109,7 +97,7 @@ SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
 static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   static const char *const names[] = {"and", "or",   "xor",      "not",   "shl",  "shr",
                                       "sar", "rotl", "rotr", "popcount", "lzcnt", "tzcnt"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
   /* NA (a shift count out of range) is allowed. */
   double kd = Rf_isNull(k) ? 0.0 : rsimd_arg_num1(k, "k");
   int count = isnan(kd) ? NA_INTEGER : (int) kd;
@@ -127,7 +115,7 @@ static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
     int i, flags = e.flags;
     all_raw(&e, 0, 1);
     for (i = 0; i < e.k; i++) {
-      if (is_int_like(e.in[i].type)) flags |= RSIMD_EW_I32(i);
+      if (rsimd_is_int_like(e.in[i].type)) flags |= RSIMD_EW_I32(i);
     }
     if (counts) {
       int *po;
@@ -200,7 +188,7 @@ static SEXP simd_popcount_total_impl(SEXP x, SEXP na_rm, SEXP na_check) {
   memset(&r, 0, sizeof r);
   if (in.type == RSIMD_U8) {
     RSIMD_FOREACH_CHUNK(&in, Rbyte, px, len, off, { rsimd_active->popcnt_sum_u8(px, len, &r); });
-  } else if (is_int_like(in.type)) {
+  } else if (rsimd_is_int_like(in.type)) {
     RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
       rsimd_active->popcnt_sum_i32(px, len, &r, &o);
       if (r.saw_na && !o.na_rm) break;

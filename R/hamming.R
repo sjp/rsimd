@@ -2,32 +2,11 @@
 # (simd_hamming) and the number of bits in which they differ
 # (simd_hamming_bits).
 
-# The operands are converted as for the comparisons (raw with non-raw to
-# logical or integer, integer64 with double to double, with a warning),
-# and a non-complex operand with a complex one to complex (integer64
-# through double, with the same warning).
+# The operands are converted as for the comparisons (.cmp_operands()).
 simd_hamming <- function(x, y, na.rm = FALSE) {
   .sync_impl()
   na.rm <- .arg_flag(na.rm, "na.rm")
-  if (is.complex(x) != is.complex(y)) {
-    call <- sys.call()
-    to <- function(a) {
-      if (is.complex(a)) {
-        return(a)
-      }
-      if (inherits(a, "integer64")) {
-        warning(simpleWarning("integer64 coerced to double", call))
-        a <- .as_etype(a, "double")
-      }
-      .sv_like(as.complex(a), a)
-    }
-    return(.Call(C_simd_hamming, to(x), to(y), na.rm))
-  }
-  if (is.raw(x) != is.raw(y)) {
-    to <- if (is.logical(x) || is.logical(y)) as.logical else as.integer
-    if (is.raw(x)) x <- .sv_like(to(x), x) else y <- .sv_like(to(y), y)
-  }
-  p <- .i64_to_double(list(x, y), sys.call())
+  p <- .cmp_operands(x, y, sys.call())
   .Call(C_simd_hamming, p[[1L]], p[[2L]], na.rm)
 }
 

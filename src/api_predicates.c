@@ -9,18 +9,6 @@
 #include "dispatch.h"
 #include "api_complex.h"
 
-static int is_int_like(rsimd_etype t) { return t == RSIMD_I32 || t == RSIMD_LGL; }
-
-static int lookup_op(SEXP op, const char *const *names, int count) {
-  const char *name = rsimd_arg_str(op, "op");
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, names[i]) == 0) return i;
-  }
-  Rf_error("internal error: unknown op '%s'", name);
-  return -1; /* not reached */
-}
-
 /* The predicate's value for every element of a type it is constant on
    (FALSE): a logical vector of n FALSE, or the any/all answer. */
 static SEXP constant_false(R_xlen_t n, int mode) {
@@ -47,7 +35,7 @@ static SEXP constant_false(R_xlen_t n, int mode) {
 static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
   static const char *const names[] = {"na",   "nan",  "finite", "infinite",  "negative", "zero",
                                       "normal", "subnormal", "whole", "even", "odd", "pow2"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
   int m = rsimd_arg_int1(mode, "mode"), res = m == RSIMD_PRED_ALL;
   SEXP out = R_NilValue;
   int *po = NULL;
@@ -131,7 +119,7 @@ SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
 static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"eq", "ne", "lt", "le", "gt", "ge"};
   static const char *const args[] = {"x", "y"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
   SEXP sargs[2], out;
   rsimd_etype tx, ty;
   int *po;
@@ -154,21 +142,21 @@ static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
       rsimd_active->cmp_u8(code, (const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags,
                            po + off);
     });
-  } else if ((tx == RSIMD_I64 || ty == RSIMD_I64) && (tx == RSIMD_I64 || is_int_like(tx)) &&
-             (ty == RSIMD_I64 || is_int_like(ty))) {
-    int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
-                (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+  } else if ((tx == RSIMD_I64 || ty == RSIMD_I64) && (tx == RSIMD_I64 || rsimd_is_int_like(tx)) &&
+             (ty == RSIMD_I64 || rsimd_is_int_like(ty))) {
+    int flags = e.flags | (rsimd_is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                (rsimd_is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->cmp_i64(code, p[0], p[1], len, flags, po + off);
     });
-  } else if (is_int_like(tx) && is_int_like(ty)) {
+  } else if (rsimd_is_int_like(tx) && rsimd_is_int_like(ty)) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->cmp_i32(code, (const int *) p[0], (const int *) p[1], len, e.flags,
                             po + off);
     });
-  } else if ((tx == RSIMD_F64 || is_int_like(tx)) && (ty == RSIMD_F64 || is_int_like(ty))) {
-    int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
-                (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+  } else if ((tx == RSIMD_F64 || rsimd_is_int_like(tx)) && (ty == RSIMD_F64 || rsimd_is_int_like(ty))) {
+    int flags = e.flags | (rsimd_is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                (rsimd_is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->cmp_f64(code, p[0], p[1], len, flags, po + off);
     });
@@ -223,24 +211,24 @@ static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
         rsimd_active->hamming_u8((const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags, &r);
       });
-    } else if ((tx == RSIMD_I64 || ty == RSIMD_I64) && (tx == RSIMD_I64 || is_int_like(tx)) &&
-               (ty == RSIMD_I64 || is_int_like(ty))) {
-      int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
-                  (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+    } else if ((tx == RSIMD_I64 || ty == RSIMD_I64) && (tx == RSIMD_I64 || rsimd_is_int_like(tx)) &&
+               (ty == RSIMD_I64 || rsimd_is_int_like(ty))) {
+      int flags = e.flags | (rsimd_is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                  (rsimd_is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
         if (!stop) rsimd_active->hamming_i64(p[0], p[1], len, flags, &r, &o);
         stop = r.saw_na && !o.na_rm;
       });
-    } else if (is_int_like(tx) && is_int_like(ty)) {
+    } else if (rsimd_is_int_like(tx) && rsimd_is_int_like(ty)) {
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
         if (!stop) {
           rsimd_active->hamming_i32((const int *) p[0], (const int *) p[1], len, e.flags, &r, &o);
         }
         stop = r.saw_na && !o.na_rm;
       });
-    } else if ((tx == RSIMD_F64 || is_int_like(tx)) && (ty == RSIMD_F64 || is_int_like(ty))) {
-      int flags = e.flags | (is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
-                  (is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
+    } else if ((tx == RSIMD_F64 || rsimd_is_int_like(tx)) && (ty == RSIMD_F64 || rsimd_is_int_like(ty))) {
+      int flags = e.flags | (rsimd_is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
+                  (rsimd_is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
         if (!stop) rsimd_active->hamming_f64(p[0], p[1], len, flags, &r, &o);
         stop = r.saw_na && !o.na_rm;
@@ -278,7 +266,7 @@ static SEXP simd_hamming_bits_impl(SEXP x, SEXP y) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->hamming_bits_u8((const Rbyte *) p[0], (const Rbyte *) p[1], len, e.flags, &r);
     });
-  } else if (is_int_like(tx) && is_int_like(ty)) {
+  } else if (rsimd_is_int_like(tx) && rsimd_is_int_like(ty)) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       rsimd_active->hamming_bits_i32((const int *) p[0], (const int *) p[1], len, e.flags, &r);
     });

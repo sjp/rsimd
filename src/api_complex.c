@@ -19,16 +19,6 @@
 /* Complex numbers per broadcast block: 4 KiB on the stack. */
 #define RSIMD_C128_BCAST 256
 
-static int lookup_op(SEXP op, const char *const *names, int count) {
-  const char *name = rsimd_arg_str(op, "op");
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, names[i]) == 0) return i;
-  }
-  Rf_error("internal error: unknown op '%s'", name);
-  return -1; /* not reached */
-}
-
 /* x op y (RSIMD_EW_ADD or RSIMD_EW_SUB) for one chunk of len elements;
    xs or ys is set when that operand is a scalar. */
 static void c128_add_chunk(int op, const Rcomplex *px, const Rcomplex *py, R_xlen_t len, int xs,
@@ -579,7 +569,7 @@ void rsimd_c128_cmp(int op, SEXP x, SEXP y, int *po) {
    accurate, 1 fast). Complex z only; the R side handles the others. */
 static SEXP simd_cmath_impl(SEXP z, SEXP op, SEXP accuracy) {
   static const char *const names[] = {"mod", "arg"};
-  int code = lookup_op(op, names, 2), a = rsimd_arg_int1(accuracy, "accuracy");
+  int code = rsimd_arg_choice(op, names, 2), a = rsimd_arg_int1(accuracy, "accuracy");
   SEXP out;
   double *po;
   rsimd_in in;
@@ -658,7 +648,7 @@ int rsimd_c128_pred(const rsimd_in *in, int code, int mode, int *po) {
    error with base R's message; integer64 is rejected on the R side. */
 static SEXP simd_cplx_impl(SEXP z, SEXP op) {
   static const char *const names[] = {"conj", "re", "im"};
-  int code = lookup_op(op, names, 3);
+  int code = rsimd_arg_choice(op, names, 3);
   SEXP out;
   rsimd_in in;
 

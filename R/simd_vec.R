@@ -29,7 +29,7 @@ simd_vec <- function(x, impl = NULL, check_na = FALSE) {
     }
     impl <- if (missing(impl)) attr(x, "rsimd_impl", exact = TRUE) else .sv_check_impl(impl)
     na_free <- if (check_na) !simd_any_na(x) else .sv_flag(x)
-    return(.sv_new(.sv_data(x), impl, na_free))
+    return(.sv_new(.sv_strip(x), impl, na_free))
   }
   data <- .sv_strip(x)
   impl <- .sv_check_impl(impl)
@@ -118,10 +118,8 @@ simd_na_free <- function(x) {
   .Call(C_simd_sv_stamp, data, if (is.raw(data)) TRUE else na_free)
 }
 
-# The data of a simd_vec (integer64 keeps its class).
-.sv_data <- function(x) .sv_strip(x)
-
-# The same for replacement methods, after .sv_release(x): x is then R's
+# The data of a simd_vec (integer64 keeps its class), as .sv_strip() but
+# for replacement methods, after .sv_release(x): x is then R's
 # private copy (f(y) <- value on a shared y) or the object being replaced,
 # so its attributes are dropped in place, saving a copy of the data.
 .sv_data_own <- function(x) {
@@ -172,7 +170,7 @@ simd_na_free <- function(x) {
 # integer64 data dispatches to bit64's methods, which must be available.
 .sv_fallback <- function(f, args, wrap = TRUE) {
   pin <- .sv_resolve(args)
-  data <- lapply(args, function(a) if (is_simd_vec(a)) .sv_data(a) else a)
+  data <- lapply(args, function(a) if (is_simd_vec(a)) .sv_strip(a) else a)
   if (any(vapply(data, inherits, NA, what = "integer64"))) .need_bit64()
   out <- do.call(f, data)
   if (wrap && ((is.atomic(out) && !is.object(out)) || inherits(out, "integer64"))) {
@@ -356,7 +354,7 @@ is.na.simd_vec <- function(x) simd_is_na(x)
 
 # The data, for order() and so sort(): xtfrm.default would unclass(x),
 # copying the attributes and so voiding x's NA-free flag.
-xtfrm.simd_vec <- function(x) xtfrm(.sv_data(x))
+xtfrm.simd_vec <- function(x) xtfrm(.sv_strip(x))
 
 anyNA.simd_vec <- function(x, recursive = FALSE) {
   flag <- .sv_flag(x)
@@ -400,7 +398,7 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 `[<-.simd_vec` <- function(x, i, value) {
   .sv_release(x)
   data <- .sv_data_own(x)
-  if (is_simd_vec(value)) value <- .sv_data(value)
+  if (is_simd_vec(value)) value <- .sv_strip(value)
   if (inherits(data, "integer64")) {
     if (!inherits(value, "integer64")) value <- simd_as_integer64(value)
     data <- unclass(data)
@@ -512,7 +510,7 @@ c.simd_vec <- function(..., recursive = FALSE, use.names = TRUE) .sv_combine(lis
   }
   # Not .sv_data_own(): x may be shared with the object it was copied from,
   # whose token a copy of the attributes would void.
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) .need_bit64()
   set(data, value)
 }
@@ -524,35 +522,35 @@ simd_unwrap <- function(x) {
     .check_data(x)
     return(x)
   }
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) .need_bit64()
   data
 }
 
 # Registered for bit64's generic when bit64 is loaded (NAMESPACE).
 as.integer64.simd_vec <- function(x, ...) {
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) data else bit64::as.integer64(data, ...)
 }
 
 as.vector.simd_vec <- function(x, mode = "any") {
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) data <- simd_as_double(data)
   as.vector(data, mode)
 }
 
 as.double.simd_vec <- function(x, ...) {
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) unclass(simd_as_double(data)) else as.double(data)
 }
 
 as.integer.simd_vec <- function(x, ...) {
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) unclass(simd_as_integer(data)) else as.integer(data)
 }
 
 as.logical.simd_vec <- function(x, ...) {
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64")) unclass(simd_as_logical(data)) else as.logical(data)
 }
 
@@ -575,7 +573,7 @@ as.data.frame.simd_vec <- function(x, row.names = NULL, optional = FALSE, ...,
 # The data in a form base R prints correctly: integer64 needs bit64, else
 # it is shown as double.
 .sv_printable <- function(x) {
-  data <- .sv_data(x)
+  data <- .sv_strip(x)
   if (inherits(data, "integer64") && !requireNamespace("bit64", quietly = TRUE)) {
     data <- unclass(simd_as_double(data))
   }
@@ -623,8 +621,8 @@ all.equal.simd_vec <- function(target, current, ...) {
       show(f2, "unknown")
     ))
   }
-  d1 <- .sv_data(target)
-  d2 <- .sv_data(current)
+  d1 <- .sv_strip(target)
+  d2 <- .sv_strip(current)
   if (inherits(d1, "integer64") || inherits(d2, "integer64")) .need_bit64()
   data <- all.equal(d1, d2, ...)
   if (!isTRUE(data)) msg <- c(msg, data)

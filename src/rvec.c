@@ -74,10 +74,6 @@ rsimd_etype rsimd_promote(rsimd_etype a, rsimd_etype b) {
   return RSIMD_I32; /* logical with integer */
 }
 
-int rsimd_promote_warns(rsimd_etype a, rsimd_etype b) {
-  return (a == RSIMD_I64 && b == RSIMD_F64) || (a == RSIMD_F64 && b == RSIMD_I64);
-}
-
 /* ---- simd_vec operands ---------------------------------------------- */
 
 /* What the current .Call has seen of its simd_vec operands. */
@@ -679,12 +675,6 @@ void *rsimd_out_ptr(SEXP out) {
   return NULL; /* not reached */
 }
 
-void rsimd_copy_class(SEXP x, SEXP out) {
-  if (TYPEOF(x) == REALSXP && TYPEOF(out) == REALSXP && Rf_inherits(x, "integer64")) {
-    rsimd_set_i64_class(out);
-  }
-}
-
 /* ---- Options and arguments ---------------------------------------------- */
 
 void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, SEXP precision, int no_na_hint) {
@@ -749,4 +739,26 @@ const char *rsimd_arg_str(SEXP x, const char *name) {
     Rf_error("'%s' must be a single string", name);
   }
   return CHAR(STRING_ELT(x, 0));
+}
+
+/* The index of name in table, or -1. */
+static int find_name(const char *name, const char *const *table, int count) {
+  int i;
+  for (i = 0; i < count; i++) {
+    if (table[i] != NULL && strcmp(name, table[i]) == 0) return i;
+  }
+  return -1;
+}
+
+int rsimd_lookup(const char *name, const char *const *table, int count, const char *what) {
+  int i = find_name(name, table, count);
+  if (i < 0) Rf_error("unknown %s '%s'", what, name);
+  return i;
+}
+
+int rsimd_arg_choice(SEXP op, const char *const *names, int count) {
+  const char *name = rsimd_arg_str(op, "op");
+  int i = find_name(name, names, count);
+  if (i < 0) Rf_error("internal error: unknown op '%s'", name);
+  return i;
 }

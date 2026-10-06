@@ -61,33 +61,41 @@ simd_is_pow2 <- function(x) .pred(x, "pow2", 0L, "simd_is_pow2")
 simd_is_pow2_any <- function(x) .pred(x, "pow2", 1L, "simd_is_pow2_any")
 simd_is_pow2_all <- function(x) .pred(x, "pow2", 2L, "simd_is_pow2_all")
 
-# A raw operand compared with a non-raw one is converted as base R does: to
-# logical when the other is logical, else to integer. Raw with raw compares
-# bytes. An integer64 operand compared with a double is converted to double,
-# with a warning. A complex operand makes the other complex (integer64
-# through double, with the same warning); only == and != take complex, the
-# others give base R's error.
+# A complex comparison takes only == and !=; the others give base R's
+# error.
 .cmp <- function(x, y, op, fun) {
   .sync_impl()
+  if ((is.complex(x) || is.complex(y)) && !(op %in% c("eq", "ne"))) {
+    stop("invalid comparison with complex values", call. = FALSE)
+  }
+  p <- .cmp_operands(x, y, sys.call(-1L))
+  .Call(C_simd_cmp, p[[1L]], p[[2L]], op)
+}
+
+# The operands of a comparison or of simd_hamming(), as a list, converted
+# as base R's comparisons do. A raw operand with a non-raw one becomes
+# logical when the other is logical, else integer; raw with raw compares
+# bytes. An integer64 operand with a double becomes double, with a warning
+# naming `call`. A complex operand makes the other complex (integer64
+# through double, with the same warning).
+.cmp_operands <- function(x, y, call) {
   if (is.complex(x) || is.complex(y)) {
-    if (!(op %in% c("eq", "ne"))) stop("invalid comparison with complex values", call. = FALSE)
-    return(.Call(C_simd_cmp, .as_complex_op(x), .as_complex_op(y), op))
+    return(list(.as_complex_op(x, call), .as_complex_op(y, call)))
   }
   if (is.raw(x) != is.raw(y)) {
     to <- if (is.logical(x) || is.logical(y)) as.logical else as.integer
     if (is.raw(x)) x <- .sv_like(to(x), x) else y <- .sv_like(to(y), y)
   }
-  p <- .i64_to_double(list(x, y), sys.call(-1L))
-  .Call(C_simd_cmp, p[[1L]], p[[2L]], op)
+  .i64_to_double(list(x, y), call)
 }
 
 # An operand of a complex comparison as complex.
-.as_complex_op <- function(a) {
+.as_complex_op <- function(a, call) {
   if (is.complex(a)) {
     return(a)
   }
   if (inherits(a, "integer64")) {
-    warning(simpleWarning("integer64 coerced to double", sys.call(-2L)))
+    warning(simpleWarning("integer64 coerced to double", call))
     a <- .as_etype(a, "double")
   }
   .sv_like(as.complex(a), a)

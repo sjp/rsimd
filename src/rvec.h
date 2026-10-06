@@ -36,6 +36,9 @@ typedef enum {
    "unsupported", indexed by rsimd_etype. */
 extern const char *const rsimd_etype_names[RSIMD_BAD + 1];
 
+/* 1 for the types with 32-bit int storage (integer and logical). */
+static inline int rsimd_is_int_like(rsimd_etype t) { return t == RSIMD_I32 || t == RSIMD_LGL; }
+
 /* The element type of x, or RSIMD_BAD for anything that is not a plain
    atomic vector of a supported type (classed vectors such as factors and
    dates, data frames, lists, S4 objects, character ...). The classes
@@ -60,8 +63,6 @@ size_t rsimd_etype_size(rsimd_etype t);
    (base R makes TRUE + TRUE an integer). Coercion itself happens R-side,
    only for an operand whose type differs from the result. */
 rsimd_etype rsimd_promote(rsimd_etype a, rsimd_etype b);
-/* 1 if combining a and b converts integer64 to double. */
-int rsimd_promote_warns(rsimd_etype a, rsimd_etype b);
 
 /* ---- Chunked read access ----------------------------------------------- */
 
@@ -232,8 +233,8 @@ void rsimd_ew_no_c128(const rsimd_ew *e);
                                        (a broadcast operand's single
                                        element on every chunk),
      R_xlen_t len, off                 as in RSIMD_FOREACH_CHUNK.
-   The body may not `break` or `continue`. Interrupts are checked after
-   every rsimd_stride elements. The chunk buffers hold RSIMD_CHUNK elements
+   The body may `break` out of the loop (early exit) but must not use
+   `continue`. Interrupts are checked after every rsimd_stride elements. The chunk buffers hold RSIMD_CHUNK elements
    of up to 8 bytes, so a complex operand is an internal error: callers
    divert complex operands before the loop. */
 #define RSIMD_FOREACH_CHUNK_EW(e, p, len, off, ...)                                    \
@@ -365,10 +366,6 @@ SEXP rsimd_scalar_i64(int64_t v);
 /* bit64's warning for integer64 overflow, "NAs produced by integer64
    overflow". */
 void rsimd_warn_i64_overflow(void);
-/* The attribute policy: results are bare, except that a double result out
-   of an integer64 x (a plain or a simd_vec one) gets class "integer64".
-   (simd_vec results are made by rsimd_sv_result().) */
-void rsimd_copy_class(SEXP x, SEXP out);
 
 /* ---- simd_vec operands -------------------------------------------------- */
 
@@ -465,6 +462,12 @@ double rsimd_arg_num1(SEXP x, const char *name);
 const char *rsimd_arg_str(SEXP x, const char *name);
 /* 1 if x is a single string equal to one of names (NULL-terminated). */
 int rsimd_str_in(SEXP x, const char *const *names);
+/* The index of name in table (count entries; NULL entries are skipped).
+   Errors "unknown <what> '<name>'" when it is not there. */
+int rsimd_lookup(const char *name, const char *const *table, int count, const char *what);
+/* The index of the op name op (a single string from the R side) in names
+   (count entries); an unknown name is an internal error. */
+int rsimd_arg_choice(SEXP op, const char *const *names, int count);
 
 /* ---- Complex ------------------------------------------------------------ */
 

@@ -15,16 +15,6 @@
 
 static const char *const math_msg = "non-numeric argument to mathematical function";
 
-static int lookup_op(SEXP op, const char *const *names, int count) {
-  const char *name = rsimd_arg_str(op, "op");
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, names[i]) == 0) return i;
-  }
-  Rf_error("internal error: unknown op '%s'", name);
-  return -1; /* not reached */
-}
-
 /* Errors with `msg` unless every operand is double, integer or logical
    (complex and integer64 operands are rejected on the R side, which names
    the function), and returns the RSIMD_EW_I32 flags of the int32 ones. */
@@ -92,7 +82,7 @@ static SEXP simd_math1_impl(SEXP x, SEXP op, SEXP accuracy) {
     "tanh",    "asinh",     "acosh", "atanh",        "sigmoid",     "exp2m1",
     "exp10m1", "log2p1",    "log10p1", "next_up",    "next_down",   "rsqrt",
     "recip_approx", "rsqrt_approx"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0]));
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
   if (code == RSIMD_MATH_LOGB) Rf_error("internal error: unknown op ''");
   return run_math1(x, code | accuracy_bit(accuracy), 1.0, MATH1_WARN);
 }
@@ -139,7 +129,7 @@ static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
   static const char *const names[] = {"pow",       "atan2",  "hypot", "nextafter",
                                       "remainder", "scaleb", "rootn"};
   static const char *const xy[] = {"x", "y"}, *const yx[] = {"y", "x"}, *const xn[] = {"x", "n"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), flags, st = 0;
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0])), flags, st = 0;
   int fast = accuracy_bit(accuracy);
   SEXP sargs[2], out;
   double *po;

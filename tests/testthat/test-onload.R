@@ -64,3 +64,18 @@ test_that(".onLoad keeps user-set precision and NA-check options", {
   expect_identical(getOption("rsimd.precision"), "compensated")
   expect_identical(getOption("rsimd.na_check"), FALSE)
 })
+
+test_that("unloading the namespace unloads the shared library", {
+  skip_if_not_installed("callr")
+  child <- function() {
+    loadNamespace("rsimd")
+    loaded <- "rsimd" %in% names(getLoadedDLLs())
+    unloadNamespace("rsimd")
+    unloaded <- !("rsimd" %in% names(getLoadedDLLs()))
+    # Loading it again works.
+    reloaded <- rsimd::simd_sum(c(1, 2, 3))
+    c(loaded = loaded, unloaded = unloaded, reloaded = reloaded == 6)
+  }
+  res <- callr::r(child)
+  expect_true(all(res), label = paste(names(res)[!res], collapse = ", "))
+})

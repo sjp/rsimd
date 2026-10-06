@@ -17,8 +17,9 @@
  * against. The SIMD tiers call SLEEF (the RSIMD_SLEEF_* wrappers of
  * common.inc.h) with the same reductions and special cases, and recompute
  * with libm the rare lanes outside the range where SLEEF is accurate:
- * sinh and cosh for |x| > 709, asinh and acosh for |x| > 1e154, and pow
- * with an infinite operand (base R's rules there are not C's). In accurate
+ * sinh and cosh for |x| > 709, asinh and acosh for |x| > 1e154, remainder
+ * with |a| > 2^1000 |b| (SLEEF's quotient overflows), and pow with an
+ * infinite operand (base R's rules there are not C's). In accurate
  * mode a tier may instead run the none tier's loops for the ops where libm was
  * measured faster than SLEEF on that tier (RSIMD_MATH1_LIBM and
  * RSIMD_MATH2_LIBM: log, log2, logb, cosh, asinh, acosh and pow on neon,

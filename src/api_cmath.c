@@ -24,7 +24,6 @@
 
 #include <complex.h>
 #include <math.h>
-#include <string.h>
 #include <Rmath.h>
 #include "rsimd.h"
 #include "dispatch.h"
@@ -267,16 +266,6 @@ static const rsimd_cmath_base *cmath_base_get(void) {
 
 /* ---- Entry points --------------------------------------------------------- */
 
-static int lookup_op(SEXP op, const char *const *names, int count) {
-  const char *name = rsimd_arg_str(op, "op");
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, names[i]) == 0) return i;
-  }
-  Rf_error("internal error: unknown op '%s'", name);
-  return -1; /* not reached */
-}
-
 static int fast_bit(SEXP accuracy) {
   int a = rsimd_arg_int1(accuracy, "accuracy");
   if (a != 0 && a != 1) Rf_error("internal error: invalid accuracy code %d", a);
@@ -290,7 +279,7 @@ static const char *const cm1_names[] = {"sqrt", "exp",  "log",  "sin",  "cos",
 
 /* The function `op` (by name) of complex z, in accuracy mode `accuracy`. */
 static SEXP simd_cmath1_impl(SEXP z, SEXP op, SEXP accuracy) {
-  int code = lookup_op(op, cm1_names, RSIMD_CM_COUNT), fast = fast_bit(accuracy), nan = 0;
+  int code = rsimd_arg_choice(op, cm1_names, RSIMD_CM_COUNT), fast = fast_bit(accuracy), nan = 0;
   SEXP out;
   Rcomplex *po;
   rsimd_in in;
@@ -318,7 +307,7 @@ SEXP C_simd_cmath1(SEXP z, SEXP op, SEXP accuracy) {
    function's name in base R's warning. */
 static SEXP simd_cmath2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy, SEXP name) {
   static const char *const names[] = {"pow", "logb", "atan2"};
-  int code = lookup_op(op, names, RSIMD_CM2_COUNT), fast = fast_bit(accuracy), nan = 0, flags;
+  int code = rsimd_arg_choice(op, names, RSIMD_CM2_COUNT), fast = fast_bit(accuracy), nan = 0, flags;
   const char *fname = rsimd_arg_str(name, "name");
   SEXP out;
   Rcomplex *po;

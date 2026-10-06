@@ -109,7 +109,9 @@ SEXP C_simd_debug_regions(SEXP x) {
   })
 
 /* A copy of x read through the chunk loop, allocated and given attributes
-   as a result would be (no_na: the op guarantees an NA-free result). */
+   as a result would be (no_na: the op guarantees an NA-free result): bare,
+   except that an integer64 x (a plain or a simd_vec one) gives class
+   "integer64", and a simd_vec x a simd_vec (rsimd_sv_result()). */
 static SEXP simd_debug_copy_impl(SEXP x, SEXP no_na) {
   rsimd_in in;
   SEXP out;
@@ -126,7 +128,7 @@ static SEXP simd_debug_copy_impl(SEXP x, SEXP no_na) {
   case RSIMD_C128: COPY_CHUNKS(Rcomplex); break;
   default: break;
   }
-  rsimd_copy_class(x, out);
+  if (in.type == RSIMD_I64) rsimd_set_i64_class(out);
   out = rsimd_sv_result(out, rsimd_arg_lgl1(no_na, "no_na"));
   UNPROTECT(1);
   return out;
@@ -184,15 +186,6 @@ SEXP C_simd_debug_bin(SEXP x, SEXP y) {
   return rsimd_exit(simd_debug_bin_impl(x, y));
 }
 
-static int lookup(const char *name, const char *const *table, int count, const char *what) {
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, table[i]) == 0) return i;
-  }
-  Rf_error("unknown %s '%s'", what, name);
-  return -1; /* not reached */
-}
-
 static SEXP result_fields(const rsimd_reduce_result *r) {
   const char *names[] = {"f64",    "comp",    "i64",      "idx",      "count",
                          "saw_na", "saw_nan", "overflow", "any_true", "any_false", ""};
@@ -219,9 +212,9 @@ static SEXP result_fields(const rsimd_reduce_result *r) {
 static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision,
                                    SEXP na_rm) {
   const char *names[] = {"init", "value", ""};
-  int o_idx = lookup(rsimd_arg_str(op, "op"), rsimd_reduce_op_names, RSIMD_RED_OP_COUNT,
+  int o_idx = rsimd_lookup(rsimd_arg_str(op, "op"), rsimd_reduce_op_names, RSIMD_RED_OP_COUNT,
                      "reduction");
-  rsimd_etype t = (rsimd_etype) lookup(rsimd_arg_str(type, "type"), rsimd_etype_names,
+  rsimd_etype t = (rsimd_etype) rsimd_lookup(rsimd_arg_str(type, "type"), rsimd_etype_names,
                                        RSIMD_BAD, "type");
   R_xlen_t len = (R_xlen_t) rsimd_arg_dbl1(n, "n");
   SEXP fnames = Rf_getAttrib(fields, R_NamesSymbol), out;

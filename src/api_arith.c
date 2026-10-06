@@ -5,23 +5,10 @@
    chunk through the active implementation, and turn its status bits into
    base R's warnings. Results are bare vectors. */
 
-#include <string.h>
 #include <Rmath.h>
 #include "rsimd.h"
 #include "dispatch.h"
 #include "api_complex.h"
-
-static int is_int_like(rsimd_etype t) { return t == RSIMD_I32 || t == RSIMD_LGL; }
-
-static int lookup_op(SEXP op, const char *const *names, int count) {
-  const char *name = rsimd_arg_str(op, "op");
-  int i;
-  for (i = 0; i < count; i++) {
-    if (strcmp(name, names[i]) == 0) return i;
-  }
-  Rf_error("internal error: unknown op '%s'", name);
-  return -1; /* not reached */
-}
 
 /* Errors for an operand type the elementwise ops do not take, with base
    R's message for raw (`raw_msg`); complex operands are allowed when
@@ -37,7 +24,7 @@ static int check_numeric(const rsimd_ew *e, const char *raw_msg, int cplx, int i
   for (i = 0; i < e->k; i++) {
     rsimd_etype t = e->in[i].type;
     if (t == RSIMD_C128 && cplx) any_c128 = 1;
-    else if (t != RSIMD_F64 && !is_int_like(t) && !(t == RSIMD_I64 && i64)) {
+    else if (t != RSIMD_F64 && !rsimd_is_int_like(t) && !(t == RSIMD_I64 && i64)) {
       Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
     }
   }
@@ -60,7 +47,7 @@ static int any_i64(const rsimd_ew *e) {
 static int i32_flags(const rsimd_ew *e) {
   int i, f = 0;
   for (i = 0; i < e->k; i++) {
-    if (is_int_like(e->in[i].type)) f |= RSIMD_EW_I32(i);
+    if (rsimd_is_int_like(e->in[i].type)) f |= RSIMD_EW_I32(i);
   }
   return f;
 }
@@ -68,7 +55,7 @@ static int i32_flags(const rsimd_ew *e) {
 static int all_int_like(const rsimd_ew *e) {
   int i;
   for (i = 0; i < e->k; i++) {
-    if (!is_int_like(e->in[i].type)) return 0;
+    if (!rsimd_is_int_like(e->in[i].type)) return 0;
   }
   return 1;
 }
@@ -102,7 +89,7 @@ static SEXP simd_ew2_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
                                       "mod",      "pmin",     "pmax",     "pmin_num", "pmax_num",
                                       "copysign", "add_wrap", "sub_wrap", "mul_wrap"};
   static const char *const args[] = {"x", "y"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
   SEXP sargs[2], out;
   rsimd_opts o;
   rsimd_ew e;
@@ -171,7 +158,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
                                       "mul_add_approx"};
   static const char *const xyz[] = {"x", "y", "z"}, *const xyt[] = {"x", "y", "t"},
                            *const xlohi[] = {"x", "lo", "hi"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
   SEXP sargs[3], out;
   rsimd_opts o;
   rsimd_ew e;
@@ -237,7 +224,7 @@ SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
 static SEXP simd_ew1_impl(SEXP x, SEXP op) {
   static const char *const names[] = {"neg",   "abs",     "sign",  "recip", "sqrt",
                                       "floor", "ceiling", "trunc", "round"};
-  int code = lookup_op(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
+  int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0])), st = 0;
   SEXP out;
   rsimd_opts o;
   rsimd_ew e;
@@ -261,7 +248,7 @@ static SEXP simd_ew1_impl(SEXP x, SEXP op) {
     UNPROTECT(1);
     return out;
   }
-  if (is_int_like(e.in[0].type) && (code == RSIMD_EW_NEG || code == RSIMD_EW_ABS)) {
+  if (rsimd_is_int_like(e.in[0].type) && (code == RSIMD_EW_NEG || code == RSIMD_EW_ABS)) {
     int *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_I32, e.n));
     po = (int *) rsimd_out_ptr(out);

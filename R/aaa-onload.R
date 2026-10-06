@@ -20,6 +20,7 @@
   name <- packageEvent("bit64", "onUnload")
   hooks <- Filter(function(f) !identical(f, .bit64_unloaded), getHook(name))
   setHook(name, if (length(hooks)) hooks, "replace")
+  library.dynam.unload("rsimd", libpath)
   invisible()
 }
 

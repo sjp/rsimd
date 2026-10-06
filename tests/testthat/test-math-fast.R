@@ -213,6 +213,6 @@ test_that("simd_vec operands follow the global mode, which they do not pin", {
     got <- with_accuracy("fast", sin(v))
     expect_s3_class(got, "simd_vec")
     expect_identical(simd_impl(got), tier)
-    expect_identical(.sv_data(got), want, info = tier)
+    expect_identical(.sv_strip(got), want, info = tier)
   }
 })

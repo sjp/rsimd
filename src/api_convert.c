@@ -10,13 +10,6 @@
 #include "dispatch.h"
 #include "rvec.h"
 
-/* x converted to `to` ("integer", "double", "logical", "raw" or
-   "integer64") in `mode` (RSIMD_CVT_CHECKED, _SATURATING or _TRUNCATING;
-   it applies to doubles and integer64 converted to integer, doubles
-   converted to integer64 and everything converted to raw). Input of the
-   target type is copied. `quiet` (TRUE when the R side converts an
-   integer64 operand mixed with a double, having warned itself) drops the
-   integer64 precision warning. */
 /* 1 if converting x to `to` in `mode` cannot make a missing value from a
    non-missing one: conversions to double, logical and raw, saturating ones,
    and widening ones (logical, raw and integer to integer or integer64;
@@ -32,6 +25,13 @@ static int convert_keeps_na_free(SEXP x, SEXP to, SEXP mode) {
          (from == RSIMD_I64 && strcmp(name, "integer64") == 0);
 }
 
+/* x converted to `to` ("integer", "double", "logical", "raw" or
+   "integer64") in `mode` (RSIMD_CVT_CHECKED, _SATURATING or _TRUNCATING;
+   it applies to doubles and integer64 converted to integer, doubles
+   converted to integer64 and everything converted to raw). Input of the
+   target type is copied. `quiet` (TRUE when the R side converts an
+   integer64 operand mixed with a double, having warned itself) drops the
+   integer64 precision warning. */
 static SEXP simd_convert_impl(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
   static const char *const targets[] = {"integer", "double", "logical", "raw", "integer64"};
   static const rsimd_etype target_type[] = {RSIMD_I32, RSIMD_F64, RSIMD_LGL, RSIMD_U8, RSIMD_I64};
