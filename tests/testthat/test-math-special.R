@@ -45,6 +45,27 @@ test_that("the odd functions keep the sign of zero, as C does", {
   expect_tiers_give(-Inf, simd_log, c(-0))
 })
 
+test_that("the functions with f(x) ~ x return tiny x itself, sign included", {
+  # SLEEF lost the smallest subnormal, and the sign of its zero result, in
+  # some of these on vector tiers.
+  tiny <- c(5e-324, -5e-324, 1e-323, -1e-323, 2^-1022, -2^-1022, 2^-1001, -2^-1001)
+  fs <- list(
+    sin = simd_sin, tan = simd_tan, asin = simd_asin, atan = simd_atan, sinh = simd_sinh,
+    tanh = simd_tanh, asinh = simd_asinh, atanh = simd_atanh, expm1 = simd_expm1,
+    log1p = simd_log1p, sincos = function(x) simd_sincos(x)$sin
+  )
+  for (mode in c("accurate", "fast")) {
+    op <- options(rsimd.math_accuracy = mode)
+    for (name in names(fs)) {
+      for (n in c(1:9, 33L)) {
+        x <- rep_len(tiny, n)
+        expect_tiers_give(x, fs[[name]], x)
+      }
+    }
+    options(op)
+  }
+})
+
 test_that("sinpi, cospi and tanpi are exact at the integers and half-integers", {
   h <- (-200:200) / 2
   n <- h[h == round(h)]

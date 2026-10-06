@@ -46,7 +46,7 @@ static SEXP simd_sum_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
 
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_sum_impl(x, na_rm, na_check, precision);
+  return rsimd_exit(simd_sum_impl(x, na_rm, na_check, precision));
 }
 
 /* prod(x, na.rm): double, or complex for complex x. The precision mode
@@ -75,7 +75,7 @@ static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
 
 SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_prod_impl(x, na_rm, na_check, precision);
+  return rsimd_exit(simd_prod_impl(x, na_rm, na_check, precision));
 }
 
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
@@ -135,7 +135,7 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
 
 SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_mean_impl(x, na_rm, na_check, precision);
+  return rsimd_exit(simd_mean_impl(x, na_rm, na_check, precision));
 }
 
 /* min (op 0), max (op 1) or range (op 2) of x: both extrema come from one
@@ -178,7 +178,7 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
     int64_t pair[2];
     int missing = !o.na_rm && r.saw_na;
     if (!missing && r.count == 0) {
-      Rf_warning("no non-NA value, returning c(+9223372036854775807, -9223372036854775807)");
+      rsimd_warn("no non-NA value, returning c(+9223372036854775807, -9223372036854775807)");
       pair[0] = INT64_MAX;
       pair[1] = -INT64_MAX;
     } else {
@@ -200,7 +200,7 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
 
 SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   rsimd_entry();
-  return simd_minmax_impl(x, op, na_rm, na_check);
+  return rsimd_exit(simd_minmax_impl(x, op, na_rm, na_check));
 }
 
 /* which.min (max = FALSE) or which.max (max = TRUE): missing values are
@@ -274,7 +274,7 @@ static SEXP simd_which_impl(SEXP x, SEXP max) {
 
 SEXP C_simd_which(SEXP x, SEXP max) {
   rsimd_entry();
-  return simd_which_impl(x, max);
+  return rsimd_exit(simd_which_impl(x, max));
 }
 
 /* any (all = FALSE) or all (all = TRUE) with three-valued logic. Double and
@@ -297,7 +297,7 @@ static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
   case RSIMD_F64:
   case RSIMD_U8:
     if (in.n > 0) {
-      Rf_warning("coercing argument of type '%s' to logical",
+      rsimd_warn("coercing argument of type '%s' to logical",
                  in.type == RSIMD_F64 ? "double" : "raw");
     }
     if (in.type == RSIMD_U8) {
@@ -333,7 +333,7 @@ static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
 
 SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm) {
   rsimd_entry();
-  return simd_anyall_impl(x, all, na_rm);
+  return rsimd_exit(simd_anyall_impl(x, all, na_rm));
 }
 
 /* Runs the missing-value kernel of x's type over every chunk in `mode`
@@ -412,7 +412,7 @@ static SEXP simd_na_impl(SEXP x, SEXP mode) {
 
 SEXP C_simd_na(SEXP x, SEXP mode) {
   rsimd_entry();
-  return simd_na_impl(x, mode);
+  return rsimd_exit(simd_na_impl(x, mode));
 }
 
 /* ---- Sums of squares, norms, distances, variance -------------------------- */
@@ -463,7 +463,7 @@ static SEXP simd_sum_sq_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP pr
 
 SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_sum_sq_impl(x, op, na_rm, na_check, precision);
+  return rsimd_exit(simd_sum_sq_impl(x, op, na_rm, na_check, precision));
 }
 
 /* dot (op 0), dist (op 1) or cosine (op 2) of x and y, which must have the
@@ -538,7 +538,7 @@ static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SE
 
 SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_dot_impl(x, y, op, na_rm, na_check, precision);
+  return rsimd_exit(simd_dot_impl(x, y, op, na_rm, na_check, precision));
 }
 
 /* var (sd = FALSE) or sd (sd = TRUE) of x: two passes as base R, the mean
@@ -570,6 +570,19 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
     return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
   }
   m = mean_value(&in, &o, &r);
+  if (!R_FINITE(m)) {
+    /* The squared deviations are then all Inf, or NaN for an infinite
+       element; settle that here, because a vector tier's tail lanes
+       (filled with m) would add NaN. */
+    int inf = 0;
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      if (rsimd_active->pred_f64(RSIMD_PRED_INFINITE, px, len, RSIMD_PRED_ANY, NULL)) {
+        inf = 1;
+        break;
+      }
+    });
+    return Rf_ScalarReal(inf ? R_NaN : R_PosInf);
+  }
   rsimd_reduce_result_init(&d, RSIMD_RED_SUM);
   if (in.type == RSIMD_F64) {
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
@@ -584,7 +597,7 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
 
 SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_var_impl(x, sd, na_rm, na_check, precision);
+  return rsimd_exit(simd_var_impl(x, sd, na_rm, na_check, precision));
 }
 
 /* ---- Scans ---------------------------------------------------------------- */
@@ -684,7 +697,7 @@ static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
       RSIMD_SCAN_LOOP_(int, rsimd_active->cumminmax_i32(px, len, which == 3, po + off, &s));
     }
     for (i = stop < 0 ? in.n : stop; i < in.n; i++) po[i] = NA_INTEGER;
-    if (s.overflow) Rf_warning("integer overflow in 'cumsum'; use 'cumsum(as.numeric(.))'");
+    if (s.overflow) rsimd_warn("integer overflow in 'cumsum'; use 'cumsum(as.numeric(.))'");
   }
 #undef RSIMD_SCAN_LOOP_
   UNPROTECT(1);
@@ -693,5 +706,6 @@ static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
 
 SEXP C_simd_scan(SEXP x, SEXP op, SEXP precision) {
   rsimd_entry();
-  return rsimd_sv_result(simd_scan_impl(x, op, precision), rsimd_arg_int1(op, "op") >= 2);
+  return rsimd_exit(
+    rsimd_sv_result(simd_scan_impl(x, op, precision), rsimd_arg_int1(op, "op") >= 2));
 }

@@ -158,6 +158,27 @@ test_that("simd_rootn is within 2 ULP of the none tier on every tier, and close 
   expect_tiers_give(sqrt(x), simd_rootn, x, 2L)
 })
 
+test_that("the ULP steps return every NaN input as it is", {
+  # Stepping the bits of a NaN whose mantissa is 1 (either sign) gives an
+  # infinity, which vector tiers returned instead of the NaN.
+  nan <- c(nan_payloads(), from_bits(c("fff0000000000001", "7ff0000000000002", "fff0000000000002")))
+  for (k in 0:3) {
+    x <- c(rep(1, k), rbind(nan, 2))
+    miss <- is.na(x)
+    for (f in list(simd_next_up, simd_next_down)) {
+      res <- expect_simd_identical(f, x)
+      expect_true(identical(res[["none"]][miss], x[miss], num.eq = FALSE))
+    }
+    # nextafter keeps NA versus NaN (payloads aside), from either operand.
+    for (args in list(list(x, Inf), list(1, x))) {
+      want <- simd_with_impl("none", do.call(simd_nextafter, args))
+      expect_identical(is.nan(want), is.nan(x))
+      expect_identical(is.na(want), miss)
+      expect_tiers_give(want, function(a, b) simd_nextafter(a, b), args[[1]], args[[2]])
+    }
+  }
+})
+
 test_that("simd_next_up, simd_next_down and simd_nextafter step one ULP", {
   x <- c(extras_doubles(1000), 1, -1, 2^-1022, -2^-1022, 2^-1022 - 5e-324)
   up <- simd_with_impl("none", simd_next_up(x))

@@ -87,7 +87,7 @@ checking whether the neon tier can use SLEEF (sleefinline_advsimd.h)... yes
 checking whether aarch64-linux-gnu-gcc can build the sve tier with
   -march=armv8-a+sve... yes
 checking whether aarch64-linux-gnu-gcc can build the sve2 tier with
-  -march=armv9-a+sve2... yes
+  -march=armv8-a+sve2... yes
 rsimd: building tiers none,neon,sve,sve2
 rsimd: tiers with SLEEF elementary functions: neon,sve,sve2
 \end{verbatim}

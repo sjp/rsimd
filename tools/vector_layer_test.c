@@ -4537,6 +4537,126 @@ static void test_hamming(ptrdiff_t n) {
   }
 }
 
+#ifndef RSIMD_NO_F64_SIMD
+/* Edge cases with exact answers, each at every lane position next to
+   ordinary elements: x %/% y beyond 2^52 (the exact floor rounded once,
+   computed with rational arithmetic; in most rows it lies halfway between
+   two doubles), the NaN inputs of the ULP steps (returned as they are)
+   and, on SLEEF tiers, tiny inputs of the functions with f(x) ~ x (x
+   itself, sign included). Run after the random sections so that the
+   random stream they use is unchanged. */
+static double ea[N + 1], eb[N + 1], eref[N + 1];
+static void test_edge_cases(void) {
+  static const double idiv_rows[][3] = {
+    {0x1.0000000000001p+52, 0x1.9d8a32c110e47p-3, 0x1.3cf38a2701880p+54},
+    {0x1.691cc88df080bp-370, -0x1.c000000000000p-426, -0x1.9cb32e5912dc4p+55},
+    {0x1.3247e3c30fb91p-465, -0x1.6000000000000p-520, -0x1.bd7fd6ed2e248p+54},
+    {0x1.f841983d5d064p-351, -0x1.6000000000000p-407, -0x1.6ebb577272332p+56},
+    {-0x1.2d56855d41646p-231, -0x1.ffe0000000000p-287, 0x1.2d695bf300946p+55},
+    {-0x1.5050d77193b25p-217, -0x1.6000000000000p-272, 0x1.e92fc5024b31ep+54},
+    {-0x1.8ad2816d04b13p-265, -0x1.a000000000000p-320, 0x1.e5ef6437683c8p+54},
+    {0x1.0599d55217882p-404, 0x1.2000000000000p-459, 0x1.d1117b3c9b9cap+54},
+    {0x1.ab3206014dd00p-760, 0x1.ffe0000000000p-815, 0x1.ab4cbaccfa9fap+54},
+    {0x1.94a8458d757a3p-441, 0x1.a000000000000p-496, 0x1.f20a2e37f30c8p+54},
+    {-0x1.c74a42c13c9cep-780, 0x1.0000100000000p-835, -0x1.c74a264c9a382p+55},
+    {-0x1.6341198c295e6p-82, 0x1.ffe0000000000p-137, -0x1.63574f0119700p+54},
+    {-0x1.d2fa0ae3b6acap+22, 0x1.2000000000000p-32, -0x1.9f17261fbed26p+54},
+    {0x1.8000000000001p+53, 0x1.8000000000000p+1, 0x1.0000000000000p+52},
+    {-0x1.8000000000001p+53, 0x1.8000000000000p+1, -0x1.0000000000001p+52},
+    {0x1.5af1d78b58c40p+66, 0x1.8000000000000p+1, 0x1.ce97ca0f21055p+64},
+    {-0x1.5af1d78b58c40p+66, 0x1.8000000000000p+1, -0x1.ce97ca0f21055p+64},
+    {0x1.c000000000000p-1000, 0x0.0000000000003p-1022, 0x1.2aaaaaaaaaaabp+73},
+    {-0x1.7e43c8800759cp+996, 0x1.04c533c000000p+36, -0x1.77459d9b00748p+960}
+  };
+  static const uint64_t nan_bits[] = {
+    UINT64_C(0x7ff0000000000001), UINT64_C(0xfff0000000000001), UINT64_C(0x7ff0000000000002),
+    UINT64_C(0x7ff8000000000000), UINT64_C(0xfff8000000000000), UINT64_C(0x7ff00000000007a2),
+    UINT64_C(0x7ff80000000007a2), UINT64_C(0x7fffffffffffffff), UINT64_C(0xffffffffffffffff)};
+  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST};
+  const int nr = (int) (sizeof idiv_rows / sizeof idiv_rows[0]);
+  const int nn = (int) (sizeof nan_bits / sizeof nan_bits[0]);
+  ptrdiff_t n, k;
+  int r, f;
+  char what[96];
+  for (r = 0; r < nr; r++) {
+    double got[2];
+    got[0] = rsimd_idiv_f64(idiv_rows[r][0], idiv_rows[r][1]);
+    got[1] = SENTINEL_F64;
+    check_f64("rsimd_idiv_f64 exact floor", 1, got, idiv_rows[r] + 2, 1);
+  }
+  for (k = 0; k <= RSIMD_LANES_64; k++) {
+    n = 0;
+    while (n < k) {
+      ea[n] = 7;
+      eb[n] = 2;
+      eref[n++] = 3;
+    }
+    for (r = 0; r < nr; r++) {
+      ea[n] = idiv_rows[r][0];
+      eb[n] = idiv_rows[r][1];
+      eref[n++] = idiv_rows[r][2];
+      ea[n] = 7;
+      eb[n] = 2;
+      eref[n++] = 3;
+    }
+    reset_out();
+    RSIMD_KERNEL(ew2_f64)(RSIMD_EW_IDIV, ea, eb, n, 0, fout, &o);
+    snprintf(what, sizeof what, "ew2_f64 idiv exact floor offset %ld", (long) k);
+    check_f64(what, n, fout, eref, 1);
+  }
+  for (k = 0; k <= RSIMD_LANES_64; k++) {
+    for (f = 0; f < 4; f++) {
+      const int down = f & 1, fast = f & 2;
+      n = 0;
+      while (n < k) ea[n++] = 2;
+      for (r = 0; r < nn; r++) {
+        ea[n++] = from_bits(nan_bits[r]);
+        ea[n++] = 2;
+      }
+      for (r = 0; r < n; r++) {
+        eref[r] = isnan(ea[r])  ? ea[r]
+                  : down        ? rsimd_next_down_f64(ea[r])
+                                : rsimd_next_up_f64(ea[r]);
+      }
+      reset_out();
+      RSIMD_KERNEL(math1_f64)((down ? RSIMD_MATH_NEXT_DOWN : RSIMD_MATH_NEXT_UP) |
+                                (fast ? RSIMD_MATH_FAST : 0),
+                              ea, n, 0, 1.0, fout);
+      snprintf(what, sizeof what, "math1 %s NaN inputs fast %d offset %ld",
+               down ? "next_down" : "next_up", fast != 0, (long) k);
+      check_f64(what, n, fout, eref, 1);
+    }
+  }
+#ifdef RSIMD_HAVE_SLEEF
+  {
+    static const int ops[] = {RSIMD_MATH_SIN,  RSIMD_MATH_TAN,   RSIMD_MATH_ASIN,  RSIMD_MATH_ATAN,
+                              RSIMD_MATH_SINH, RSIMD_MATH_TANH,  RSIMD_MATH_ASINH, RSIMD_MATH_ATANH,
+                              RSIMD_MATH_EXPM1, RSIMD_MATH_LOG1P};
+    static const double tiny[] = {5e-324, -5e-324, 1e-323, -1e-323, 0x1p-1022, -0x1p-1022,
+                                  0x1p-1001, -0x1p-1001, 0x1.fffffffffffffp-1001};
+    static double ecos[N + 1];
+    const int nt = (int) (sizeof tiny / sizeof tiny[0]);
+    size_t i;
+    for (n = 1; n <= 2 * RSIMD_LANES_64 + 1 + nt; n++) {
+      for (k = 0; k < n; k++) eref[k] = ea[k] = tiny[k % nt];
+      for (f = 0; f < 2; f++) {
+        for (i = 0; i < sizeof ops / sizeof ops[0]; i++) {
+          reset_out();
+          RSIMD_KERNEL(math1_f64)(ops[i] | (f ? RSIMD_MATH_FAST : 0), ea, n, 0, 1.0, fout);
+          snprintf(what, sizeof what, "math1 op %d fast %d tiny input", ops[i], f);
+          check_f64(what, n, fout, eref, 1);
+        }
+        reset_out();
+        RSIMD_KERNEL(sincos_f64)(f ? RSIMD_MATH_FAST : 0, ea, n, 0, fout, ecos);
+        snprintf(what, sizeof what, "sincos fast %d tiny input", f);
+        check_f64(what, n, fout, eref, 1);
+      }
+    }
+  }
+#endif
+}
+#endif
+
 int main(void) {
   ptrdiff_t n;
   init_inputs();
@@ -4598,6 +4718,9 @@ int main(void) {
   test_math();
   test_math_exact();
   test_softmax();
+#endif
+#ifndef RSIMD_NO_F64_SIMD
+  test_edge_cases();
 #endif
   printf("tier %s: lanes64=%ld lanes32=%ld, %ld checks, %ld failures", RSIMD_TIER_STRING,
          (long) RSIMD_LANES_64, (long) RSIMD_LANES_32, n_checks, n_fail);

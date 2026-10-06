@@ -254,6 +254,24 @@ test_that("edge values: empty, zero vectors, Inf, overflow and short input", {
   }
 })
 
+test_that("var and sd are Inf when finite data overflow the mean, on every tier and length", {
+  # Every squared deviation from an infinite mean is Inf. Vector tiers used
+  # to add NaN from the tail lanes, depending on the length. Base R gives 0
+  # here through its long double mean; that difference is accepted.
+  for (n in 1:65) {
+    want <- if (n == 1L) NA_real_ else Inf
+    x <- rep(1e308, n)
+    expect_tiers_give(c(want, want), function(x) c(simd_var(x), simd_sd(x)), x)
+    expect_tiers_give(want, simd_var, -x)
+    expect_tiers_give(want, simd_var, c(x, NA), na.rm = TRUE)
+  }
+  # An infinite element makes its deviation Inf - Inf, so the result is NaN.
+  for (n in 2:17) {
+    expect_tiers_give(NaN, simd_var, c(rep(1e308, n), Inf))
+    expect_tiers_give(NaN, simd_sd, c(Inf, rep(1, n), -Inf))
+  }
+})
+
 test_that("the base R table rows for var and sd are reproduced", {
   cases <- list(
     quote(var(1)), quote(var(numeric(0))), quote(var(c(1, NA))),

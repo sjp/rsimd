@@ -115,7 +115,7 @@ static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
 
 SEXP C_simd_pred(SEXP x, SEXP op, SEXP mode) {
   rsimd_entry();
-  return simd_pred_impl(x, op, mode);
+  return rsimd_exit(simd_pred_impl(x, op, mode));
 }
 
 /* Comparison `op` by name ("eq", "ne", "lt", "le", "gt", "ge") of two
@@ -181,7 +181,7 @@ static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
 
 SEXP C_simd_cmp(SEXP x, SEXP y, SEXP op) {
   rsimd_entry();
-  return simd_cmp_impl(x, y, op);
+  return rsimd_exit(simd_cmp_impl(x, y, op));
 }
 
 /* The number of pairs with x != y (simd_hamming), as a double: NA when a
@@ -254,7 +254,7 @@ static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
 
 SEXP C_simd_hamming(SEXP x, SEXP y, SEXP na_rm) {
   rsimd_entry();
-  return simd_hamming_impl(x, y, na_rm);
+  return rsimd_exit(simd_hamming_impl(x, y, na_rm));
 }
 
 /* The number of differing bits of x and y (simd_hamming_bits), as a
@@ -296,5 +296,5 @@ static SEXP simd_hamming_bits_impl(SEXP x, SEXP y) {
 
 SEXP C_simd_hamming_bits(SEXP x, SEXP y) {
   rsimd_entry();
-  return simd_hamming_bits_impl(x, y);
+  return rsimd_exit(simd_hamming_bits_impl(x, y));
 }

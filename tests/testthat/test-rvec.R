@@ -217,8 +217,11 @@ test_that("results are bare except for the integer64 and simd_vec classes", {
 
   i64 <- structure(c(a = 0), class = "integer64")
   expect_identical(.debug_copy(i64), integer64(0))
-  # Only a class of exactly "integer64".
-  expect_identical(.debug_copy(structure(0, class = c("integer64", "foo"))), 0)
+  # Any class that inherits from "integer64" (as the access layer reads
+  # it) gives a plain "integer64" result, a simd_vec one included.
+  expect_identical(.debug_copy(structure(0, class = c("integer64", "foo"))), integer64(0))
+  sv64 <- structure(c(1, 2), class = c("simd_vec", "integer64"), rsimd_impl = "none")
+  expect_identical(.debug_copy(sv64), sv64)
 
   sv <- structure(c(1, 2), class = "simd_vec", rsimd_impl = "none", rsimd_na_free = TRUE)
   expect_identical(

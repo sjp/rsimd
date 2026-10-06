@@ -17,8 +17,6 @@
 #define RSIMD_EW_IS_SCALAR(f, k) (((f) & RSIMD_EW_SCALAR(k)) != 0)
 #define RSIMD_EW_IS_I32(f, k) (((f) & RSIMD_EW_I32(k)) != 0)
 
-#if RSIMD_TIER_IS(none)
-
 /* Element i of operand k as a double. */
 static inline double rsimd_ew_get(const void *p, int flags, int k, R_xlen_t i, int check) {
   R_xlen_t j = RSIMD_EW_IS_SCALAR(flags, k) ? 0 : i;
@@ -28,6 +26,8 @@ static inline double rsimd_ew_get(const void *p, int flags, int k, R_xlen_t i, i
   }
   return ((const double *) p)[j];
 }
+
+#if RSIMD_TIER_IS(none)
 
 /* Runs `expr`, which sets r from a (and b, c), for every element. */
 #define RSIMD_EW_NONE_LOOP(nargs, expr)                                          \
@@ -575,7 +575,24 @@ int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int 
   case RSIMD_EW_SUB: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_sub(a, b))); break;
   case RSIMD_EW_MUL: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_mul(a, b))); break;
   case RSIMD_EW_DIV: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_div(a, b))); break;
-  case RSIMD_EW_IDIV: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_idiv(a, b))); break;
+  case RSIMD_EW_IDIV: {
+    /* The vector form, then the elements it leaves to the scalar form
+       (quotients of 2^52 and more, which are rare) recomputed in a second
+       pass, so that the loop has no per-vector branch for them. */
+    rsimd_mf64 big = rsimd_vf64_cmp_lt(bc2, bc2), s;
+    R_xlen_t k;
+    RSIMD_EW_F64_LOOP(2, {
+      RSIMD_EW_MERGED(rsimd_vf64_idiv(a, b, &s));
+      big = rsimd_mf64_or(big, s);
+    });
+    if (rsimd_mf64_any(big)) {
+      for (k = 0; k < n; k++) {
+        double a = rsimd_ew_get(x, flags, 0, k, check), b = rsimd_ew_get(y, flags, 1, k, check);
+        if (fabs(a / b) >= 0x1p52) out[k] = rsimd_idiv_f64(a, b);
+      }
+    }
+    break;
+  }
   case RSIMD_EW_MOD: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_ew_mod(a, b, lanes))); break;
   case RSIMD_EW_COPYSIGN:
     RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_copysign(a, b)));

@@ -15,7 +15,10 @@ allowed="rvec.c api_control.c cpu_features.c dispatch.c version.c init.c"
 #
 # Also checks that every .Call entry point (SEXP C_...) in src/api_*.c other
 # than api_control.c calls rsimd_entry(), which resets the kernel table a
-# pinned simd_vec operand of an earlier call may have switched (rvec.h).
+# pinned simd_vec operand of an earlier call may have switched (rvec.h), and
+# returns through rsimd_exit(), which issues the call's deferred warnings;
+# and that no file but rvec.c calls Rf_warning() (use rsimd_warn(): a
+# warning can run R code that calls rsimd again in the middle of a call).
 #
 # Usage: sh tools/lint_c.sh
 # Prints each offending line as file:line: text; exit status 1 if any.
@@ -70,6 +73,7 @@ for f in src/api_*.c; do
   missing=$(awk '
     /^SEXP C_[A-Za-z0-9_]*\(/ { name = $2; sub(/\(.*/, "", name); seen = 0; line = NR; inside = 1; next }
     inside && /rsimd_entry\(\);/ { seen = 1 }
+    inside && /return / && !/return rsimd_exit\(/ && !/not reached/ && !/^[[:space:]]*\/?\*/ { print NR ": " name " returns without rsimd_exit()" }
     inside && /^}/ { if (!seen) print line ": " name " does not call rsimd_entry()"; inside = 0 }
   ' "$f")
   if [ -n "$missing" ]; then
@@ -78,11 +82,26 @@ for f in src/api_*.c; do
   fi
 done
 
+warn_status=0
+for f in src/*.c src/*.h src/kernels/*; do
+  [ -f "$f" ] || continue
+  [ "$(basename "$f")" = rvec.c ] && continue
+  hits=$(grep -nE '(^|[^A-Za-z0-9_])(Rf_)?warning(call)?[[:space:]]*\(' "$f" | grep -v '^[0-9]*:[[:space:]]*/\?\*' || true)
+  if [ -n "$hits" ]; then
+    echo "$hits" | sed "s|^|$f:|"
+    warn_status=1
+  fi
+done
+
 if [ "$status" -ne 0 ]; then
   echo "lint_c.sh: use the access layer (src/rvec.h) instead of the calls above" >&2
 fi
 if [ "$entry_status" -ne 0 ]; then
-  echo "lint_c.sh: call rsimd_entry() first in the entry points above" >&2
+  echo "lint_c.sh: call rsimd_entry() first and return through rsimd_exit() in the entry points above" >&2
+  status=1
+fi
+if [ "$warn_status" -ne 0 ]; then
+  echo "lint_c.sh: record warnings with rsimd_warn() instead of the calls above" >&2
   status=1
 fi
 exit "$status"

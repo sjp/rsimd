@@ -256,13 +256,49 @@ static inline double rsimd_na_merge3_f64(double r, double x, double y, double z)
   return rsimd_is_na_f64(z) ? rsimd_na_real() : rsimd_na_merge_f64(r, x, y);
 }
 
+/* x %/% y for a finite quotient q = x / y with |q| >= 2^52, where q is
+   an integer and the exact floor F of the real quotient X can lie
+   between two doubles: returns F rounded once. The residual
+   x - q * y is exact (q is the rounded quotient), so its sign says
+   whether X < q. If it is not, F rounds to q. Otherwise X lies in
+   [m, q), with m the midpoint between q and the next double qd below
+   it. F is qd when that is q - 1. If not, F rounds to q unless F = m,
+   that is m <= X < m + 1, a tie that goes to the even one of q and qd.
+   With h = (q - qd) / 2, (X - m) y = res + h y, which is exact
+   (Sterbenz) whenever it can be smaller than y. A tiny y is scaled up
+   first so that neither residual underflows. */
+static inline double rsimd_idiv_big_f64(double x, double y) {
+  double q, qd, res, h, d;
+  uint64_t b;
+  if (fabs(y) < 0x1p-900) {
+    x *= 0x1p200;
+    y *= 0x1p200;
+  }
+  q = x / y;
+  res = rsimd_fma(-q, y, x);
+  if (res == 0 || (res < 0) == (y < 0)) return q;
+  qd = nextafter(q, -HUGE_VAL);
+  if (q - qd == 1.0) return qd;
+  h = (q - qd) * 0.5;
+  d = rsimd_fma(h, y, res);
+  if (y < 0) d = -d;
+  if (d < 0 || d >= fabs(y)) return q;
+  memcpy(&b, &q, sizeof b);
+  return (b & 1) ? qd : q;
+}
+
 /* Base R's x %/% y for doubles (myfloor in R's arithmetic.c): the exact
-   floor of the real quotient, which is floor(x / y) or one less when
-   x / y rounded up to an integer; -2 %/% Inf is -1 and 2 %/% Inf is 0;
-   x %/% 0 is x / 0. The residual x - k * y is computed with a single
-   rounding (fma), so its sign is exact. A zero quotient is +0. */
+   floor of the real quotient, rounded once. Below 2^52 that is
+   floor(x / y), or one less when x / y rounded up to an integer; the
+   residual x - k * y is computed with a single rounding (fma), so its
+   sign is exact. Larger finite quotients go to rsimd_idiv_big_f64().
+   -2 %/% Inf is -1 and 2 %/% Inf is 0; x %/% 0 is x / 0. A zero
+   quotient is +0. */
 static inline double rsimd_idiv_f64(double x, double y) {
-  double k = floor(x / y), res = isinf(y) ? x : rsimd_fma(-k, y, x);
+  double q = x / y, k, res;
+  if (fabs(q) >= 0x1p52 && fabs(q) < HUGE_VAL) return rsimd_idiv_big_f64(x, y);
+  k = floor(q);
+  res = isinf(y) ? x : rsimd_fma(-k, y, x);
   if ((res < 0 && y > 0) || (res > 0 && y < 0)) k -= 1;
   return k + 0.0;
 }
@@ -703,16 +739,21 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_na_merge3(rsimd_vf64 r, rsimd_vf64 x, rsimd_v
   return rsimd_vf64_blend(r, rsimd_vf64_set1(rsimd_na_real()), m);
 }
 
-/* x %/% y for doubles as rsimd_idiv_f64(). */
-RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_idiv(rsimd_vf64 x, rsimd_vf64 y) {
+/* x %/% y for doubles as rsimd_idiv_f64(), for the lanes where
+   |x / y| < 2^52. When slow is not NULL, *slow is set to the lanes with
+   a larger quotient (infinities included, which are rare and which the
+   scalar form handles too), which the caller recomputes with
+   rsimd_idiv_f64(). */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_idiv(rsimd_vf64 x, rsimd_vf64 y, rsimd_mf64 *slow) {
   const rsimd_vf64 zero = rsimd_vf64_zero();
-  rsimd_vf64 k = rsimd_vf64_floor(rsimd_vf64_div(x, y));
+  rsimd_vf64 q = rsimd_vf64_div(x, y), k = rsimd_vf64_floor(q);
   rsimd_mf64 yinf = rsimd_vf64_cmp_eq(rsimd_vf64_abs(y), rsimd_vf64_set1(HUGE_VAL));
   rsimd_vf64 res = rsimd_vf64_blend(rsimd_vf64_fma(rsimd_vf64_neg(k), y, x), x, yinf);
   rsimd_mf64 low =
     rsimd_mf64_or(rsimd_mf64_and(rsimd_vf64_cmp_lt(res, zero), rsimd_vf64_cmp_gt(y, zero)),
                   rsimd_mf64_and(rsimd_vf64_cmp_gt(res, zero), rsimd_vf64_cmp_lt(y, zero)));
   k = rsimd_vf64_blend(k, rsimd_vf64_sub(k, rsimd_vf64_set1(1.0)), low);
+  if (slow) *slow = rsimd_vf64_cmp_ge(rsimd_vf64_abs(q), rsimd_vf64_set1(0x1p52));
   return rsimd_vf64_add(k, zero);
 }
 
@@ -723,7 +764,7 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_idiv(rsimd_vf64 x, rsimd_vf64 y) {
    rsimd_mod_f64(). */
 RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_mod(rsimd_vf64 x, rsimd_vf64 y, rsimd_mf64 *slow) {
   const rsimd_vf64 zero = rsimd_vf64_zero(), inf = rsimd_vf64_set1(HUGE_VAL);
-  rsimd_vf64 k = rsimd_vf64_idiv(x, y);
+  rsimd_vf64 k = rsimd_vf64_idiv(x, y, NULL);
   rsimd_vf64 r = rsimd_vf64_add(rsimd_vf64_fma(rsimd_vf64_neg(k), y, x), zero);
   rsimd_vf64 ay = rsimd_vf64_abs(y);
   rsimd_mf64 yinf = rsimd_mf64_and(rsimd_vf64_cmp_eq(ay, inf),

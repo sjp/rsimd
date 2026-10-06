@@ -80,7 +80,7 @@ static SEXP simd_debug_fold_impl(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_
 
 SEXP C_simd_debug_fold(SEXP x, SEXP y, SEXP term, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_debug_fold_impl(x, y, term, na_rm, na_check, precision);
+  return rsimd_exit(simd_debug_fold_impl(x, y, term, na_rm, na_check, precision));
 }
 
 /* any(x) (op "any", stopping at the first TRUE), all(x) (op "all",
@@ -116,7 +116,7 @@ static SEXP simd_debug_lgl_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
 
 SEXP C_simd_debug_lgl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check) {
   rsimd_entry();
-  return simd_debug_lgl_impl(x, op, na_rm, na_check);
+  return rsimd_exit(simd_debug_lgl_impl(x, op, na_rm, na_check));
 }
 
 /* Elementwise op on x and y (same type, equal lengths or one of length 1):
@@ -167,5 +167,5 @@ static SEXP simd_debug_arith_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
 
 SEXP C_simd_debug_arith(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   rsimd_entry();
-  return simd_debug_arith_impl(x, y, op, na_check);
+  return rsimd_exit(simd_debug_arith_impl(x, y, op, na_check));
 }

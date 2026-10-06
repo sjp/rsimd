@@ -148,6 +148,51 @@ test_that("different pins are an error, and the next call is unaffected", {
   expect_sv(a + b, c(2, 4), tiers[[1L]])
 })
 
+test_that("a nested call from a warning handler leaves the outer call intact", {
+  # Warnings are issued when the call has finished, so a handler that calls
+  # rsimd cannot overwrite the outer call's simd_vec state or pin.
+  nested <- function(expr, inner) {
+    withCallingHandlers(expr, warning = function(w) {
+      inner()
+      invokeRestart("muffleWarning")
+    })
+  }
+  x <- simd_vec(c(.Machine$integer.max, 1L))
+  expect_sv(nested(simd_add(x, 1L), function() simd_add(1, 2)), c(NA, 2L))
+  tiers <- simd_available()
+  for (t in tiers) {
+    other <- tiers[[if (t == tiers[[1L]]) length(tiers) else 1L]]
+    xp <- simd_vec(c(.Machine$integer.max, 1L), impl = t)
+    inner <- function() {
+      simd_sum(1:3)
+      simd_add(simd_vec(1, impl = other), 2)
+      expect_identical(.debug_active(1), simd_current()[[1L]])
+    }
+    expect_sv(nested(simd_add(xp, 1L), inner), c(NA, 2L), t)
+    expect_sv(nested(xp + 1L, inner), c(NA, 2L), t)
+    expect_sv(nested(simd_sqrt(simd_vec(c(-1, 4), impl = t)), inner), c(NaN, 2), t)
+    # Every warning of the call reaches the handler, in order.
+    msgs <- character(0)
+    withCallingHandlers(
+      simd_as_integer(simd_vec(c(1e10, 2), impl = t)),
+      warning = function(w) {
+        msgs <<- c(msgs, conditionMessage(w))
+        inner()
+        invokeRestart("muffleWarning")
+      }
+    )
+    expect_identical(msgs, "NAs introduced by coercion to integer range")
+  }
+})
+
+test_that("a call that failed with a pinned operand does not leave its tier active", {
+  tiers <- simd_available()
+  skip_if(length(tiers) < 2L, "only one tier available")
+  bad <- simd_vec(c(1, 2), impl = tiers[[2L]])
+  expect_error(simd_add(bad, c(1, 2, 3)), "lengths")
+  expect_identical(simd_probe_slots()[["tier_name"]], simd_current()[[1L]])
+})
+
 test_that("a pin to an unavailable or invalid tier is an error when used", {
   t_na <- unavailable_tier()
   skip_if(is.null(t_na), "every tier is available")

@@ -80,6 +80,53 @@ test_that("%/% and %% are the exact floor and floored remainder", {
   expect_simd_identical(simd_idiv, big, d)
 })
 
+test_that("%/% on doubles is the exact floor rounded once beyond 2^52", {
+  # x, y and the exact floor of x / y rounded to double, computed with
+  # Python's fractions module (float(math.floor(Fraction(x) / Fraction(y)))).
+  # In the tie rows that floor lies halfway between two doubles and rounds
+  # to the even one, while x / y rounds up past it, and floor(x / y) - 1 is
+  # not representable.
+  rows <- matrix(byrow = TRUE, ncol = 3, c(
+    # the tie example: x / y rounds up past the floor's tie
+    0x1.0000000000001p+52, 0x1.9d8a32c110e47p-3, 0x1.3cf38a2701880p+54,
+    # tie of the floor
+    0x1.691cc88df080bp-370, -0x1.c000000000000p-426, -0x1.9cb32e5912dc4p+55,
+    0x1.3247e3c30fb91p-465, -0x1.6000000000000p-520, -0x1.bd7fd6ed2e248p+54,
+    0x1.f841983d5d064p-351, -0x1.6000000000000p-407, -0x1.6ebb577272332p+56,
+    -0x1.2d56855d41646p-231, -0x1.ffe0000000000p-287, 0x1.2d695bf300946p+55,
+    -0x1.5050d77193b25p-217, -0x1.6000000000000p-272, 0x1.e92fc5024b31ep+54,
+    -0x1.8ad2816d04b13p-265, -0x1.a000000000000p-320, 0x1.e5ef6437683c8p+54,
+    0x1.0599d55217882p-404, 0x1.2000000000000p-459, 0x1.d1117b3c9b9cap+54,
+    0x1.ab3206014dd00p-760, 0x1.ffe0000000000p-815, 0x1.ab4cbaccfa9fap+54,
+    0x1.94a8458d757a3p-441, 0x1.a000000000000p-496, 0x1.f20a2e37f30c8p+54,
+    -0x1.c74a42c13c9cep-780, 0x1.0000100000000p-835, -0x1.c74a264c9a382p+55,
+    -0x1.6341198c295e6p-82, 0x1.ffe0000000000p-137, -0x1.63574f0119700p+54,
+    -0x1.d2fa0ae3b6acap+22, 0x1.2000000000000p-32, -0x1.9f17261fbed26p+54,
+    # quotient below 2^53: one less than x / y
+    0x1.8000000000001p+53, 0x1.8000000000000p+1, 0x1.0000000000000p+52,
+    # negative, below 2^53
+    -0x1.8000000000001p+53, 0x1.8000000000000p+1, -0x1.0000000000001p+52,
+    # x / y rounds down
+    0x1.5af1d78b58c40p+66, 0x1.8000000000000p+1, 0x1.ce97ca0f21055p+64,
+    # negative, x / y rounds up
+    -0x1.5af1d78b58c40p+66, 0x1.8000000000000p+1, -0x1.ce97ca0f21055p+64,
+    # subnormal divisor
+    0x1.c000000000000p-1000, 0x0.0000000000003p-1022, 0x1.2aaaaaaaaaaabp+73,
+    # huge quotient
+    -0x1.7e43c8800759cp+996, 0x1.04c533c000000p+36, -0x1.77459d9b00748p+960
+  ))
+  x <- rows[, 1]
+  y <- rows[, 2]
+  want <- rows[, 3]
+  expect_tiers_give(want, simd_idiv, x, y)
+  # Each pair at every lane position, next to pairs on the vector path.
+  for (k in 0:3) {
+    expect_tiers_give(
+      c(rep(3, k), rbind(want, 3)), simd_idiv, c(rep(7, k), rbind(x, 7)), c(rep(2, k), rbind(y, 2))
+    )
+  }
+})
+
 test_that("%/% and %% match base R on random doubles", {
   x <- rand_vec("double", 3001, seed = 11L)
   y <- rand_vec("double", 3001, seed = 12L)

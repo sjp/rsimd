@@ -33,6 +33,12 @@ With fewer than two elements (after \code{na.rm}) the result is \code{NA}.
 As in base R, a missing value gives \code{NA} without \code{na.rm}, whether
 it is \code{NA} or \code{NaN}.
 
+When finite values are so large that their mean overflows to \code{Inf} or
+\code{-Inf}, the result is \code{Inf} on every implementation, and an
+infinite element gives \code{NaN}. Base R computes the mean in long
+double, which has a wider range than double on most platforms, so it can
+give a finite result there (\code{var(rep(1e308, 3))} is 0 on x86-64).
+
 \rsimdSemantics
 
 \rsimdPrecision

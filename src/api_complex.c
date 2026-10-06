@@ -199,7 +199,7 @@ static SEXP simd_c128_probe_inputs_impl(void) {
 
 SEXP C_simd_c128_probe_inputs(void) {
   rsimd_entry();
-  return simd_c128_probe_inputs_impl();
+  return rsimd_exit(simd_c128_probe_inputs_impl());
 }
 
 /* One part as identical() compares it: NA and NaN are told apart (other
@@ -361,7 +361,7 @@ static SEXP simd_c128_probe_impl(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, S
 
 SEXP C_simd_c128_probe(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp) {
   rsimd_entry();
-  return simd_c128_probe_impl(z, w, prod, quot, x, cp);
+  return rsimd_exit(simd_c128_probe_impl(z, w, prod, quot, x, cp));
 }
 
 SEXP c128_variants(void) {
@@ -379,7 +379,7 @@ SEXP c128_variants(void) {
 
 SEXP C_simd_c128_variants(void) {
   rsimd_entry();
-  return c128_variants();
+  return rsimd_exit(c128_variants());
 }
 
 /* Internal, for the tests: sets the variants by code (mul_re, mul_im,
@@ -414,7 +414,7 @@ static SEXP simd_c128_set_variants_impl(SEXP codes) {
 
 SEXP C_simd_c128_set_variants(SEXP codes) {
   rsimd_entry();
-  return simd_c128_set_variants_impl(codes);
+  return rsimd_exit(simd_c128_set_variants_impl(codes));
 }
 
 /* x * y or x / y (op RSIMD_EW_MUL or RSIMD_EW_DIV) of two complex
@@ -572,7 +572,7 @@ static SEXP simd_cmath_impl(SEXP z, SEXP op, SEXP accuracy) {
 
 SEXP C_simd_cmath(SEXP z, SEXP op, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_cmath_impl(z, op, accuracy), 0);
+  return rsimd_exit(rsimd_sv_result(simd_cmath_impl(z, op, accuracy), 0));
 }
 
 SEXP rsimd_c128_neg(const rsimd_in *in) {
@@ -680,5 +680,5 @@ static SEXP simd_cplx_impl(SEXP z, SEXP op) {
 
 SEXP C_simd_cplx(SEXP z, SEXP op) {
   rsimd_entry();
-  return rsimd_sv_result(simd_cplx_impl(z, op), 1);
+  return rsimd_exit(rsimd_sv_result(simd_cplx_impl(z, op), 1));
 }

@@ -222,6 +222,9 @@ typedef struct {
    and 'z' (<nz>) must be equal or 1". Returns 0. */
 int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names);
 
+/* Errors (an internal error) if an operand of e is complex. */
+void rsimd_ew_no_c128(const rsimd_ew *e);
+
 /* Runs the statements in `...` once per chunk of the operands of `e` (an
    rsimd_ew pointer) with
      const void *p[RSIMD_EW_MAX_ARGS]  the chunk's elements of each operand
@@ -229,13 +232,17 @@ int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names
                                        element on every chunk),
      R_xlen_t len, off                 as in RSIMD_FOREACH_CHUNK.
    The body may not `break` or `continue`. Interrupts are checked after
-   every rsimd_stride elements. */
+   every rsimd_stride elements. The chunk buffers hold RSIMD_CHUNK elements
+   of up to 8 bytes, so a complex operand is an internal error: callers
+   divert complex operands before the loop. */
 #define RSIMD_FOREACH_CHUNK_EW(e, p, len, off, ...)                                    \
   do {                                                                                 \
-    double rsimd_ebuf_[RSIMD_EW_MAX_ARGS][RSIMD_CHUNK];                                \
+    _Alignas(Rcomplex) unsigned char rsimd_ebuf_[RSIMD_EW_MAX_ARGS]                    \
+                                                [RSIMD_CHUNK * sizeof(double)];        \
     R_xlen_t rsimd_tick_ = 0, rsimd_l_;                                                \
     const void *p[RSIMD_EW_MAX_ARGS] = {NULL, NULL, NULL};                             \
     int rsimd_k_;                                                                      \
+    rsimd_ew_no_c128(e);                                                               \
     for (rsimd_k_ = 0; rsimd_k_ < (e)->k; rsimd_k_++) {                                \
       if ((e)->flags & RSIMD_EW_SCALAR(rsimd_k_)) {                                    \
         p[rsimd_k_] = rsimd_in_region(&(e)->in[rsimd_k_], 0, &rsimd_l_, rsimd_ebuf_[rsimd_k_]); \
@@ -354,9 +361,9 @@ SEXP rsimd_scalar_i64(int64_t v);
 /* bit64's warning for integer64 overflow, "NAs produced by integer64
    overflow". */
 void rsimd_warn_i64_overflow(void);
-/* The attribute policy: results are bare, except that a class attribute of
-   exactly "integer64" is copied from x to a double result out. (simd_vec
-   results are made by rsimd_sv_result().) */
+/* The attribute policy: results are bare, except that a double result out
+   of an integer64 x (a plain or a simd_vec one) gets class "integer64".
+   (simd_vec results are made by rsimd_sv_result().) */
 void rsimd_copy_class(SEXP x, SEXP out);
 
 /* ---- simd_vec operands -------------------------------------------------- */
@@ -377,6 +384,23 @@ void rsimd_copy_class(SEXP x, SEXP out);
    A plain operand of length 1 is checked for NA directly, so that a scalar
    does not stop an NA-free call from skipping its checks. */
 void rsimd_entry(void);
+
+/* Warnings are deferred to the end of the call. Rf_warning() can run R
+   code (a calling handler), which could call rsimd again and overwrite
+   the per-call state above while this call still needs it. rsimd_warn()
+   (printf-style; the message is truncated to 255 bytes, and only the first
+   8 of a call are kept) records a warning, and every entry point returns
+   through rsimd_exit(out), which issues the recorded warnings in order
+   and returns out. A call that records a warning and then errors must
+   call rsimd_warn_flush() before the error. rsimd_entry() discards any
+   warnings left by a previous call. */
+void rsimd_warn(const char *fmt, ...)
+#ifdef __GNUC__
+  __attribute__((format(printf, 1, 2)))
+#endif
+  ;
+void rsimd_warn_flush(void);
+SEXP rsimd_exit(SEXP out);
 
 /* For entry points whose result is a value vector (not a reduction, mask or
    index): when an operand of the call was a simd_vec, out (a fresh result,

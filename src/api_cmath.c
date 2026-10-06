@@ -272,14 +272,14 @@ static SEXP simd_cmath1_impl(SEXP z, SEXP op, SEXP accuracy) {
   RSIMD_FOREACH_CHUNK(&in, Rcomplex, px, len, off, {
     nan |= rsimd_active->cmath1_c128(code | fast, px, len, po + off, &cmath_base);
   });
-  if (nan) Rf_warning("NaNs produced in function \"%s\"", cm1_names[code]);
+  if (nan) rsimd_warn("NaNs produced in function \"%s\"", cm1_names[code]);
   UNPROTECT(1);
   return out;
 }
 
 SEXP C_simd_cmath1(SEXP z, SEXP op, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_cmath1_impl(z, op, accuracy), 0);
+  return rsimd_exit(rsimd_sv_result(simd_cmath1_impl(z, op, accuracy), 0));
 }
 
 /* x^y ("pow"), log(x, base = y) ("logb") or atan2(x, y) ("atan2") of two
@@ -305,12 +305,12 @@ static SEXP simd_cmath2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy, SEXP name) 
     nan |= rsimd_active->cmath2_c128(code | fast, px, py, len, flags, po + off, &cmath_base,
                                      rsimd_c128_arith_get());
   });
-  if (nan) Rf_warning("NaNs produced in function \"%s\"", fname);
+  if (nan) rsimd_warn("NaNs produced in function \"%s\"", fname);
   UNPROTECT(1);
   return out;
 }
 
 SEXP C_simd_cmath2(SEXP x, SEXP y, SEXP op, SEXP accuracy, SEXP name) {
   rsimd_entry();
-  return rsimd_sv_result(simd_cmath2_impl(x, y, op, accuracy, name), 0);
+  return rsimd_exit(rsimd_sv_result(simd_cmath2_impl(x, y, op, accuracy, name), 0));
 }

@@ -117,12 +117,12 @@ static SEXP simd_convert_impl(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
   }
   if (target_type[target] == RSIMD_I64) rsimd_set_i64_class(out);
   /* In base R's order (CoercionWarning), then bit64's. */
-  if (st & RSIMD_CVT_WARN_INT) Rf_warning("NAs introduced by coercion to integer range");
-  if (st & RSIMD_CVT_WARN_RAW) Rf_warning("out-of-range values treated as 0 in coercion to raw");
+  if (st & RSIMD_CVT_WARN_INT) rsimd_warn("NAs introduced by coercion to integer range");
+  if (st & RSIMD_CVT_WARN_RAW) rsimd_warn("out-of-range values treated as 0 in coercion to raw");
   if (st & RSIMD_CVT_WARN_I64) rsimd_warn_i64_overflow();
   if (st & RSIMD_CVT_WARN_I32_OVF) rsimd_warn_int_overflow();
   if ((st & RSIMD_CVT_WARN_PRECISION) && !q) {
-    Rf_warning("integer precision lost while converting to double");
+    rsimd_warn("integer precision lost while converting to double");
   }
   UNPROTECT(1);
   return out;
@@ -130,5 +130,6 @@ static SEXP simd_convert_impl(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
 
 SEXP C_simd_convert(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
   rsimd_entry();
-  return rsimd_sv_result(simd_convert_impl(x, to, mode, quiet), convert_keeps_na_free(x, to, mode));
+  return rsimd_exit(
+    rsimd_sv_result(simd_convert_impl(x, to, mode, quiet), convert_keeps_na_free(x, to, mode)));
 }

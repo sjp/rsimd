@@ -4,6 +4,7 @@
 #include "cpu_features.h"
 #include "rsimd_config.h"
 #include "dispatch.h"
+#include "rvec.h"
 
 SEXP C_simd_cpu_features(void) {
   const rsimd_cpu_features *f = rsimd_cpu();
@@ -55,6 +56,12 @@ SEXP C_simd_cpu_tiers(void) {
   return out;
 }
 
+static void set_config_attr(SEXP out, const char *name, const char *value) {
+  SEXP v = PROTECT(Rf_mkString(value));
+  Rf_setAttrib(out, Rf_install(name), v);
+  UNPROTECT(1);
+}
+
 /* Tiers compiled into the package, in simd_tiers() order. Each tier's
    table names its tier through the tier_name slot when the CPU can run it
    (tier code is never entered otherwise; referencing the table still proves
@@ -74,10 +81,12 @@ SEXP C_simd_compiled_tiers(void) {
                                          ? own->tier_name()
                                          : rsimd_tier_names[i]));
   }
-  Rf_setAttrib(out, Rf_install("configured"), Rf_mkString(RSIMD_CONFIG_TIERS));
-  Rf_setAttrib(out, Rf_install("sleef"), Rf_mkString(RSIMD_CONFIG_SLEEF));
-  Rf_setAttrib(out, Rf_install("disabled"), Rf_mkString(RSIMD_CONFIG_DISABLED));
-  Rf_setAttrib(out, Rf_install("test_hole"), Rf_mkString(RSIMD_CONFIG_TEST_HOLE));
+  /* Each value is protected while its symbol is installed: argument
+     evaluation order is unspecified, and Rf_install() can allocate. */
+  set_config_attr(out, "configured", RSIMD_CONFIG_TIERS);
+  set_config_attr(out, "sleef", RSIMD_CONFIG_SLEEF);
+  set_config_attr(out, "disabled", RSIMD_CONFIG_DISABLED);
+  set_config_attr(out, "test_hole", RSIMD_CONFIG_TEST_HOLE);
   UNPROTECT(1);
   return out;
 }
@@ -141,7 +150,9 @@ SEXP C_simd_kernel_tiers(SEXP tier) {
    and fill_probe kernels it holds actually return. */
 SEXP C_simd_probe_slots(void) {
   const char *names[] = {"tier_name", "fill_probe", ""};
-  SEXP out = PROTECT(Rf_mkNamed(STRSXP, names));
+  SEXP out;
+  rsimd_entry(); /* a call that errored may have left a pinned table active */
+  out = PROTECT(Rf_mkNamed(STRSXP, names));
   SET_STRING_ELT(out, 0, Rf_mkChar(rsimd_active->tier_name()));
   SET_STRING_ELT(out, 1, Rf_mkChar(rsimd_active->fill_probe()));
   UNPROTECT(1);

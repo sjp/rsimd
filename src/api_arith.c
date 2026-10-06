@@ -75,13 +75,13 @@ static int all_int_like(const rsimd_ew *e) {
 
 static void warn_status(int st) {
   if (st & RSIMD_EW_OVERFLOW) rsimd_warn_int_overflow();
-  if (st & RSIMD_EW_NAN_PRODUCED) Rf_warning("NaNs produced");
+  if (st & RSIMD_EW_NAN_PRODUCED) rsimd_warn("NaNs produced");
 }
 
 /* bit64's warnings for integer64 arithmetic. */
 static void warn_status_i64(int st) {
   if (st & RSIMD_EW_OVERFLOW) rsimd_warn_i64_overflow();
-  if (st & RSIMD_EW_DIV_ZERO) Rf_warning("NAs produced due to division by zero");
+  if (st & RSIMD_EW_DIV_ZERO) rsimd_warn("NAs produced due to division by zero");
 }
 
 static const char *const binop_msg = "non-numeric argument to binary operator";
@@ -157,7 +157,7 @@ SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
   /* These return one of their operands. */
   static const char *const keeps[] = {"pmin", "pmax", "pmin_num", "pmax_num", NULL};
   rsimd_entry();
-  return rsimd_sv_result(simd_ew2_impl(x, y, op, na_check), rsimd_str_in(op, keeps));
+  return rsimd_exit(rsimd_sv_result(simd_ew2_impl(x, y, op, na_check), rsimd_str_in(op, keeps)));
 }
 
 /* Ternary ops by name: fma(x, y, z), mul_add, add_mul, lerp(x, y, t),
@@ -225,7 +225,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
 SEXP C_simd_ew3(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
   static const char *const keeps[] = {"clamp", NULL};
   rsimd_entry();
-  return rsimd_sv_result(simd_ew3_impl(x, y, z, op, na_check), rsimd_str_in(op, keeps));
+  return rsimd_exit(rsimd_sv_result(simd_ew3_impl(x, y, z, op, na_check), rsimd_str_in(op, keeps)));
 }
 
 /* Unary ops by name: neg and abs keep integer and logical input integer
@@ -287,7 +287,7 @@ SEXP C_simd_ew1(SEXP x, SEXP op) {
   static const char *const keeps[] = {"neg", "abs", "sign", "floor",
                                       "ceiling", "trunc", "round", NULL};
   rsimd_entry();
-  return rsimd_sv_result(simd_ew1_impl(x, op), rsimd_str_in(op, keeps));
+  return rsimd_exit(rsimd_sv_result(simd_ew1_impl(x, op), rsimd_str_in(op, keeps)));
 }
 
 /* round(x, digits) for digits other than 0, through R's own fround() one
@@ -325,5 +325,5 @@ static SEXP simd_round_digits_impl(SEXP x, SEXP digits) {
 
 SEXP C_simd_round_digits(SEXP x, SEXP digits) {
   rsimd_entry();
-  return rsimd_sv_result(simd_round_digits_impl(x, digits), 1);
+  return rsimd_exit(rsimd_sv_result(simd_round_digits_impl(x, digits), 1));
 }

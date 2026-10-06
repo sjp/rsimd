@@ -49,7 +49,7 @@ static int accuracy_bit(SEXP accuracy) {
 }
 
 static void warn_nan(int st) {
-  if (st & RSIMD_EW_NAN_PRODUCED) Rf_warning("NaNs produced");
+  if (st & RSIMD_EW_NAN_PRODUCED) rsimd_warn("NaNs produced");
 }
 
 /* What run_math1() does with the kernel's result: keep it and warn as the
@@ -98,7 +98,7 @@ static SEXP simd_math1_impl(SEXP x, SEXP op, SEXP accuracy) {
 
 SEXP C_simd_math1(SEXP x, SEXP op, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_math1_impl(x, op, accuracy), 0);
+  return rsimd_exit(rsimd_sv_result(simd_math1_impl(x, op, accuracy), 0));
 }
 
 /* log(x, base) for a single double, integer or logical base, as base R's
@@ -128,7 +128,7 @@ static SEXP simd_log_impl(SEXP x, SEXP base, SEXP accuracy) {
 
 SEXP C_simd_log(SEXP x, SEXP base, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_log_impl(x, base, accuracy), 0);
+  return rsimd_exit(rsimd_sv_result(simd_log_impl(x, base, accuracy), 0));
 }
 
 /* Binary functions by name: pow(x, y), atan2(y, x), hypot(x, y),
@@ -165,7 +165,7 @@ static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
 
 SEXP C_simd_math2(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
   rsimd_entry();
-  return rsimd_sv_result(simd_math2_impl(x, y, op, accuracy), 0);
+  return rsimd_exit(rsimd_sv_result(simd_math2_impl(x, y, op, accuracy), 0));
 }
 
 /* list(sin = sin(x), cos = cos(x)), one warning for both. */
@@ -203,7 +203,7 @@ SEXP C_simd_sincos(SEXP x, SEXP accuracy) {
   SET_VECTOR_ELT(out, 0, rsimd_sv_result(VECTOR_ELT(out, 0), 0));
   SET_VECTOR_ELT(out, 1, rsimd_sv_result(VECTOR_ELT(out, 1), 0));
   UNPROTECT(1);
-  return out;
+  return rsimd_exit(out);
 }
 
 /* ilogb(x) as an integer vector: NA for zero, an infinity, NaN or NA. */
@@ -226,7 +226,7 @@ static SEXP simd_ilogb_impl(SEXP x) {
 
 SEXP C_simd_ilogb(SEXP x) {
   rsimd_entry();
-  return rsimd_sv_result(simd_ilogb_impl(x), 0);
+  return rsimd_exit(rsimd_sv_result(simd_ilogb_impl(x), 0));
 }
 
 /* The bits of x as an integer ordered like the doubles: -0 and +0 both
@@ -278,5 +278,5 @@ static SEXP simd_ulp_dist_impl(SEXP a, SEXP b) {
 
 SEXP C_simd_ulp_dist(SEXP a, SEXP b) {
   rsimd_entry();
-  return simd_ulp_dist_impl(a, b);
+  return rsimd_exit(simd_ulp_dist_impl(a, b));
 }

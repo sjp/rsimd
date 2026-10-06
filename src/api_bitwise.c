@@ -95,7 +95,7 @@ static SEXP simd_logic_impl(SEXP x, SEXP y, SEXP op) {
 
 SEXP C_simd_logic(SEXP x, SEXP y, SEXP op) {
   rsimd_entry();
-  return simd_logic_impl(x, y, op);
+  return rsimd_exit(simd_logic_impl(x, y, op));
 }
 
 /* Bitwise op by name: "and", "or", "xor" (x and y), "not", "shl", "shr",
@@ -184,7 +184,7 @@ static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
 SEXP C_simd_bit(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   static const char *const keeps[] = {"popcount", "lzcnt", "tzcnt", NULL};
   rsimd_entry();
-  return rsimd_sv_result(simd_bit_impl(x, y, op, k, na_check), rsimd_str_in(op, keeps));
+  return rsimd_exit(rsimd_sv_result(simd_bit_impl(x, y, op, k, na_check), rsimd_str_in(op, keeps)));
 }
 
 /* The total number of set bits of an integer, logical, integer64 or raw
@@ -218,5 +218,5 @@ static SEXP simd_popcount_total_impl(SEXP x, SEXP na_rm, SEXP na_check) {
 
 SEXP C_simd_popcount_total(SEXP x, SEXP na_rm, SEXP na_check) {
   rsimd_entry();
-  return simd_popcount_total_impl(x, na_rm, na_check);
+  return rsimd_exit(simd_popcount_total_impl(x, na_rm, na_check));
 }

@@ -2,6 +2,8 @@
    raw vector accessors and R_CheckUserInterrupt (tools/lint_c.sh). */
 
 #include <limits.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "rvec.h"
@@ -80,8 +82,42 @@ static struct {
   int na_free;     /* every operand is known NA-free */
 } sv_call = {0, RSIMD_TIER_COUNT, 1};
 
+/* The current .Call's deferred warnings. */
+#define RSIMD_WARN_MAX 8
+#define RSIMD_WARN_LEN 256
+static struct {
+  int n;
+  char msg[RSIMD_WARN_MAX][RSIMD_WARN_LEN];
+} warn_pending;
+
+void rsimd_warn(const char *fmt, ...) {
+  va_list ap;
+  if (warn_pending.n == RSIMD_WARN_MAX) return;
+  va_start(ap, fmt);
+  vsnprintf(warn_pending.msg[warn_pending.n++], RSIMD_WARN_LEN, fmt, ap);
+  va_end(ap);
+}
+
+void rsimd_warn_flush(void) {
+  char msg[RSIMD_WARN_MAX][RSIMD_WARN_LEN];
+  int i, n = warn_pending.n;
+  /* Taken off the list first: a handler may call rsimd again. */
+  memcpy(msg, warn_pending.msg, (size_t) n * sizeof msg[0]);
+  warn_pending.n = 0;
+  for (i = 0; i < n; i++) Rf_warning("%s", msg[i]);
+}
+
+SEXP rsimd_exit(SEXP out) {
+  if (warn_pending.n == 0) return out;
+  PROTECT(out);
+  rsimd_warn_flush();
+  UNPROTECT(1);
+  return out;
+}
+
 void rsimd_entry(void) {
   rsimd_active = rsimd_selected;
+  warn_pending.n = 0;
   sv_call.seen = 0;
   sv_call.pin = RSIMD_TIER_COUNT;
   sv_call.na_free = 1;
@@ -265,6 +301,13 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y) {
 
 /* ---- Elementwise operands ----------------------------------------------- */
 
+void rsimd_ew_no_c128(const rsimd_ew *e) {
+  int i;
+  for (i = 0; i < e->k; i++) {
+    if (e->in[i].type == RSIMD_C128) Rf_error("internal error: complex operand in a chunk loop");
+  }
+}
+
 int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names) {
   R_xlen_t n = 1;
   int i, have_n = 0, ok = 1;
@@ -341,7 +384,7 @@ SEXP rsimd_scalar_i64(int64_t v) {
 }
 
 void rsimd_warn_i64_overflow(void) {
-  Rf_warning("NAs produced by integer64 overflow");
+  rsimd_warn("NAs produced by integer64 overflow");
 }
 
 /* An index or count: integer, or double for a long input. */
@@ -448,13 +491,13 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
   case RSIMD_RED_MAX:
     if (is_real && r->count == 0) {
       int is_min = op == RSIMD_RED_MIN;
-      Rf_warning("no non-missing arguments to %s; returning %s", is_min ? "min" : "max",
+      rsimd_warn("no non-missing arguments to %s; returning %s", is_min ? "min" : "max",
                  is_min ? "Inf" : "-Inf");
       return Rf_ScalarReal(is_min ? R_PosInf : R_NegInf);
     }
     if (type == RSIMD_I64 && r->count == 0) {
       int is_min = op == RSIMD_RED_MIN;
-      Rf_warning("no non-NA value, returning the %s possible integer64 value %s9223372036854775807",
+      rsimd_warn("no non-NA value, returning the %s possible integer64 value %s9223372036854775807",
                  is_min ? "highest" : "lowest", is_min ? "+" : "-");
       return rsimd_scalar_i64(is_min ? INT64_MAX : -INT64_MAX);
     }
@@ -484,7 +527,7 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
 }
 
 void rsimd_warn_int_overflow(void) {
-  Rf_warning("NAs produced by integer overflow");
+  rsimd_warn("NAs produced by integer overflow");
 }
 
 /* ---- Results ------------------------------------------------------------ */
@@ -511,10 +554,8 @@ void *rsimd_out_ptr(SEXP out) {
 }
 
 void rsimd_copy_class(SEXP x, SEXP out) {
-  SEXP cls = Rf_getAttrib(x, R_ClassSymbol);
-  if (TYPEOF(cls) != STRSXP || XLENGTH(cls) != 1) return;
-  if (strcmp(CHAR(STRING_ELT(cls, 0)), "integer64") == 0 && TYPEOF(out) == REALSXP) {
-    Rf_setAttrib(out, R_ClassSymbol, cls);
+  if (TYPEOF(x) == REALSXP && TYPEOF(out) == REALSXP && Rf_inherits(x, "integer64")) {
+    rsimd_set_i64_class(out);
   }
 }
 

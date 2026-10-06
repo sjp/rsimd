@@ -82,6 +82,19 @@ First release.
   SIMD kernels. An object can be pinned to one implementation
   (`simd_impl<-`) and can carry a known NA-free flag that lets functions
   skip their missing-value checks (`?simd_vec`).
+* Edge cases made consistent across implementations before release:
+  `simd_idiv()` on doubles is the exact floor of the quotient, rounded once,
+  for quotients of 2^52 and more too (it could be a few units off there);
+  `simd_var()` and `simd_sd()` give `Inf` on every implementation when
+  finite values overflow the mean (some lengths gave `NaN`);
+  `simd_next_up()` and `simd_next_down()` return every NaN input as it is
+  (some NaNs became infinities); and `simd_sin()`, `simd_tan()`,
+  `simd_asin()`, `simd_atan()`, `simd_sinh()`, `simd_tanh()`,
+  `simd_asinh()`, `simd_atanh()`, `simd_expm1()` and `simd_log1p()` return
+  the smallest subnormal numbers themselves, sign included, in both
+  accuracy modes (some gave zero). A function called from a warning handler
+  in the middle of another rsimd call no longer changes that call's
+  implementation or `simd_vec` result.
 * Results follow base R's types, warnings and missing-value rules; `NA` and
   `NaN` stay distinct. Where a result can differ from base R's (the last
   bits of floating-point sums and elementary functions, and a few

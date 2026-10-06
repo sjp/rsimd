@@ -20,7 +20,11 @@
 #            tier then takes them from a lower tier, ultimately none's libm)
 #
 # A tier may have several rows for the same arch: configure uses the first row
-# whose probe compiles (sve2 falls back to an older -march spelling).
+# whose probe compiles.
+#
+# The flags must not assume more than the tier's runtime check verifies. The
+# sve and sve2 rows therefore use the armv8-a baseline plus only the SVE or
+# SVE2 extension, which is all the HWCAP_SVE / HWCAP2_SVE2 checks guarantee.
 #
 # Tier-specific flags such as -mavx2 apply only to that tier's translation
 # unit, which is entered only after a runtime CPU check. No row may use
@@ -35,7 +39,6 @@ avx512   | x86_64  | any           | -mavx512f -mavx512bw -mavx512dq -mavx512vl 
 neon     | aarch64 | any           | -                                                | x86/sse2.h x86/sse4.2.h x86/fma.h | yes     | sleefinline_advsimd.h
 neon     | armv7   | linux,freebsd | -mfpu=neon                                       | x86/sse2.h x86/sse4.2.h          | yes     | -
 sve      | aarch64 | linux,freebsd | -march=armv8-a+sve                               | <arm_sve.h>                      | yes     | sleefinline_sve.h
-sve2     | aarch64 | linux,freebsd | -march=armv9-a+sve2                              | <arm_sve.h>                      | yes     | sleefinline_sve.h
-sve2     | aarch64 | linux,freebsd | -march=armv8.5-a+sve2                            | <arm_sve.h>                      | yes     | sleefinline_sve.h
+sve2     | aarch64 | linux,freebsd | -march=armv8-a+sve2                              | <arm_sve.h>                      | yes     | sleefinline_sve.h
 rvv      | -       | -             | -                                                | -                                | no      | -
 wasm128  | -       | -             | -                                                | -                                | no      | -

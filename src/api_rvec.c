@@ -26,7 +26,7 @@ static SEXP simd_promote_impl(SEXP x, SEXP y) {
 
 SEXP C_simd_promote(SEXP x, SEXP y) {
   rsimd_entry();
-  return simd_promote_impl(x, y);
+  return rsimd_exit(simd_promote_impl(x, y));
 }
 
 /* Reads x chunk by chunk and reports list(path, regions, sum, na,
@@ -100,7 +100,7 @@ static SEXP simd_debug_regions_impl(SEXP x) {
 
 SEXP C_simd_debug_regions(SEXP x) {
   rsimd_entry();
-  return simd_debug_regions_impl(x);
+  return rsimd_exit(simd_debug_regions_impl(x));
 }
 
 #define COPY_CHUNKS(T)                                                                    \
@@ -134,7 +134,7 @@ static SEXP simd_debug_copy_impl(SEXP x, SEXP no_na) {
 
 SEXP C_simd_debug_copy(SEXP x, SEXP no_na) {
   rsimd_entry();
-  return simd_debug_copy_impl(x, no_na);
+  return rsimd_exit(simd_debug_copy_impl(x, no_na));
 }
 
 /* x + y as double through the binary chunk loop, for double or
@@ -181,7 +181,7 @@ static SEXP simd_debug_bin_impl(SEXP x, SEXP y) {
 
 SEXP C_simd_debug_bin(SEXP x, SEXP y) {
   rsimd_entry();
-  return simd_debug_bin_impl(x, y);
+  return rsimd_exit(simd_debug_bin_impl(x, y));
 }
 
 static int lookup(const char *name, const char *const *table, int count, const char *what) {
@@ -259,7 +259,7 @@ static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP
 
 SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision, SEXP na_rm) {
   rsimd_entry();
-  return simd_debug_finish_impl(op, type, n, fields, precision, na_rm);
+  return rsimd_exit(simd_debug_finish_impl(op, type, n, fields, precision, na_rm));
 }
 
 /* The rsimd_opts an entry point taking x and these arguments would use
@@ -281,7 +281,7 @@ static SEXP simd_debug_opts_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precisi
 
 SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_entry();
-  return simd_debug_opts_impl(x, na_rm, na_check, precision);
+  return rsimd_exit(simd_debug_opts_impl(x, na_rm, na_check, precision));
 }
 
 /* The tier whose resolved table a call with operands x and y (y may be
@@ -294,7 +294,7 @@ SEXP C_simd_debug_active(SEXP x, SEXP y) {
   if (!Rf_isNull(y)) rsimd_in_init(&in, y, "y");
   for (t = 0; t < RSIMD_TIER_COUNT; t++) {
     if (rsimd_tier_resolved((rsimd_tier) t) == rsimd_active) {
-      return Rf_mkString(rsimd_tier_names[t]);
+      return rsimd_exit(Rf_mkString(rsimd_tier_names[t]));
     }
   }
   Rf_error("internal error: the active table belongs to no tier");
