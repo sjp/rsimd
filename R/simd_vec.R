@@ -97,15 +97,8 @@ simd_na_free <- function(x) {
 # The data of x without attributes, except an integer64 class. Errors for
 # anything that is not a supported atomic vector.
 .sv_strip <- function(x) {
+  .check_data(x)
   i64 <- inherits(x, "integer64")
-  types <- c("double", "integer", "logical", "raw", "complex")
-  ok <- i64 || is_simd_vec(x) || (is.atomic(x) && !is.object(x) && typeof(x) %in% types)
-  if (!ok || is.factor(x)) {
-    stop("'x' must be an atomic vector (double, integer, logical, raw, complex or ",
-      "integer64), not ", class(x)[[1L]],
-      call. = FALSE
-    )
-  }
   if (is.object(x) || !is.null(attributes(x))) {
     # Not attributes(x) <- NULL: on a shared x that copies the attributes,
     # and so the NA-free token (see the top of this file).
@@ -118,7 +111,9 @@ simd_na_free <- function(x) {
 }
 
 .sv_new <- function(data, impl = NULL, na_free = NULL) {
-  class(data) <- if (inherits(data, "integer64")) c("simd_vec", "integer64") else "simd_vec"
+  i64 <- inherits(data, "integer64")
+  if (i64) .need_bit64()
+  class(data) <- if (i64) c("simd_vec", "integer64") else "simd_vec"
   attr(data, "rsimd_impl") <- impl
   .Call(C_simd_sv_stamp, data, if (is.raw(data)) TRUE else na_free)
 }
@@ -178,19 +173,12 @@ simd_na_free <- function(x) {
 .sv_fallback <- function(f, args, wrap = TRUE) {
   pin <- .sv_resolve(args)
   data <- lapply(args, function(a) if (is_simd_vec(a)) .sv_data(a) else a)
-  if (any(vapply(data, inherits, NA, what = "integer64"))) .sv_need_bit64()
+  if (any(vapply(data, inherits, NA, what = "integer64"))) .need_bit64()
   out <- do.call(f, data)
   if (wrap && ((is.atomic(out) && !is.object(out)) || inherits(out, "integer64"))) {
     out <- .sv_new(.sv_strip(out), pin)
   }
   out
-}
-
-.sv_need_bit64 <- function() {
-  if (!requireNamespace("bit64", quietly = TRUE)) {
-    stop("this operation on an integer64 simd_vec needs package 'bit64'", call. = FALSE)
-  }
-  invisible()
 }
 
 .sv_type <- function(x) if (inherits(x, "integer64")) "integer64" else typeof(x)
@@ -210,9 +198,12 @@ simd_na_free <- function(x) {
 
 # ---- Group generics --------------------------------------------------------
 
-# A simd_vec operand wins over another class's Ops method (R >= 4.3). bit64
-# also always claims the operation, so a plain integer64 on the left of a
-# simd_vec still dispatches to bit64.
+# A simd_vec operand wins over another class's Ops method (R >= 4.3), so
+# that Ops.simd_vec can reject an operand of another class (Date, difftime
+# ...): were both sides to return FALSE, R would warn "Incompatible methods"
+# and run the internal operator on the bare data. bit64 also always claims
+# the operation, so a plain integer64 on the left of a simd_vec still
+# dispatches to bit64.
 chooseOpsMethod.simd_vec <- function(x, y, mx, my, cl, reverse) TRUE
 
 Ops.simd_vec <- function(e1, e2) {
@@ -226,6 +217,8 @@ Ops.simd_vec <- function(e1, e2) {
       stop("invalid unary operator", call. = FALSE)
     ))
   }
+  .check_data(e1, "x")
+  .check_data(e2, "y")
   cplx <- is.complex(e1) || is.complex(e2)
   i64 <- inherits(e1, "integer64") || inherits(e2, "integer64")
   raw <- is.raw(e1) || is.raw(e2)
@@ -502,15 +495,45 @@ c.simd_vec <- function(..., recursive = FALSE, use.names = TRUE) .sv_combine(lis
   .sv_new(data, attr(x, "rsimd_impl", exact = TRUE), na_free)
 }
 
-# A simd_vec has no names, dimensions or dimnames: setting them is a no-op,
-# as simd_vec() drops them (so quantile() of a simd_vec is unnamed).
-`names<-.simd_vec` <- function(x, value) .sv_release(x)
+# A simd_vec has no names, dimensions or dimnames. Setting them unwraps:
+# the result is the plain data with the value set, so that base functions
+# that name their result (quantile(), summary(), setNames(), lm()) return
+# what they do for plain data. Setting NULL leaves the simd_vec as it is.
+`names<-.simd_vec` <- function(x, value) .sv_set_attr(x, value, `names<-`)
 
-`dim<-.simd_vec` <- function(x, value) .sv_release(x)
+`dim<-.simd_vec` <- function(x, value) .sv_set_attr(x, value, `dim<-`)
 
-`dimnames<-.simd_vec` <- function(x, value) .sv_release(x)
+`dimnames<-.simd_vec` <- function(x, value) .sv_set_attr(x, value, `dimnames<-`)
+
+.sv_set_attr <- function(x, value, set) {
+  .sv_release(x)
+  if (is.null(value)) {
+    return(x)
+  }
+  # Not .sv_data_own(): x may be shared with the object it was copied from,
+  # whose token a copy of the attributes would void.
+  data <- .sv_data(x)
+  if (inherits(data, "integer64")) .need_bit64()
+  set(data, value)
+}
 
 # ---- Unwrapping ------------------------------------------------------------
+
+simd_unwrap <- function(x) {
+  if (!is_simd_vec(x)) {
+    .check_data(x)
+    return(x)
+  }
+  data <- .sv_data(x)
+  if (inherits(data, "integer64")) .need_bit64()
+  data
+}
+
+# Registered for bit64's generic when bit64 is loaded (NAMESPACE).
+as.integer64.simd_vec <- function(x, ...) {
+  data <- .sv_data(x)
+  if (inherits(data, "integer64")) data else bit64::as.integer64(data, ...)
+}
 
 as.vector.simd_vec <- function(x, mode = "any") {
   data <- .sv_data(x)
@@ -535,7 +558,7 @@ as.logical.simd_vec <- function(x, ...) {
 
 as.data.frame.simd_vec <- function(x, row.names = NULL, optional = FALSE, ...,
                                    nm = deparse1(substitute(x))) {
-  as.data.frame(.sv_data(x), row.names = row.names, optional = optional, ..., nm = nm)
+  as.data.frame(.sv_printable(x), row.names = row.names, optional = optional, ..., nm = nm)
 }
 
 # ---- Printing --------------------------------------------------------------
@@ -602,7 +625,7 @@ all.equal.simd_vec <- function(target, current, ...) {
   }
   d1 <- .sv_data(target)
   d2 <- .sv_data(current)
-  if (inherits(d1, "integer64") || inherits(d2, "integer64")) .sv_need_bit64()
+  if (inherits(d1, "integer64") || inherits(d2, "integer64")) .need_bit64()
   data <- all.equal(d1, d2, ...)
   if (!isTRUE(data)) msg <- c(msg, data)
   if (is.null(msg)) TRUE else msg

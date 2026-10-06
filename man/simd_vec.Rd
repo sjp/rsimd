@@ -5,6 +5,7 @@
 \alias{simd_impl}
 \alias{simd_impl<-}
 \alias{simd_na_free}
+\alias{simd_unwrap}
 \title{SIMD Vectors with a Pinned Implementation}
 \usage{
 simd_vec(x, impl = NULL, check_na = FALSE)
@@ -17,11 +18,14 @@ simd_impl(x)
 simd_impl(x) <- value
 
 simd_na_free(x)
+
+simd_unwrap(x)
 }
 \arguments{
 \item{x}{For \code{simd_vec()} and \code{as_simd_vec()}, a double,
   integer, logical, raw or complex vector, or a \pkg{bit64}
-  \code{integer64} vector. For the accessors, a \code{simd_vec}.}
+  \code{integer64} vector. For the accessors, a \code{simd_vec}. For
+  \code{simd_unwrap()}, either.}
 \item{impl, value}{\code{NULL} (follow the global setting of
   \code{\link{simd_use}}) or the name of an implementation in
   \code{\link{simd_available}()} to pin the object to. \code{"auto"} is
@@ -57,7 +61,10 @@ returns plain vectors.
 \code{simd_vec()} drops every other attribute of \code{x} (names,
 dimensions, dimnames). Given a \code{simd_vec}, it replaces the pin only
 when \code{impl} is supplied and the flag only when \code{check_na} is
-\code{TRUE}. Character vectors, factors, lists and data frames are errors.
+\code{TRUE}. Character vectors, lists and data with any other class (dates,
+times, \code{difftime}, factors, data frames) are errors. Making an
+\code{integer64} \code{simd_vec} loads \pkg{bit64} (see
+\link{rsimd-integer64}).
 \code{simd_na_free()} returns the flag (\code{TRUE}, \code{FALSE} or
 \code{NULL}); there is no setter, so the flag can only come from a check or
 from the rules below. Raw data has no missing values, so a raw
@@ -144,11 +151,12 @@ or length 1. \code{==}, \code{!=}, \code{<}, \code{>}, \code{<=} and
 vectors. \code{&}, \code{|} and \code{!} call \code{\link{simd_and}},
 \code{\link{simd_or}} and \code{\link{simd_not}}, or for raw data
 \code{\link{simd_bit_and}}, \code{\link{simd_bit_or}} and
-\code{\link{simd_bit_not}}. A plain operand may be on either side; if it
-has a class with its own operator methods, the \code{simd_vec} method is
-chosen (\code{\link{chooseOpsMethod}}), except that \pkg{bit64} always
-claims operations whose left operand is a plain \code{integer64}, which
-then give a plain \code{integer64}.
+\code{\link{simd_bit_not}}. A plain operand may be on either side. An
+operand with another class, such as a date, is an error, as in the
+\code{simd_} functions: the \code{simd_vec} method is chosen over that
+class's operator methods (\code{\link{chooseOpsMethod}}) and rejects it.
+\pkg{bit64} always claims operations whose left operand is a plain
+\code{integer64}, which then give a plain \code{integer64}.
 
 \strong{Group generics.} The \code{Math} functions with a kernel
 (\code{abs}, \code{sign}, \code{sqrt}, \code{floor}, \code{ceiling},
@@ -186,18 +194,31 @@ and \code{\link{simd_conj}}.
 too (an \code{integer64} object converts \code{value} to
 \code{integer64}); \code{x[[i]]} returns a plain element.
 \code{is.na(x)} calls \code{\link{simd_is_na}} and returns a plain
-logical vector. \code{names<-}, \code{dim<-} and \code{dimnames<-} do
-nothing, so a \code{simd_vec} never has names or dimensions (and
-\code{quantile(x)} is unnamed).
+logical vector.
+A \code{simd_vec} has no names, dimensions or dimnames. Setting them with a
+value other than \code{NULL} (\code{names<-}, \code{dim<-},
+\code{dimnames<-}) unwraps: the result is the plain data with the value
+set, not a \code{simd_vec}. So \code{quantile(x)}, \code{summary(x)},
+\code{setNames(x, nm)} and \code{lm(x ~ z)} give the same results as for
+plain data, and \code{table()}, \code{matrix()}, \code{outer()} and
+\code{median()} work as before. Setting \code{NULL} (\code{unname(x)})
+leaves a \code{simd_vec}.
 \code{c()} combines with base R's type promotion, except that
 \code{integer64} absorbs the other parts, as in \pkg{bit64}, and the
 parts' pins must agree. \code{length(x) <- n} pads with \code{NA}.
 \code{rev()}, \code{sort()}, \code{head()} and \code{tail()} work through
 \code{[} and so keep the class; \code{rep()} and \code{unique()} return
-plain vectors. \code{as.vector()}, \code{as.double()},
-\code{as.numeric()}, \code{as.integer()}, \code{as.logical()} and
-\code{as.data.frame()} (so \code{data.frame(v = x)}) unwrap to plain
-vectors; \code{unclass(x)} removes only the class and keeps the other
+plain vectors.
+
+\strong{Unwrapping.} \code{simd_unwrap(x)} returns the data without any
+\pkg{rsimd} attributes; \code{integer64} data keeps its class. Given plain
+data, it returns it unchanged. \code{bit64::as.integer64(x)} does the same
+for \code{integer64} data and converts other data.
+\code{as.vector()}, \code{as.double()}, \code{as.numeric()},
+\code{as.integer()} and \code{as.logical()} unwrap to plain vectors of
+their type: \code{integer64} data becomes double for \code{as.vector()},
+as in \pkg{bit64}. \code{as.data.frame()} (so \code{data.frame(v = x)})
+unwraps too. \code{unclass(x)} removes only the class and keeps the other
 attributes (voiding the flag, as above). \code{print()} shows a header
 line before the data, \code{format()} formats the data and \code{str()}
 gives a one-line summary.
@@ -212,6 +233,8 @@ back.
 \code{simd_vec}. \code{is_simd_vec()}: \code{TRUE} or \code{FALSE}.
 \code{simd_impl()}: the pinned implementation or \code{NULL}.
 \code{simd_na_free()}: \code{TRUE}, \code{FALSE} or \code{NULL}.
+\code{simd_unwrap()}: a plain vector, of class \code{"integer64"} for
+\code{integer64} data.
 \code{all.equal()}: \code{TRUE} or a character vector describing the
 differences.
 }
@@ -235,4 +258,8 @@ simd_impl(y + 1L)
 simd_impl(y) <- NULL
 
 str(x)
+simd_unwrap(x)
+
+# Setting names unwraps, so base functions that name their result work.
+quantile(x)
 }

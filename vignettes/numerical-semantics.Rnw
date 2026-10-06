@@ -365,9 +365,10 @@ Complex \code{prod}, \code{mean} &
 
 \pkg{rsimd} works on the \code{integer64} vectors of the \pkg{bit64}
 package: doubles whose bits hold signed 64-bit integers, with class
-\code{"integer64"}. It computes on them without \pkg{bit64}, which is only
-needed to create and print them; \code{simd\_as\_integer64()} creates them
-too. Arithmetic is exact, and overflow gives \code{NA} with \pkg{bit64}'s
+\code{"integer64"}. \pkg{bit64} is only suggested, but every function that
+returns \code{integer64}, \code{simd\_as\_integer64()} included, loads it,
+so that the result sorts and prints correctly, and errors if it is not
+installed. Arithmetic is exact, and overflow gives \code{NA} with \pkg{bit64}'s
 warning. The chunk runs only when \pkg{bit64} is installed:
 
 <<integer64>>=

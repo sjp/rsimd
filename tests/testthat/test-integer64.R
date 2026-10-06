@@ -18,6 +18,7 @@ test_that("the integer64 test helpers are exact", {
 # ---- Reductions ---------------------------------------------------------------
 
 test_that("simd_sum of integer64 is exact and integer64", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   expect_tiers_i64(i64(0), simd_sum, i64(numeric(0)))
   expect_tiers_i64(na64, simd_sum, i64(c(1, 2, NA, 4)))
   expect_tiers_i64(i64(7), simd_sum, i64(c(1, 2, NA, 4)), na.rm = TRUE)
@@ -29,6 +30,7 @@ test_that("simd_sum of integer64 is exact and integer64", {
 })
 
 test_that("simd_sum overflows only when the exact total leaves int64", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   one <- i64(1)
   # The running total leaves int64 but the total does not.
   expect_tiers_i64(max64, simd_sum, i64c(max64, one, i64(-1)))
@@ -51,6 +53,7 @@ test_that("simd_sum overflows only when the exact total leaves int64", {
 })
 
 test_that("simd_sum of integer64 agrees across tiers on random input", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   for (n in lens) {
     for (kind in c("mix", "full", "small")) {
       x <- rand_i64(n, kind, seed = n + 7L)
@@ -68,6 +71,7 @@ test_that("simd_sum of integer64 agrees across tiers on random input", {
 })
 
 test_that("simd_sum of 10^7 integer64 values is exact", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   skip_unless_extended()
   v <- round(with_seed(13L, stats::runif(1e7, -2^29, 2^29)))
   x <- i64(v)
@@ -75,6 +79,7 @@ test_that("simd_sum of 10^7 integer64 values is exact", {
 })
 
 test_that("min, max and range of integer64", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- i64(c(3, NA, 1, -7, 1))
   expect_tiers_i64(na64, simd_min, x)
   expect_tiers_i64(i64(-7), simd_min, x, na.rm = TRUE)
@@ -260,6 +265,7 @@ test_that("any and all of integer64 read non-zero as TRUE, without a warning", {
 })
 
 test_that("cumsum, cummin and cummax of integer64", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- i64(c(5, -3, 7, NA, 2))
   expect_tiers_i64(i64(c(5, 2, 9, NA, NA)), simd_cumsum, x)
   expect_tiers_i64(i64(c(5, -3, -3, NA, NA)), simd_cummin, x)
@@ -281,6 +287,7 @@ test_that("cumsum, cummin and cummax of integer64", {
 # ---- Arithmetic --------------------------------------------------------------
 
 test_that("checked integer64 arithmetic gives NA and one warning on overflow", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   one <- i64(1)
   lo <- i64_dec("-9223372036854775807")
   expect_tiers_i64(i64(c(6, -2, NA)), simd_add, i64(c(5, -3, NA)), one)
@@ -304,6 +311,7 @@ test_that("checked integer64 arithmetic gives NA and one warning on overflow", {
 })
 
 test_that("wrapping integer64 arithmetic wraps", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   lo <- i64_dec("-9223372036854775807")
   expect_tiers_i64(i64_dec("-9223372036709301616"), simd_mul_wrap, i64(3037000500), i64(3037000500))
   expect_tiers_i64(lo, simd_add_wrap, max64, i64(2))
@@ -314,6 +322,7 @@ test_that("wrapping integer64 arithmetic wraps", {
 })
 
 test_that("neg, abs and sign of integer64", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- i64c(i64(c(-5, 0, 7, NA)), max64, i64_dec("-9223372036854775807"))
   expect_tiers_i64(i64c(i64(c(5, 0, -7, NA)), i64_dec("-9223372036854775807"), max64), simd_neg, x)
   expect_tiers_i64(i64c(i64(c(5, 0, 7, NA)), max64, max64), simd_abs, x)
@@ -323,6 +332,7 @@ test_that("neg, abs and sign of integer64", {
 })
 
 test_that("%/% and %% of integer64 floor, and a zero divisor warns", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- c(7, -7, 7, -7, 0, 2^31 - 5)
   y <- c(2, 2, -2, -2, 3, -17)
   expect_tiers_i64(i64(x %/% y), simd_idiv, i64(x), i64(y))
@@ -338,6 +348,7 @@ test_that("%/% and %% of integer64 floor, and a zero divisor warns", {
 })
 
 test_that("pmin, pmax and clamp of integer64", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- i64(c(1, NA, 5, NA))
   y <- i64(c(0, 3, NA, NA))
   expect_tiers_i64(i64(c(0, NA, NA, NA)), simd_pmin, x, y)
@@ -351,6 +362,7 @@ test_that("pmin, pmax and clamp of integer64", {
 })
 
 test_that("mul_add and add_mul of integer64 count an overflow once", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   expect_tiers_i64(i64(c(7, NA)), simd_mul_add, i64(c(3, 2^40)), i64(c(2, 2^40)), 1L,
     msgs = ovf_msg
   )
@@ -359,6 +371,7 @@ test_that("mul_add and add_mul of integer64 count an overflow once", {
 })
 
 test_that("integer64 arithmetic agrees across tiers on random input", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   ops <- list(
     simd_add, simd_sub, simd_mul, simd_add_wrap, simd_sub_wrap, simd_mul_wrap, simd_idiv,
     simd_mod, simd_pmin, simd_pmax, simd_pmin_num, simd_pmax_num
@@ -499,6 +512,7 @@ ref_bitop <- function(x, y, op) {
 }
 
 test_that("bitwise ops of integer64 work on the bit patterns", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- rand_i64(40, "full", seed = 50L, na_frac = 0.1)
   y <- rand_i64(40, "full", seed = 51L, na_frac = 0.1)
   expect_tiers_i64(ref_bitop(x, y, `&`), simd_bit_and, x, y)
@@ -537,6 +551,7 @@ test_that("bitwise ops of integer64 work on the bit patterns", {
 })
 
 test_that("integer64 bitwise ops agree across tiers on random input", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   for (n in lens) {
     x <- rand_i64(n, "full", seed = n + 60L)
     y <- rand_i64(n, "full", seed = n + 61L)
@@ -578,6 +593,7 @@ test_that("simd_as_double of integer64 rounds to nearest and warns beyond 2^53",
 })
 
 test_that("simd_as_integer64 converts doubles, integers, logicals and raw", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   expect_tier_warnings(ovf_msg, simd_as_integer64, c(2^63, -2^63, 9.5, NaN))
   expect_tiers_i64(i64(c(NA, NA, 9, NA)), simd_as_integer64, c(2^63, -2^63, 9.5, NaN),
     msgs = ovf_msg
@@ -660,6 +676,7 @@ test_that("integer64 converts to integer, logical and raw", {
 # ---- Attributes ------------------------------------------------------------------
 
 test_that("integer64 results keep only the class", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   x <- structure(unclass(i64(c(1, 2))), names = c("a", "b"), dim = 2L, class = "integer64")
   expect_i64(simd_add(x, 1L), i64(c(2, 3)))
   expect_i64(simd_sum(x), i64(3))

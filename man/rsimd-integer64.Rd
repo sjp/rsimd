@@ -7,9 +7,15 @@ double vector whose elements hold the bits of signed 64-bit integers and
 which has the class \code{"integer64"}. \code{NA} is the smallest value,
 \eqn{-2^{63}}, so values range over
 \eqn{\pm(2^{63} - 1) = \pm 9223372036854775807}. Such vectors are recognised
-by their class, and results get that class, so \pkg{bit64} (only suggested)
-is needed only to create and print them, not to compute with them.
-\code{\link{simd_as_integer64}()} creates them without \pkg{bit64}.
+by their class, and results get that class. \pkg{bit64} is only suggested,
+but any function that returns an integer64 result, including
+\code{\link{simd_as_integer64}()}, loads it, because without its
+methods registered an integer64 vector sorts, prints and compares as the
+doubles its bits make. If \pkg{bit64} is not installed, those functions
+give the error \dQuote{integer64 results need package 'bit64'}. Functions
+whose results are not integer64, such as \code{\link{simd_as_double}()},
+comparisons and \code{\link{simd_which_max}()}, still work on integer64
+data without it.
 }
 \details{
 \strong{Functions that take integer64.} Results are integer64 unless noted.
@@ -161,14 +167,14 @@ use the scalar code. On 32-bit ARM the \code{"neon"} kernels use NEON's
 \code{\link{simd_add}}, \link{rsimd_options}; the \pkg{bit64} package.
 }
 \examples{
-x <- simd_as_integer64(c(2^40, 7, NA, -3))
-simd_as_double(simd_sum(x, na.rm = TRUE))
-simd_which_max(x)
-simd_gt(simd_add(x, 1L), 7L)
-big <- simd_as_integer64(2^62)
-simd_is_na(suppressWarnings(simd_mul(big, 2L))) # overflow
-simd_lt(simd_mul_wrap(big, 3L), 0L) # wraps around
 if (requireNamespace("bit64", quietly = TRUE)) {
+  x <- simd_as_integer64(c(2^40, 7, NA, -3))
+  print(simd_sum(x, na.rm = TRUE))
+  print(simd_which_max(x))
+  print(simd_gt(simd_add(x, 1L), 7L))
+  big <- simd_as_integer64(2^62)
+  print(simd_is_na(suppressWarnings(simd_mul(big, 2L)))) # overflow
+  print(simd_lt(simd_mul_wrap(big, 3L), 0L)) # wraps around
   print(simd_sum(bit64::as.integer64(c("9223372036854775807", "1", "-1"))))
   print(simd_idiv(bit64::as.integer64(-7), 2L))
 }

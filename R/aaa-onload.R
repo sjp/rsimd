@@ -12,8 +12,20 @@
   warn_bad_debug_stride()
   init_impl()
   init_complex()
+  setHook(packageEvent("bit64", "onUnload"), .bit64_unloaded)
   invisible()
 }
+
+.onUnload <- function(libpath) {
+  name <- packageEvent("bit64", "onUnload")
+  hooks <- Filter(function(f) !identical(f, .bit64_unloaded), getHook(name))
+  setHook(name, if (length(hooks)) hooks, "replace")
+  invisible()
+}
+
+# The C side remembers that it has loaded bit64 (rsimd_bit64_load() in
+# src/rvec.c); this hook tells it when bit64 is unloaded.
+.bit64_unloaded <- function(...) invisible(.Call(C_simd_bit64_unloaded))
 
 # Initial implementation: the rsimd.impl option if set before loading, else
 # the RSIMD_IMPL environment variable, else "auto". A value that cannot be

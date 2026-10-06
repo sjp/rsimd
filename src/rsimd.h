@@ -26,6 +26,7 @@ SEXP C_simd_debug_finish(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP precision
 SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_sv_flag(SEXP x);
 SEXP C_simd_sv_stamp(SEXP x, SEXP flag);
+SEXP C_simd_bit64_unloaded(void);
 SEXP C_simd_sv_release(SEXP x);
 SEXP C_simd_sv_bare(SEXP x);
 

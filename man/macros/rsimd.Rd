@@ -1,7 +1,7 @@
 % Shared wording for rsimd's Rd files. R loads macros from man/macros/
 % automatically at install time; use these instead of copying the text.
 
-\newcommand{\rsimdAttributes}{Results are bare vectors: names, dimensions and other attributes of the inputs are dropped. The only exceptions are the \code{"integer64"} class from \pkg{bit64}, which is preserved, and \code{\link{simd_vec}} operands: the function runs on their pinned implementation, and a result that is a vector of values (not a reduction, predicate or comparison) is a \code{simd_vec} again.}
+\newcommand{\rsimdAttributes}{Inputs with a class other than \code{"integer64"} and \code{\link{simd_vec}}, such as dates, times, \code{difftime} or factors, are errors. Results are bare vectors: names, dimensions and other attributes of the inputs are dropped. The only exceptions are the \code{"integer64"} class from \pkg{bit64}, which is preserved, and \code{\link{simd_vec}} operands: the function runs on their pinned implementation, and a result that is a vector of values (not a reduction, predicate or comparison) is a \code{simd_vec} again.}
 
 \newcommand{\rsimdSemantics}{\strong{Missing values.} \code{NA} and \code{NaN} are kept
 apart. With \code{na.rm = FALSE} a reduction returns \code{NA} if the input

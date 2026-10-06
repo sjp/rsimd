@@ -26,7 +26,10 @@ test_that("element types are classified", {
   # integer64 is recognised by its class, without bit64.
   expect_identical(type(integer64(0)), "integer64")
   expect_identical(type(matrix(1:4, 2)), "integer")
-  expect_identical(type(structure(1, class = "Date")), "double")
+  # Other classes are rejected: the data would lose its meaning.
+  msg <- "'x' must be an atomic vector \\(double, integer, logical, raw, complex or integer64\\), not"
+  expect_error(type(structure(1, class = "Date")), paste(msg, "Date"))
+  expect_error(type(structure(1L, class = "foo")), paste(msg, "foo"))
 })
 
 test_that("unsupported inputs error with the class or type", {
@@ -212,16 +215,17 @@ test_that("binary chunking mixes ALTREP, contiguous and scalar operands", {
 test_that("results are bare except for the integer64 and simd_vec classes", {
   expect_identical(.debug_copy(c(a = 1, b = 2)), c(1, 2))
   expect_identical(.debug_copy(matrix(1:4, 2, dimnames = list(c("a", "b"), NULL))), 1:4)
-  expect_identical(.debug_copy(structure(1, class = "Date")), 1)
   expect_identical(.debug_copy(structure(1, foo = "bar")), 1)
 
-  i64 <- structure(c(a = 0), class = "integer64")
-  expect_identical(.debug_copy(i64), integer64(0))
-  # Any class that inherits from "integer64" (as the access layer reads
-  # it) gives a plain "integer64" result, a simd_vec one included.
-  expect_identical(.debug_copy(structure(0, class = c("integer64", "foo"))), integer64(0))
-  sv64 <- structure(c(1, 2), class = c("simd_vec", "integer64"), rsimd_impl = "none")
-  expect_identical(.debug_copy(sv64), sv64)
+  if (has_bit64()) {
+    i64 <- structure(c(a = 0), class = "integer64")
+    expect_identical(.debug_copy(i64), integer64(0))
+    # Any class that inherits from "integer64" (as the access layer reads
+    # it) gives a plain "integer64" result, a simd_vec one included.
+    expect_identical(.debug_copy(structure(0, class = c("integer64", "foo"))), integer64(0))
+    sv64 <- structure(c(1, 2), class = c("simd_vec", "integer64"), rsimd_impl = "none")
+    expect_identical(.debug_copy(sv64), sv64)
+  }
 
   # A forged flag (no token) is unknown; a flagged result gets a token.
   sv <- structure(c(1, 2), class = "simd_vec", rsimd_impl = "none", rsimd_na_free = TRUE)
@@ -325,7 +329,7 @@ test_that("finished reductions have base R's result types", {
   expect_identical(fin("sum", "integer", list(i64 = -2^31)), -2^31)
   expect_identical(fin("sum", "double", list(f64 = 1.5, comp = 0.25)), 1.5)
   expect_identical(fin("sum", "double", list(f64 = 1.5, comp = 0.25), precision = 2L), 1.75)
-  expect_identical(fin("sum", "integer64", list(i64 = 5)), integer64(2.5e-323))
+  if (has_bit64()) expect_identical(fin("sum", "integer64", list(i64 = 5)), integer64(2.5e-323))
   # always double
   for (op in c("prod", "mean", "sum_sq", "sum_abs", "dot", "norm", "dist", "cosine", "var", "sd")) {
     expect_identical(fin(op, "integer", list(f64 = 2)), 2, info = op)
@@ -335,7 +339,7 @@ test_that("finished reductions have base R's result types", {
   expect_identical(fin("min", "integer", list(i64 = -3)), -3L)
   expect_identical(fin("max", "logical", list(i64 = 1)), 1L)
   expect_identical(fin("max", "double", list(f64 = 2.5)), 2.5)
-  expect_identical(fin("min", "integer64", list(i64 = 5)), integer64(2.5e-323))
+  if (has_bit64()) expect_identical(fin("min", "integer64", list(i64 = 5)), integer64(2.5e-323))
   # which_*: 1-based, double for long vectors
   long <- 2^31 + 10
   expect_identical(fin("which_min", "double", list(idx = 4)), 5L)

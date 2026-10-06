@@ -1,5 +1,9 @@
 # Helpers for the integer64 tests. They do not need bit64: integer64
-# vectors are built from, and read back as, their exact bit patterns.
+# vectors are built from, and read back as, their exact bit patterns. rsimd
+# itself needs bit64 to return integer64 results, so tests of those skip
+# without it (has_bit64()).
+
+has_bit64 <- function() requireNamespace("bit64", quietly = TRUE)
 
 # The 8 little-endian bytes of each element of an integer64 (or any double)
 # vector, as a raw matrix with one column per element.

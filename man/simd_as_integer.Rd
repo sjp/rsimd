@@ -59,8 +59,8 @@ bits (modulo 256). The last two never warn and give \code{00} for missing
 values.
 
 \strong{To integer64.} \code{simd_as_integer64()} gives an
-\code{"integer64"} vector (see \link{rsimd-integer64}) without needing
-\pkg{bit64}. Doubles are truncated toward zero, then
+\code{"integer64"} vector (see \link{rsimd-integer64}); it loads
+\pkg{bit64}, which must be installed. Doubles are truncated toward zero, then
 \describe{
 \item{\code{"checked"}}{gives \code{NA} for \code{NaN}, \code{NA} and
 values outside \eqn{(-2^{63}, 2^{63})}, with \pkg{bit64}'s warning
@@ -115,7 +115,9 @@ simd_as_double(c(1L, NA))
 simd_as_logical(c(0, 2.5, NaN))
 simd_as_raw(c(255, 256, -1), mode = "saturating")
 simd_as_raw(c(255, 256, -1), mode = "truncating")
-x <- simd_as_integer64(c(2^62, -7.9, NA))
-simd_as_integer(x, mode = "saturating")
-simd_as_integer64(c(Inf, -Inf), mode = "saturating")
+if (requireNamespace("bit64", quietly = TRUE)) {
+  x <- simd_as_integer64(c(2^62, -7.9, NA))
+  print(simd_as_integer(x, mode = "saturating"))
+  print(simd_as_integer64(c(Inf, -Inf), mode = "saturating"))
+}
 }

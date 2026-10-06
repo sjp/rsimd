@@ -37,9 +37,10 @@ typedef enum {
 extern const char *const rsimd_etype_names[RSIMD_BAD + 1];
 
 /* The element type of x, or RSIMD_BAD for anything that is not a plain
-   atomic vector of a supported type (factors, data frames, lists, S4
-   objects, character ...). integer64 is recognised by its class, so bit64
-   need not be loaded. */
+   atomic vector of a supported type (classed vectors such as factors and
+   dates, data frames, lists, S4 objects, character ...). The classes
+   taken are integer64, recognised by its class so that bit64 need not be
+   loaded, and simd_vec. */
 rsimd_etype rsimd_etype_of(SEXP x);
 /* As rsimd_etype_of(), but errors for RSIMD_BAD, naming the argument:
    "'x' must be an atomic vector (double, integer, logical, raw, complex or
@@ -354,7 +355,10 @@ void rsimd_warn_int_overflow(void);
 SEXP rsimd_alloc_like(rsimd_etype t, R_xlen_t n);
 /* Writable data of a result allocated by rsimd_alloc_like(). */
 void *rsimd_out_ptr(SEXP out);
-/* Sets class "integer64" on out (a double vector holding int64_t bits). */
+/* Sets class "integer64" on out (a double vector holding int64_t bits,
+   PROTECTed by the caller). Loads bit64's namespace first, so that its S3
+   methods are registered, unless it is known to be loaded (this evaluates
+   R code); errors, with an install hint, if bit64 is not installed. */
 void rsimd_set_i64_class(SEXP out);
 /* A length-1 integer64 vector holding v. */
 SEXP rsimd_scalar_i64(int64_t v);

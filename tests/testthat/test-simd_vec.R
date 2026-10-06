@@ -48,9 +48,11 @@ test_that("simd_vec() wraps the supported types and drops other attributes", {
   expect_sv(simd_vec(as.raw(1:2)), as.raw(1:2), na_free = TRUE)
   expect_identical(class(simd_vec(1)), "simd_vec")
 
-  i64 <- simd_vec(simd_as_integer64(c(1, NA)))
-  expect_identical(class(i64), c("simd_vec", "integer64"))
-  expect_identical(bare(i64), simd_as_integer64(c(1, NA)))
+  if (has_bit64()) {
+    i64 <- simd_vec(simd_as_integer64(c(1, NA)))
+    expect_identical(class(i64), c("simd_vec", "integer64"))
+    expect_identical(bare(i64), simd_as_integer64(c(1, NA)))
+  }
 })
 
 test_that("simd_vec() rejects unsupported input", {
@@ -70,6 +72,7 @@ test_that("check_na records the NA-free flag", {
   expect_identical(simd_na_free(simd_vec(c(1, NaN), check_na = TRUE)), FALSE)
   expect_identical(simd_na_free(simd_vec(c(1L, NA), check_na = TRUE)), FALSE)
   expect_identical(simd_na_free(simd_vec(c(1, NA))), NULL)
+  skip_if_not(has_bit64(), "bit64 is not installed")
   expect_identical(simd_na_free(simd_vec(simd_as_integer64(c(1, NA)), check_na = TRUE)), FALSE)
 })
 
@@ -381,12 +384,30 @@ test_that("complex operators: kernels for + and -, base for the rest", {
   expect_error(simd_vec(z) * c(w, 1), "lengths of 'x' \\(3\\) and 'y' \\(4\\)")
 })
 
-test_that("chooseOpsMethod makes the simd_vec method win", {
+test_that("an operand of another class is rejected on either side", {
+  msg <- function(arg, cls) {
+    paste0(
+      "'", arg, "' must be an atomic vector \\(double, integer, logical, raw, complex or ",
+      "integer64\\), not ", cls
+    )
+  }
+  sv <- simd_vec(1)
+  # The simd_vec method wins over the other class's (chooseOpsMethod), so
+  # there is no "Incompatible methods" warning.
+  expect_no_warning(expect_error(Sys.Date() + sv, msg("x", "Date")))
+  expect_no_warning(expect_error(sv + Sys.Date(), msg("y", "Date")))
+  expect_no_warning(expect_error(sv == Sys.time(), msg("y", "POSIXct")))
+  expect_no_warning(expect_error(as.difftime(1, units = "hours") * sv, msg("x", "difftime")))
   d <- structure(1, class = "foo")
   `Ops.foo` <- function(e1, e2) "foo"
   registerS3method("Ops", "foo", `Ops.foo`)
-  expect_sv(d + simd_vec(1), 2)
-  expect_sv(simd_vec(1) + d, 2)
+  expect_error(d + sv, msg("x", "foo"))
+  expect_error(sv + d, msg("y", "foo"))
+  # Paths that do not reach a kernel reject it too.
+  expect_error(simd_vec(1i) == d, msg("y", "foo"))
+  if (has_bit64()) expect_error(simd_vec(simd_as_integer64(2))^d, msg("y", "foo"))
+  # integer64 and simd_vec operands are taken.
+  expect_sv(sv + simd_vec(2), 3)
 })
 
 # ---- Math ------------------------------------------------------------------
@@ -556,7 +577,7 @@ test_that("conversions keep the flag only when they cannot overflow", {
   expect_identical(simd_na_free(simd_as_double(i)), TRUE)
   expect_identical(simd_na_free(simd_as_logical(d)), TRUE)
   expect_identical(simd_na_free(simd_as_integer(l)), TRUE)
-  expect_identical(simd_na_free(simd_as_integer64(i)), TRUE)
+  if (has_bit64()) expect_identical(simd_na_free(simd_as_integer64(i)), TRUE)
   expect_identical(simd_na_free(simd_as_integer(d, "saturating")), TRUE)
   expect_identical(simd_na_free(suppressWarnings(simd_as_raw(d))), TRUE)
   expect_identical(simd_na_free(suppressWarnings(simd_as_integer(d))), NULL)
@@ -729,6 +750,7 @@ test_that("[[<- assigns one element and drops the flag", {
   expect_error(w2[[1]] <- 1:2, "more elements supplied")
   expect_error(w2[[1]] <- numeric(), "replacement has length zero")
 
+  skip_if_not(has_bit64(), "bit64 is not installed")
   v <- simd_vec(simd_as_integer64(c(1, 2, 3)), check_na = TRUE)
   v[[2]] <- 5L
   expect_identical(bare(v), simd_as_integer64(c(1, 5, 3)))
@@ -744,8 +766,9 @@ test_that("base functions on a flagged simd_vec agree with plain data", {
     integer = c(1L, -2L, 3L),
     logical = c(TRUE, FALSE, TRUE),
     complex = c(1 + 1i, -2i, 3),
-    integer64 = simd_as_integer64(c(1, -2, 3))
+    integer64 = if (has_bit64()) simd_as_integer64(c(1, -2, 3))
   )
+  data <- Filter(Negate(is.null), data)
   fns <- list(
     pmin = function(x) pmin(x, NA),
     pmax = function(x) pmax(x, NA),
@@ -818,7 +841,10 @@ test_that("base functions on a flagged simd_vec agree with plain data", {
       x
     }
   )
-  plain_any_na <- function(r) simd_any_na(if (is_simd_vec(r)) bare(r) else r)
+  # Data without a class, which rsimd takes (structure() above gives
+  # plain data the class "numeric").
+  plain <- function(r) if (is.object(r)) bare(r) else r
+  plain_any_na <- function(r) simd_any_na(plain(r))
   for (type in names(data)) {
     for (f in names(fns)) {
       label <- paste(f, "on", type)
@@ -838,7 +864,7 @@ test_that("base functions on a flagged simd_vec agree with plain data", {
       if (type == "integer64" && i64_differs) next
       expect_identical(anyNA(got), plain_any_na(want), label = label)
       if (is.numeric(got) || is.complex(got) || is.logical(got)) {
-        expect_identical(simd_which_na(got), simd_which_na(want), label = label)
+        expect_identical(simd_which_na(got), simd_which_na(plain(want)), label = label)
         if (!inherits(got, "integer64") && !is.complex(got)) {
           expect_identical(
             suppressWarnings(max(got)), suppressWarnings(max(.subset(want, seq_along(want)))),
@@ -870,13 +896,45 @@ test_that("c(), [ and as_simd_vec() take base R's other arguments", {
   expect_identical(as_simd_vec(x), x)
 })
 
-test_that("names, dimensions and dimnames are not kept", {
-  z <- simd_vec(c(1, 2, 3), check_na = TRUE)
-  names(z) <- c("a", "b", "c")
-  dim(z) <- c(3, 1)
-  dimnames(z) <- list(NULL, "v")
-  expect_sv(z, c(1, 2, 3), NULL, TRUE)
-  expect_sv(quantile(simd_vec(c(3, 1, 2, 5))), unname(quantile(c(3, 1, 2, 5))))
+test_that("setting names, dimensions or dimnames unwraps", {
+  z <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  y <- z
+  names(y) <- c("a", "b", "c")
+  expect_identical(y, c(a = 1, b = 2, c = 3))
+  y <- z
+  dim(y) <- c(3L, 1L)
+  expect_identical(y, matrix(c(1, 2, 3), 3))
+  dimnames(y) <- list(NULL, "v")
+  expect_identical(y, matrix(c(1, 2, 3), 3, dimnames = list(NULL, "v")))
+  expect_error(dimnames(z) <- list("a"), "'dimnames' applied to non-array")
+  # The original keeps its flag.
+  expect_sv(z, c(1, 2, 3), "none", TRUE)
+  # NULL leaves the simd_vec as it is.
+  y <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  names(y) <- NULL
+  dim(y) <- NULL
+  dimnames(y) <- NULL
+  expect_sv(y, c(1, 2, 3), "none", TRUE)
+  expect_sv(unname(simd_vec(c(1, 2, 3), impl = "none")), c(1, 2, 3), "none")
+  # integer64 data keeps its class.
+  if (has_bit64()) {
+    w <- simd_vec(simd_as_integer64(c(1, 2)))
+    names(w) <- c("a", "b")
+    expect_identical(class(w), "integer64")
+    expect_identical(names(w), c("a", "b"))
+  }
+  # Base functions that name or shape their result give base's answer.
+  v <- c(3, 1, 2, 5)
+  expect_identical(quantile(simd_vec(v)), quantile(v))
+  expect_identical(summary(simd_vec(v)), summary(v))
+  expect_identical(stats::setNames(simd_vec(v), letters[1:4]), stats::setNames(v, letters[1:4]))
+  expect_identical(table(simd_vec(v), dnn = NULL), table(v, dnn = NULL))
+  expect_identical(matrix(simd_vec(v), 2), matrix(v, 2))
+  expect_identical(outer(simd_vec(v), simd_vec(v)), outer(v, v))
+  expect_identical(
+    unname(coef(stats::lm(simd_vec(v) ~ seq_along(v)))),
+    unname(coef(stats::lm(v ~ seq_along(v))))
+  )
 })
 
 test_that("is.na() returns a plain logical vector for every type", {
@@ -884,7 +942,7 @@ test_that("is.na() returns a plain logical vector for every type", {
   expect_identical(is.na(simd_vec(c(1L, NA))), c(FALSE, TRUE))
   expect_identical(is.na(simd_vec(c(1i, NA))), c(FALSE, TRUE))
   expect_identical(is.na(simd_vec(as.raw(1))), FALSE)
-  expect_identical(is.na(simd_vec(simd_as_integer64(c(1, NA)))), c(FALSE, TRUE))
+  if (has_bit64()) expect_identical(is.na(simd_vec(simd_as_integer64(c(1, NA)))), c(FALSE, TRUE))
 })
 
 test_that("complex simd_vecs use the complex kernels", {
@@ -984,7 +1042,8 @@ test_that("print, format and str", {
 
 # ---- integer64 -------------------------------------------------------------
 
-test_that("integer64 simd_vecs run the integer64 kernels without bit64", {
+test_that("integer64 simd_vecs run the integer64 kernels", {
+  skip_if_not(has_bit64(), "bit64 is not installed")
   v <- simd_as_integer64(c(1, -2, NA, 4))
   x <- simd_vec(v, impl = "none")
   expect_identical(class(x + x), c("simd_vec", "integer64"))

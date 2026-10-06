@@ -19,9 +19,13 @@ const char *const rsimd_etype_names[RSIMD_BAD + 1] = {
 
 rsimd_etype rsimd_etype_of(SEXP x) {
   if (Rf_isS4(x)) return RSIMD_BAD;
+  /* Classed data (Date, POSIXct, difftime, factor ...) would lose its class
+     and meaning; only integer64 and simd_vec are taken. Rf_isObject() only
+     tests a bit, so plain input pays nothing for this. */
+  if (Rf_isObject(x) && !Rf_inherits(x, "integer64") && !Rf_inherits(x, "simd_vec")) return RSIMD_BAD;
   switch (TYPEOF(x)) {
   case REALSXP: return Rf_inherits(x, "integer64") ? RSIMD_I64 : RSIMD_F64;
-  case INTSXP: return Rf_isFactor(x) ? RSIMD_BAD : RSIMD_I32;
+  case INTSXP: return RSIMD_I32;
   case LGLSXP: return RSIMD_LGL;
   case RAWSXP: return RSIMD_U8;
   case CPLXSXP: return RSIMD_C128;
@@ -468,7 +472,32 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op) {
   }
 }
 
+/* 1 while bit64's namespace is known to be loaded: set when
+   rsimd_set_i64_class() loads it, cleared by a hook on bit64's unloading
+   (.onLoad), so that a loaded bit64 costs nothing per call. */
+static int bit64_loaded = 0;
+
+SEXP C_simd_bit64_unloaded(void) {
+  bit64_loaded = 0;
+  return R_NilValue;
+}
+
 void rsimd_set_i64_class(SEXP out) {
+  /* An integer64 object without bit64's methods registered sorts, prints
+     and compares as the doubles its bits make, so bit64 is loaded first.
+     Evaluating R code here is safe where allocating is: out is protected
+     by the caller. */
+  if (!bit64_loaded) {
+    SEXP call = PROTECT(Rf_lang3(Rf_install("requireNamespace"), Rf_mkString("bit64"),
+                                 Rf_ScalarLogical(1)));
+    SET_TAG(CDDR(call), Rf_install("quietly"));
+    bit64_loaded = Rf_asLogical(Rf_eval(call, R_BaseEnv)) == 1;
+    UNPROTECT(1);
+  }
+  if (!bit64_loaded) {
+    Rf_error("integer64 results need package 'bit64'; install it with "
+             "install.packages(\"bit64\")");
+  }
   Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("integer64"));
 }
 

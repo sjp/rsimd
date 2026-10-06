@@ -34,6 +34,7 @@ simd_hamming <- function(x, y, na.rm = FALSE) {
 # The width class of an operand of simd_hamming_bits: 32-bit integers
 # (integer, logical), raw or integer64; anything else errors.
 .bits_class <- function(x, arg) {
+  if (is.object(x)) .check_data(x, arg)
   if (inherits(x, "integer64")) {
     return("integer64")
   }

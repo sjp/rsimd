@@ -82,7 +82,10 @@ First release.
 * **64-bit integers:** `bit64::integer64` vectors are supported by the sums,
   extremes, scans, arithmetic, predicates, comparisons, bit operations and
   conversions, with exact 64-bit results and bit64's warnings;
-  `simd_as_integer64()` converts to them (`?rsimd-integer64`).
+  `simd_as_integer64()` converts to them (`?rsimd-integer64`). Making an
+  integer64 result loads bit64, so that its methods sort, print and compare
+  the result correctly, and is an error, with an install hint, if bit64 is
+  not installed.
 * **`simd_vec` class:** `simd_vec()` wraps a vector so that the operators,
   the `Math` and `Summary` group generics, `mean()` and `anyNA()` use the
   SIMD kernels. An object can be pinned to one implementation
@@ -92,6 +95,13 @@ First release.
   `storage.mode<-`, `unclass()`, `readRDS()`, ...) can never carry a stale
   one; `Re()`, `Im()`, `Mod()`, `Arg()`, `Conj()`, `is.na()`, `[[<-`,
   `all.equal()` and `range(finite = TRUE)` have methods (`?simd_vec`).
+  `simd_unwrap()` and `bit64::as.integer64()` return the plain data, an
+  integer64 one keeping its class. A `simd_vec` has no names or
+  dimensions: setting them returns the plain data with them set, so
+  `quantile()`, `summary()` and `setNames()` give base R's results.
+* Classed data other than integer64 and `simd_vec` (dates, times,
+  `difftime`, factors, ...) is an error in every function and operator,
+  rather than being treated as its bare numbers.
 * Edge cases made consistent across implementations before release:
   `simd_idiv()` on doubles is the exact floor of the quotient, rounded once,
   for quotients of 2^52 and more too (it could be a few units off there);
