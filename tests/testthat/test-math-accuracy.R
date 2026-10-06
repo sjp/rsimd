@@ -35,34 +35,42 @@ test_that("unary functions are accurate on 1e5 random values (extended)", {
   for (name in names(tab)) check_math1(name, tab[[name]], extended = TRUE)
 })
 
-test_that("neon hands log, log2, cosh, asinh, acosh and pow to the C library", {
-  # issue 036: there the C library was measured faster than SLEEF, so these
-  # are the none tier's results bit for bit (asinh, acosh and pow, which
-  # SLEEF has no fast variant of, in fast mode too). Not on Windows.
-  skip_if_not("neon" %in% tiers_to_test(), "no neon tier")
+test_that("the arm64 tiers hand log, log2, cosh, asinh, acosh and pow to the C library", {
+  # issue 036: on neon, sve and sve2 the C library was measured faster than
+  # SLEEF, so these are the none tier's results bit for bit (asinh, acosh
+  # and pow, which SLEEF has no fast variant of, in fast mode too). Not on
+  # Windows.
+  arm <- intersect(c("neon", "sve", "sve2"), tiers_to_test())
+  skip_if(length(arm) == 0L, "no arm64 SIMD tier")
   skip_on_os("windows")
   tab <- math1_table()
-  same <- function(f, ..., acc) {
+  same <- function(tier, f, ..., acc) {
     old <- simd_math_accuracy(acc)
     on.exit(simd_math_accuracy(old))
     identical(
-      simd_with_impl("neon", suppressWarnings(f(...))),
+      simd_with_impl(tier, suppressWarnings(f(...))),
       simd_with_impl("none", suppressWarnings(f(...))),
       num.eq = FALSE
     )
   }
-  for (name in c("log", "log2", "cosh", "asinh", "acosh")) {
-    x <- c(math_inputs(tab[[name]][[3]]), NA, NaN, Inf, -Inf, 0, -0)
-    expect_true(same(tab[[name]][[1]], x, acc = "accurate"), label = name)
-    if (name %in% c("asinh", "acosh")) {
-      expect_true(same(tab[[name]][[1]], x, acc = "fast"), label = paste(name, "fast"))
+  x2 <- c(math_specials(), math_random(1500, -300, 300, TRUE))
+  for (tier in arm) {
+    for (name in c("log", "log2", "cosh", "asinh", "acosh")) {
+      x <- c(math_inputs(tab[[name]][[3]]), NA, NaN, Inf, -Inf, 0, -0)
+      expect_true(same(tier, tab[[name]][[1]], x, acc = "accurate"), label = paste(name, tier))
+      if (name %in% c("asinh", "acosh")) {
+        expect_true(same(tier, tab[[name]][[1]], x, acc = "fast"),
+          label = paste(name, tier, "fast")
+        )
+      }
     }
-  }
-  x <- c(math_specials(), math_random(1500, -300, 300, TRUE))
-  expect_true(same(simd_log, abs(x), 3, acc = "accurate"), label = "log base 3")
-  for (acc in c("accurate", "fast")) {
-    expect_true(same(simd_pow, abs(x) %% 30, x %% 8, acc = acc), label = paste("pow", acc))
-    expect_true(same(simd_pow, 2L, x, acc = acc), label = paste("pow int base", acc))
+    expect_true(same(tier, simd_log, abs(x2), 3, acc = "accurate"), label = paste("logb", tier))
+    for (acc in c("accurate", "fast")) {
+      expect_true(same(tier, simd_pow, abs(x2) %% 30, x2 %% 8, acc = acc),
+        label = paste("pow", tier, acc)
+      )
+      expect_true(same(tier, simd_pow, 2L, x2, acc = acc), label = paste("pow int", tier, acc))
+    }
   }
 })
 

@@ -45,10 +45,11 @@ First release.
   SIMD tiers and the C math library on `"none"`. `simd_math_accuracy("fast")`
   (option `rsimd.math_accuracy`) switches the SIMD tiers to SLEEF's faster
   3.5-ULP variants where they exist, with the same missing values, special
-  values and warnings. On `"neon"` (arm64), `simd_log()`, `simd_log2()`,
-  `simd_cosh()`, `simd_asinh()`, `simd_acosh()` and `simd_pow()` call the C
-  math library in accurate mode, which is faster there than SLEEF's two-lane
-  code, so they are identical to base R (`?simd_math_accuracy`).
+  values and warnings. On arm64 (`"neon"`, `"sve"`, `"sve2"`), `simd_log()`,
+  `simd_log2()`, `simd_cosh()`, `simd_asinh()`, `simd_acosh()` and
+  `simd_pow()` call the C math library in accurate mode, which is faster
+  there than SLEEF's 128-bit vector code, so they are identical to base R
+  (`?simd_math_accuracy`).
   Machine-learning helpers `simd_sigmoid()`,
   `simd_softmax()` and `simd_log_softmax()`.
 * **Floating-point extras:** `simd_ilogb()`, `simd_scaleb()`,

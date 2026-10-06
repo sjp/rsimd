@@ -189,10 +189,10 @@ code that handles them; and the cost of the precision modes for
 math accuracy modes (\code{?simd\_math\_accuracy}) at $10^7$ elements,
 with \code{pow}, \code{asinh} and complex functions in the latest runs
 (\code{asin\_cut} is \code{asin} on its branch cut, real $|x|$ from 1.01
-to 10). On \code{neon}, \code{log}, \code{pow} and \code{asinh} in
-accurate mode call the C math library, as \code{none} does, because it is
-faster there than SLEEF's two-lane code; their \code{neon} and
-\code{none} rows differ only by noise.
+to 10). On \code{neon}, \code{sve} and \code{sve2}, \code{log},
+\code{pow} and \code{asinh} in accurate mode call the C math library, as
+\code{none} does, because it is faster there than SLEEF's 128-bit code;
+their rows for those tiers and \code{none} differ only by noise.
 
 \subsection*{Reading the tables}
 

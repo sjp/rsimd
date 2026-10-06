@@ -53,7 +53,7 @@ There are four tables:
   showing what SLEEF's 3.5-ULP variants gain. The `none` tier and base R have no modes,
   so their rows differ only by noise, and neither do the functions without a fast
   variant (`pow`, `asinh`). Base R's `hypot` is `sqrt(x * x + y * y)`, which can
-  overflow. On `neon`, `log`, `pow` and `asinh` in accurate mode run the C math library,
+  overflow. On `neon`, `sve` and `sve2`, `log`, `pow` and `asinh` in accurate mode run the C math library,
   as `none` does (see `math_paths.R` below).
 
 Inputs are generated once per size with `set.seed(20261003)`: doubles from
@@ -182,9 +182,9 @@ The benchmarks vignette does not run `bench`. It renders snapshots committed und
 ## Math paths
 
 `math_paths.R` times the elementary functions whose implementation depends on the tier
-(issue 036): the real functions the `neon` tier hands to the C math library because
-glibc's scalar code beat SLEEF's two-lane vectors there (`log`, `log2`, `cosh`, `asinh`,
-`acosh`, `pow`, with `exp` and `cbrt` as controls), and the complex `asin`, `acos`,
+(issue 036): the real functions the arm64 tiers (`neon`, `sve`, `sve2`) hand to the C
+math library because its scalar code beat SLEEF's 128-bit vectors there (`log`, `log2`,
+`cosh`, `asinh`, `acosh`, `pow`, with `exp` and `cbrt` as controls), and the complex `asin`, `acos`,
 `atanh`, `asinh` and `atan` on base R's branch cuts (pure cut input, 25% of the elements
 on the cut, and input off the axes). Every case runs on every tier in both accuracy
 modes and in base R, and the last columns give each SIMD tier's accurate time over

@@ -21,7 +21,8 @@
  * with an infinite operand (base R's rules there are not C's). In accurate
  * mode a tier may instead run the none tier's loops for the ops where libm was
  * measured faster than SLEEF on that tier (RSIMD_MATH1_LIBM and
- * RSIMD_MATH2_LIBM: log, log2, logb, cosh, asinh, acosh and pow on neon),
+ * RSIMD_MATH2_LIBM: log, log2, logb, cosh, asinh, acosh and pow on neon,
+ * sve and sve2),
  * and in fast mode for those of them SLEEF has no fast variant of. A SIMD tier
  * built without SLEEF leaves these slots empty, so they are filled from
  * the next tier down, ultimately none.
@@ -831,13 +832,15 @@ static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, doubl
    because libm was measured faster on this tier than SLEEF's 1-ULP vector
    function (issue 036, amending D13): bit k of RSIMD_MATH1_LIBM is
    math1_f64 op k, of RSIMD_MATH2_LIBM math2_f64 op k. A function belongs
-   here only if libm wins on every core measured: on neon, Apple's and
-   Neoverse's, with glibc (Windows is not measured). LOGB is log(x) /
+   here only if libm wins on every core measured: on neon, Apple's (glibc
+   and macOS's libm) and Neoverse N2's; on sve and sve2, which are 128-bit
+   there, Neoverse N2's (glibc). Windows is not measured. LOGB is log(x) /
    log(base), so it follows LOG. Fast mode uses SLEEF's 3.5-ULP functions:
    only the ops SLEEF has none of (RSIMD_MATH*_LIBM_FAST) stay on libm
    there, since without one fast mode is accurate mode. Configure's
    RSIMD_NO_MATH_LIBM=1 empties the lists, to time SLEEF against libm. */
-#if RSIMD_TIER_IS(neon) && !defined(_WIN32) && !defined(RSIMD_NO_MATH_LIBM)
+#if (RSIMD_TIER_IS(neon) || RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)) && !defined(_WIN32) && \
+  !defined(RSIMD_NO_MATH_LIBM)
 #define RSIMD_MATH1_LIBM_FAST (1u << RSIMD_MATH_ASINH | 1u << RSIMD_MATH_ACOSH)
 #define RSIMD_MATH1_LIBM                                                         \
   (RSIMD_MATH1_LIBM_FAST | 1u << RSIMD_MATH_LOG | 1u << RSIMD_MATH_LOG2 |        \

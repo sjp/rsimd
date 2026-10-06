@@ -1,12 +1,12 @@
 # Times the elementary functions whose implementation depends on the tier
 # (bench/math_paths.R, issue 036) on the arm64 runners, on demand only: the
-# neon tier hands some functions to the C math library (RSIMD_MATH1_LIBM in
+# arm64 tiers hand some functions to the C math library (RSIMD_MATH1_LIBM in
 # src/kernels/math.inc.c) only where libm was measured faster on every core,
 # and this job measures Neoverse (ubuntu-24.04-arm) and Apple with macOS's
 # libm (macos-latest). It times two builds: the package as it is, and one
 # configured with RSIMD_NO_MATH_LIBM=1, whose SIMD tiers use SLEEF for every
-# function; an op belongs on the list where the first build's neon column
-# beats the second's. The tables go to the job summary and, with a csv of
+# function; an op belongs on the list where the first build's neon (and
+# sve, sve2) columns beat the second's. The tables go to the job summary and, with a csv of
 # every timing, to an artifact. Informational: no timing is checked. Hosted
 # runners share hardware, so compare the tiers within one run, not runs.
 on:
