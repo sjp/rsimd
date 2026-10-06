@@ -12,15 +12,9 @@ and the best supported implementation is chosen automatically, while a
 specific implementation, or a plain scalar one, can be selected by name.
 }
 \section{Options}{
-\describe{
-  \item{\code{rsimd.impl}}{The implementation to use. Defaults to
-    \code{"auto"}, or to the value of the \env{RSIMD_IMPL} environment
-    variable when it is set before the package is loaded.}
-  \item{\code{rsimd.precision}}{Accumulation mode for floating-point
-    reductions. Defaults to \code{"fast"}.}
-  \item{\code{rsimd.na_check}}{Whether integer and logical kernels check for
-    \code{NA}. Defaults to \code{TRUE}.}
-}
+The options that control the package (\code{rsimd.impl},
+\code{rsimd.precision}, \code{rsimd.na_check} and
+\code{rsimd.math_accuracy}) are described in \link{rsimd_options}.
 }
 \seealso{
 \code{\link{simd_version}}

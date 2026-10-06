@@ -148,7 +148,9 @@ Type promotion follows base R (logical and integer give integer,
 \code{/} and \code{^} give double), and operands must have equal lengths
 or length 1. \code{==}, \code{!=}, \code{<}, \code{>}, \code{<=} and
 \code{>=} call \code{\link{simd_eq}} and friends and return plain logical
-vectors. \code{&}, \code{|} and \code{!} call \code{\link{simd_and}},
+vectors. Comparing with a character vector (\code{simd_vec(1:3) == "2"})
+is an error, because \pkg{rsimd} rejects character input everywhere, where
+base R would compare the numbers as strings. \code{&}, \code{|} and \code{!} call \code{\link{simd_and}},
 \code{\link{simd_or}} and \code{\link{simd_not}}, or for raw data
 \code{\link{simd_bit_and}}, \code{\link{simd_bit_or}} and
 \code{\link{simd_bit_not}}. A plain operand may be on either side. An
@@ -160,11 +162,14 @@ class's operator methods (\code{\link{chooseOpsMethod}}) and rejects it.
 
 \strong{Group generics.} The \code{Math} functions with a kernel
 (\code{abs}, \code{sign}, \code{sqrt}, \code{floor}, \code{ceiling},
-\code{trunc}, \code{round} with any \code{digits}, \code{exp},
-\code{expm1}, \code{log} with any \code{base}, \code{log2}, \code{log10},
+\code{trunc}, \code{round} with a single \code{digits}, \code{exp},
+\code{expm1}, \code{log} with a single \code{base} (or, for complex data,
+a \code{base} following the broadcast rule), \code{log2}, \code{log10},
 \code{log1p}, the trigonometric, \code{pi}-scaled and hyperbolic
 functions and their inverses, \code{cumsum}, \code{cumprod},
-\code{cummax}, \code{cummin}) call the \code{simd_} functions. The
+\code{cummax}, \code{cummin}) call the \code{simd_} functions; a longer
+\code{digits}, or a longer \code{base} with non-complex data, is an error,
+unlike in base R. The
 \code{Summary} functions (\code{sum}, \code{prod}, \code{min},
 \code{max}, \code{range}, \code{any}, \code{all}) and \code{mean} call
 theirs with \code{na.rm} passed on; several arguments are combined with
@@ -218,8 +223,9 @@ for \code{integer64} data and converts other data.
 \code{as.integer()} and \code{as.logical()} unwrap to plain vectors of
 their type: \code{integer64} data becomes double for \code{as.vector()},
 as in \pkg{bit64}. \code{as.data.frame()} (so \code{data.frame(v = x)})
-unwraps too. \code{unclass(x)} removes only the class and keeps the other
-attributes (voiding the flag, as above). \code{print()} shows a header
+unwraps too. Do not unwrap with \code{unclass(x)}: it removes the whole
+class, \code{"integer64"} included, and leaves the \pkg{rsimd} attributes
+behind (voiding the flag, as above). \code{print()} shows a header
 line before the data, \code{format()} formats the data and \code{str()}
 gives a one-line summary.
 

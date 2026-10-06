@@ -57,6 +57,8 @@ produced"} warning; it is to \code{simd_sinpi()} and \code{simd_cospi()}
 what \code{\link{simd_sincos}()} is to \code{simd_sin()} and
 \code{simd_cos()}.
 
+None of these functions takes complex input.
+
 \rsimdMath
 
 \rsimdAttributes

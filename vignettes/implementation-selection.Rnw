@@ -39,8 +39,8 @@ Id & Requires & Platforms & Bits & Doubles \\
 \code{avx2} & AVX2 and FMA & x86-64 & 256 & 4 \\
 \code{avx512} & AVX-512 F, BW, DQ and VL & x86-64 & 512 & 8 \\
 \code{neon} & Advanced SIMD & arm64 (also 32-bit ARM) & 128 & 2 \\
-\code{sve} & SVE & arm64 Linux & 128--2048 & 2--32 \\
-\code{sve2} & SVE2 & arm64 Linux & 128--2048 & 2--32 \\
+\code{sve} & SVE & arm64 Linux, FreeBSD & 128--2048 & 2--32 \\
+\code{sve2} & SVE2 & arm64 Linux, FreeBSD & 128--2048 & 2--32 \\
 \code{rvv}, \code{wasm128} & reserved & none yet & & \\
 \hline
 \end{tabular}

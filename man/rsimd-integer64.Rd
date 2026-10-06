@@ -36,8 +36,9 @@ data without it.
 \code{\link{simd_pmax}}, \code{\link{simd_pmin_num}},
 \code{\link{simd_pmax_num}}, \code{\link{simd_clamp}},
 \code{\link{simd_mul_add}} and \code{\link{simd_add_mul}};
-\code{\link{simd_div}} converts its operands to double and returns a
-double, as \pkg{bit64}'s \code{/} does.}
+\code{\link{simd_div}} returns a double: it converts both operands to double
+and then divides, so a quotient can differ by 1 ULP from \pkg{bit64}'s
+\code{/}, which divides in \code{long double} and rounds once.}
 \item{Predicates and comparisons}{\code{\link{simd_is_na}},
 \code{\link{simd_is_nan}} (always \code{FALSE}), \code{\link{simd_is_finite}}
 (not \code{NA}), \code{\link{simd_is_infinite}} (always \code{FALSE}),
@@ -120,8 +121,12 @@ modulo 64. A result with the bit pattern of \code{NA} (only the sign bit set,
 as in \code{simd_shl(x, 63)} of an odd \code{x}) reads as \code{NA}.
 
 \strong{Missing values.} \code{na_check = FALSE} promises there is no
-\code{NA} and skips looking for it; a broken promise counts \code{NA} as
-\eqn{-2^{63}}.
+\code{NA} and skips looking for it. A broken promise counts an
+\code{integer64} \code{NA} as \eqn{-2^{63}}. An integer or logical
+\code{NA} operand counts as \eqn{-2^{31}} in arithmetic
+(\code{simd_add(as.integer64(1), NA_integer_, na_check = FALSE)} is
+\eqn{-2147483647}), but the bit operations always convert it to the
+\code{integer64} \code{NA}.
 
 \strong{Attributes.} \rsimdAttributes Note that a class vector with more
 than one element (such as that of a \code{simd_vec}) is recognised as
@@ -140,7 +145,8 @@ been timed when choosing; the choices for \code{"sse2"}, \code{"avx2"},
 are not measured.
 \tabular{llllll}{
 \strong{operation} \tab \strong{sse2} \tab \strong{avx2} \tab \strong{avx512} \tab \strong{neon} \tab \strong{sve, sve2} \cr
-sum, add, sub \tab SIMDe \tab native \tab native \tab native \tab native \cr
+sum \tab native, SIMDe NA test \tab native \tab native \tab native \tab native \cr
+add, sub \tab native, SIMDe overflow test \tab native \tab native \tab native \tab native \cr
 min, max, their magnitudes, pmin, pmax, clamp, comparisons \tab SIMDe \tab native \tab native \tab native \tab native \cr
 missing values, predicates, any, all \tab native \tab native \tab native \tab native \tab native \cr
 mul (checked) \tab partial \tab native \tab native \tab native \tab native \cr
@@ -159,9 +165,14 @@ integer64 to integer and logical, integer to integer64 \tab native \tab native \
 integer64 to and from raw \tab scalar \tab scalar \tab scalar \tab scalar \tab scalar
 }
 * \code{"checked"} and \code{"saturating"} modes; \code{"truncating"} is
-scalar. Checked multiplication takes the vector path when both operands of
-every lane are within \eqn{\pm 2^{31}} (and, on SVE, always); other lanes
-use the scalar code. On 32-bit ARM the \code{"neon"} kernels use NEON's
+scalar. Checked multiplication takes the vector path while both operands of
+every lane are within \eqn{\pm 2^{31}} (and, on SVE, always); from the
+first vector with a larger operand, the rest of the block being processed
+(up to \eqn{2^{20}} elements) runs in scalar code. \emph{SIMDe NA test}:
+the sum's own additions are native SSE2, and only the test for \code{NA}
+(skipped with \code{na_check = FALSE}) uses SIMDe's 64-bit compare.
+\emph{SIMDe overflow test}: the additions and subtractions are native,
+and only the overflow test of the checked forms uses SIMDe's compares. On 32-bit ARM the \code{"neon"} kernels use NEON's
 64-bit lanes but convert to and from double in scalar code.
 }
 \seealso{

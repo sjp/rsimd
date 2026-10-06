@@ -28,10 +28,14 @@ options(width = 72, prompt = "R> ", continue = "+  ")
 \pkg{rsimd} computes common operations on R's atomic vectors, such as sums,
 elementwise arithmetic, predicates and elementary functions, with the single
 instruction, multiple data (SIMD) instructions of x86-64 and arm64 CPUs.
-Each function is a drop-in counterpart of a base R function, named
+Each function is a counterpart of a base R function, named
 \code{simd\_} followed by what it computes, and follows base R's rules for
 result types, missing values and warnings, with any differences documented
-on its help page. The package detects the CPU's instruction sets when it is
+on its help page. It is not always a drop-in replacement: attributes and
+classes are dropped, and only a length-one operand is recycled; the
+\emph{Numerical semantics} vignette
+(\code{vignette("numerical-semantics", package = "rsimd")}) has the
+details. The package detects the CPU's instruction sets when it is
 loaded and uses the best implementation it supports, while letting you
 choose another one, including plain C, by name.
 

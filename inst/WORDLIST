@@ -3,6 +3,8 @@ acosh
 anyNA
 arg
 Arg
+asin
+asinh
 atan
 avx
 AVX
@@ -14,6 +16,7 @@ cexp
 CMD
 conj
 Conj
+cosh
 cospi
 cpu
 CRAN's
@@ -56,8 +59,10 @@ mavx
 md
 mfma
 mul
+NaNs
 ne
 NEON's
+Neoverse
 NET's
 Neumaier
 Neumaier's

@@ -34,10 +34,13 @@ result:
 \code{log10}, \code{log1p}, \code{pow} \tab 1 \tab 1 \cr
 \code{asinh}, \code{acosh}, \code{atanh} \tab 1 \tab 1 \cr
 \code{simd_exp2m1}, \code{simd_exp10m1}, \code{simd_log2p1}, \code{simd_log10p1} \tab 2 \tab 2 \cr
-\code{simd_sigmoid}, \code{simd_softmax}, \code{simd_log_softmax} \tab as \code{exp} \tab as \code{exp} \cr
+\code{simd_sigmoid} \tab about 2.5 \tab about 2.5 \cr
+\code{simd_softmax}, \code{simd_log_softmax} \tab \code{exp}'s, then a sum and a division or logarithm \tab \code{exp}'s, then a sum and a division or logarithm \cr
 }
-The functions whose bound is the same in both modes give identical results
-in both: SLEEF has no 3.5-ULP variant of them, or (for \code{exp2} and
+\code{simd_sigmoid} is \code{e / (1 + e)} with \code{e} an exponential, so
+its result is rounded three times, on every implementation including
+\code{"none"}. The functions whose bound is the same in both modes give
+identical results in both: SLEEF has no 3.5-ULP variant of them, or (for \code{exp2} and
 \code{exp10}) none that is faster. Only the last bits of finite results
 change between the modes. Missing values (\code{NA} and \code{NaN} kept
 apart), infinities, the signs of zero results, the exact cases (such as

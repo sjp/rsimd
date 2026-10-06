@@ -45,7 +45,9 @@ total does not fit in an integer, as in base R.}
 \code{sum_sq}, \code{sum_abs}, \code{dot}, \code{norm}, \code{dist},
 \code{cosine}, \code{var}, \code{sd}, \code{cumsum} and the denominators of
 \code{softmax} and \code{log_softmax}) are accumulated in the mode set with
-\code{\link{simd_precision}()}; other operations are not affected.
+\code{\link{simd_precision}()}, which also sets the order of the
+multiplications in \code{prod} of a complex vector (see
+\code{\link{simd_prod}}); other operations are not affected.
 \describe{
 \item{\code{"fast"}}{(the default) keeps several partial sums in the lanes of
 the vector registers and adds them at the end. It is the fastest mode. The
@@ -92,15 +94,17 @@ zero-length result.}
 \strong{Types.} Logical operands count as integers. Integer and logical
 operands give an integer result where base R's operator does; any double
 operand makes the result double. Integers mixed with doubles are converted
-as they are read. Raw vectors are rejected with base R's message; complex
-and \pkg{bit64} \code{integer64} operands are not supported.}
+as they are read. Raw vectors are rejected with base R's message. Which
+functions also take complex or \pkg{bit64} \code{integer64} operands, and
+what those give, is stated with each function.}
 
 \newcommand{\rsimdMath}{\strong{Implementations and accuracy.} The SIMD
 implementations use the vectorised functions of the bundled SLEEF library:
 its 1-ULP (\code{_u10}) variants, and its 0.5-ULP (\code{_u05}) variants for
 \code{sinpi}, \code{cospi} and \code{hypot}. Results are within 1 ULP (unit
 in the last place) of the exact value (0.5 ULP for the \code{_u05}
-functions), and so may differ from base R in the last bit. Option
+functions), unless the function's own description gives another bound,
+and so may differ from base R in the last bit. Option
 \code{rsimd.math_accuracy = "fast"} trades accuracy for speed with SLEEF's
 3.5-ULP variants: see \code{\link{simd_math_accuracy}()} for the bounds of
 each function in both modes. The \code{"none"}
@@ -118,7 +122,8 @@ either is \code{NaN}, as base R's math functions do. When a result is
 call. Overflow to \code{Inf} and underflow to zero (subnormal results are
 produced, never flushed to zero) are not warned about. Integer and logical
 input is converted to double, an integer \code{NA} becoming
-\code{NA_real_}; complex and \code{integer64} input is not supported.
+\code{NA_real_}. Which functions also take complex input is stated with
+each function; none takes \pkg{bit64} \code{integer64} input.
 
 \strong{Signed zeros.} Odd functions return \code{-0} for \code{-0}, as C
 does and base R did before version 4.6.0; since 4.6.0 base R returns

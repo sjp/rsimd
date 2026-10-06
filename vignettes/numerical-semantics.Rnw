@@ -131,7 +131,11 @@ or the option \code{rsimd.precision}:
 \code{simd\_sum\_sq}, \code{simd\_sum\_abs}, \code{simd\_dot},
 \code{simd\_norm}, \code{simd\_dist}, \code{simd\_cosine}, \code{simd\_var},
 \code{simd\_sd}, \code{simd\_cumsum} and the denominators of
-\code{simd\_softmax} and \code{simd\_log\_softmax}. Nothing else changes.
+\code{simd\_softmax} and \code{simd\_log\_softmax}, and the order of the
+multiplications in \code{simd\_prod} of a complex vector (fast mode keeps
+one partial product per lane; compensated mode multiplies in order in
+double-double arithmetic). Nothing else changes; in particular
+\code{simd\_prod} of a double vector is the same in every mode.
 
 The classic example is \code{c(1e16, 1, -1e16)}, whose exact sum is 1.
 Adding in order in double precision loses the 1, because $10^{16} + 1$ is

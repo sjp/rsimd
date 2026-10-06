@@ -59,7 +59,7 @@ All implementations have their own kernels for these functions, except that
 on 32-bit ARM the double operations use the scalar \code{"none"} code.
 Integer64 operands (with integer64, integer or logical ones) give integer64
 results; with a double operand they are converted to double, with a warning
-(see \link{rsimd-integer64}).
+(see \link{rsimd-integer64}). Complex operands are not taken.
 }
 \value{
 A vector of the length of the longest operand: integer when every operand is

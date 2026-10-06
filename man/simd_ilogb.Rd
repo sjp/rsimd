@@ -73,7 +73,8 @@ down (see \code{\link{simd_mod}}). A zero result has the sign of \code{x}.
 \code{simd_remainder(Inf, y)} are \code{NaN} and warn
 \code{"NaNs produced"}, unlike \code{\%\%}, which is silent.
 
-None of these functions depends on option \code{rsimd.math_accuracy}.
+None of these functions depends on option \code{rsimd.math_accuracy}, and
+none takes complex input.
 
 \rsimdBroadcast
 

@@ -20,7 +20,9 @@
  * timed on the development machine).
  *
  *   op                       sse2     avx2     avx512   neon     sve/sve2
- *   sum (exact, carries)     SIMDe    native   native   native   native
+ *   sum (exact, carries)     native   native   native   native   native
+ *     (the NA test uses 64-bit compares: SIMDe on sse2, only when NA
+ *     checking is on)
  *   min/max (also of |x|),   SIMDe    native   native   native   native
  *     pmin/pmax, clamp,      (64-bit compares are SSE4.2; min/max are
  *     comparisons            compare + blend except on avx512 and sve)

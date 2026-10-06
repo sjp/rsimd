@@ -61,7 +61,7 @@ on 32-bit ARM the double operations use the scalar \code{"none"} code.
 \code{simd_mul_add()} and \code{simd_add_mul()} of integer64 operands (with
 integer64, integer or logical ones) follow the integer rules in 64 bits and
 return integer64 (see \link{rsimd-integer64}); \code{simd_fma()} and \code{simd_lerp()}
-do not take integer64.
+do not take integer64. None of them takes complex operands.
 }
 \value{
 A vector of the length of the longest operand: integer for
