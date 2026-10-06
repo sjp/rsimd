@@ -383,10 +383,19 @@ typedef void (*rsimd_c128_fn1)(const Rcomplex *x, Rcomplex *out);
    like base R (api_cmath.c): the none tier calls them for every element
    and the vector tiers for the elements their formulas leave out. The
    one-operand ones are called after the NA check (an NA part gives NA in
-   both parts), the two-operand ones always. */
+   both parts), the two-operand ones always.
+
+   asin_cut says how f1[RSIMD_CM_ASIN] (and so acos and asinh) rounds
+   a^2 - 1 in base R's branch-cut code, log(a + sqrt(a^2 - 1)), as a probe
+   of it found: with one rounding (UNFUSED) or as a fused multiply-add
+   (FUSED). The vector tiers compute that code with the same rounding;
+   where it is UNKNOWN they leave the elements where the two differ much
+   (a < 1.5) to f1. */
+enum { RSIMD_CUT_UNKNOWN = 0, RSIMD_CUT_UNFUSED, RSIMD_CUT_FUSED };
 typedef struct {
   rsimd_c128_fn1 f1[RSIMD_CM_COUNT];
   rsimd_c128_fn f2[RSIMD_CM2_COUNT];
+  int asin_cut;
 } rsimd_cmath_base;
 /* Status bits of the conversion kernels, for base R's and bit64's
    coercion warnings (in checked mode only): a double outside the integer

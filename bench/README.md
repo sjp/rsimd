@@ -19,7 +19,7 @@ Rscript bench/run.R --ops sum,exp --sizes 1e4,1e6 --out /tmp/bench
 | Option | Meaning |
 |--------|---------|
 | `--quick` | Sizes 1e3 and 1e5 and half the timing budget (at least 10, at most 100 iterations). |
-| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`. |
+| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`. |
 | `--sizes a,b` | Input lengths (default `1e3,1e5,1e7`: L1-resident, cache-resident, DRAM-bound). |
 | `--out dir` | Output directory (default `bench/results/`, which git ignores). |
 
@@ -47,15 +47,21 @@ There are four tables:
   integer `sum()` does too), so those rows measure call overhead, not throughput.
 - **Precision modes**: `sum` and `dot` under `"fast"`, `"pairwise"` and `"compensated"`
   at the largest size, showing what the more accurate modes cost.
-- **Math accuracy modes**: `sin`, `log`, `tanh`, `atan2` and `hypot` under
-  `simd_math_accuracy()` `"accurate"` and `"fast"` at the largest size, showing what
-  SLEEF's 3.5-ULP variants gain. The `none` tier and base R have no modes, so their rows
-  differ only by noise. Base R's `hypot` is `sqrt(x * x + y * y)`, which can overflow.
+- **Math accuracy modes**: `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow` and `asinh`, and
+  the complex `sqrt`, `exp`, `log`, `sin`, `asin` (also on its branch cut, `asin_cut`)
+  and `pow`, under `simd_math_accuracy()` `"accurate"` and `"fast"` at the largest size,
+  showing what SLEEF's 3.5-ULP variants gain. The `none` tier and base R have no modes,
+  so their rows differ only by noise, and neither do the functions without a fast
+  variant (`pow`, `asinh`). Base R's `hypot` is `sqrt(x * x + y * y)`, which can
+  overflow. On `neon`, `log`, `pow` and `asinh` in accurate mode run the C math library,
+  as `none` does (see `math_paths.R` below).
 
 Inputs are generated once per size with `set.seed(20261003)`: doubles from
 `runif(n, -100, 100)` (`x`, `y`, `z` independent), `exp` on `runif(n, -50, 50)`,
 `as_integer` on `runif(n, -1e6, 1e6)`, integers from `sample.int(2e6, n, TRUE) - 1e6`,
-`log` on `10^runif(n, -3, 3)` and `tanh` on `runif(n, -5, 5)`.
+`log` on `10^runif(n, -3, 3)` and `tanh` on `runif(n, -5, 5)`, `pow` as
+`10^runif(n, -3, 3)` to the power `runif(n, -5, 5)`, and `asin_cut` on real numbers with
+1.01 ≤ |x| ≤ 10.
 Each timing is `bench::mark(check = FALSE, filter_gc = TRUE, memory = FALSE)` with at least
 20 and at most 200 iterations and a minimum time of 0.1 s, 0.2 s or 0.5 s for
 n < 1e5, < 1e7 and ≥ 1e7. `check = FALSE` because results legitimately differ in the last
@@ -172,6 +178,29 @@ The benchmarks vignette does not run `bench`. It renders snapshots committed und
    platform (for example `linux-x86_64.md` and `linux-x86_64.csv`), replacing that
    platform's previous snapshot.
 3. Rebuild the vignettes and check the tables and the metadata (date, rsimd version, CPU).
+
+## Math paths
+
+`math_paths.R` times the elementary functions whose implementation depends on the tier
+(issue 036): the real functions the `neon` tier hands to the C math library because
+glibc's scalar code beat SLEEF's two-lane vectors there (`log`, `log2`, `cosh`, `asinh`,
+`acosh`, `pow`, with `exp` and `cbrt` as controls), and the complex `asin`, `acos`,
+`atanh`, `asinh` and `atan` on base R's branch cuts (pure cut input, 25% of the elements
+on the cut, and input off the axes). Every case runs on every tier in both accuracy
+modes and in base R, and the last columns give each SIMD tier's accurate time over
+`none`'s, so a value above 1 is a function where that tier is slower than the scalar
+code:
+
+```sh
+Rscript bench/math_paths.R                       # n = 1e6, 3 rounds of 7 calls
+Rscript bench/math_paths.R --ops log,pow --rounds 7 --n 1e5
+```
+
+Each timing is the median of the rounds' medians, with the implementations taking turns
+within a round. The table goes to stdout and, with a csv of every timing, to
+`bench/results/math-paths-<timestamp>.md`. The `math-paths` workflow runs it on demand on
+`ubuntu-24.04-arm` (Neoverse) and `macos-latest`. A function stays on the libm list in
+`src/kernels/math.inc.c` only while libm wins on every core measured.
 
 ## Smoke scripts
 

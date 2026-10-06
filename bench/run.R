@@ -191,11 +191,20 @@ math_ops <- list(
     op = "hypot", type = "double", simd = quote(simd_hypot(x, y)),
     base = quote(sqrt(x * x + y * y))
   ),
+  # Two of the functions the neon tier hands to the C math library (issue
+  # 036); pow has no fast variant.
+  list(op = "pow", type = "double", simd = quote(simd_pow(xp, xt)), base = quote(xp^xt)),
+  list(op = "asinh", type = "double", simd = quote(simd_asinh(x)), base = quote(asinh(x))),
   list(op = "sqrt", type = "complex", simd = quote(simd_sqrt(cs)), base = quote(sqrt(cs))),
   list(op = "exp", type = "complex", simd = quote(simd_exp(cs)), base = quote(exp(cs))),
   list(op = "log", type = "complex", simd = quote(simd_log(cs)), base = quote(log(cs))),
   list(op = "sin", type = "complex", simd = quote(simd_sin(cs)), base = quote(sin(cs))),
   list(op = "asin", type = "complex", simd = quote(simd_asin(cs)), base = quote(asin(cs))),
+  # On base R's branch cut: real parts beyond +-1, imaginary parts zero.
+  list(
+    op = "asin_cut", type = "complex", simd = quote(simd_asin(ccut)),
+    base = quote(asin(ccut))
+  ),
   list(
     op = "pow", type = "complex", simd = quote(simd_pow(cs, 0.5 + 0.5i)),
     base = quote(cs^(0.5 + 0.5i))
@@ -259,6 +268,8 @@ make_inputs <- function(n) {
   env$cu <- complex(modulus = 1, argument = env$x)
   # Parts within +-5 for the elementary functions (no overflow).
   env$cs <- complex(real = env$xt, imaginary = env$y / 20)
+  # |x| in [1.01, 10] on the real axis (base R's branch cut of asin).
+  env$ccut <- as.complex(sign(env$x) * (1.01 + abs(env$x) * 0.0899))
   env
 }
 

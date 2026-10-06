@@ -334,11 +334,9 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_tanh_(const int tan, const int fast, rsi
    magnitude of the imaginary part, by Hull, Fairgrieve and Tang's
    algorithm (ACM TOMS 23, 1997) without its regions for very large and
    very small parts: parts beyond 2^500 and |y| below 2^-500 but not zero
-   are left out, and with `cut` y = 0 with |x| > 1 (base R's branch-cut
-   code) too. */
-RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_asin_core_(const int acos, const int cut, const int fast,
-                                                   rsimd_vf64 ax, rsimd_vf64 ay, rsimd_vf64 *rr,
-                                                   rsimd_vf64 *ri) {
+   are left out. */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_asin_core_(const int acos, const int fast, rsimd_vf64 ax,
+                                                   rsimd_vf64 ay, rsimd_vf64 *rr, rsimd_vf64 *ri) {
   const rsimd_vf64 one = RSIMD_CM_V(1.0), half = RSIMD_CM_V(0.5), zero = rsimd_vf64_zero();
   const rsimd_vf64 xp1 = rsimd_vf64_add(ax, one), xm1 = rsimd_vf64_sub(ax, one),
                    onemx = rsimd_vf64_sub(one, ax);
@@ -387,22 +385,90 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_asin_core_(const int acos, const int cut
   }
   *rr = re;
   *ri = im;
-  {
-    rsimd_mf64 m = rsimd_mf64_or(
-      rsimd_vf64_cmp_gt(rsimd_vf64_max(ax, ay), RSIMD_CM_V(0x1p500)),
-      rsimd_mf64_and(rsimd_vf64_cmp_gt(ay, zero), rsimd_vf64_cmp_lt(ay, RSIMD_CM_V(0x1p-500))));
-    if (cut) {
-      m = rsimd_mf64_or(m, rsimd_mf64_and(rsimd_vf64_cmp_eq(ay, zero), rsimd_vf64_cmp_gt(ax, one)));
+  return rsimd_mf64_or(
+    rsimd_vf64_cmp_gt(rsimd_vf64_max(ax, ay), RSIMD_CM_V(0x1p500)),
+    rsimd_mf64_and(rsimd_vf64_cmp_gt(ay, zero), rsimd_vf64_cmp_lt(ay, RSIMD_CM_V(0x1p-500))));
+}
+
+/* The lanes on base R's branch cut for asin and acos: b = 0 with |a| > 1
+   (and for atan with the parts the other way round). */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_on_cut_(rsimd_vf64 a, rsimd_vf64 b) {
+  return rsimd_mf64_and(rsimd_vf64_cmp_eq(b, rsimd_vf64_zero()),
+                        rsimd_vf64_cmp_gt(rsimd_vf64_abs(a), RSIMD_CM_V(1.0)));
+}
+
+/* Base R's z_asin on its branch cut (y = 0, |x| > 1): with t1 = |x + 1| / 2,
+   t2 = |x - 1| / 2 and a = t1 + t2, asin(t1 - t2) + i log(a + sqrt(a^2 -
+   1)), the imaginary part negated for x > 1, the operations as base R's
+   (only asin and log are SLEEF's). t1 - t2 is +-1 unless x + 1 or x - 1
+   rounds; beyond +-1 it gives base R's NaN, which the caller redoes. a^2 -
+   1 is rounded as base R's code rounds it (`how`, an RSIMD_CUT_* value).
+   Returns the lanes it leaves to base R: where `how` is unknown, a < 1.5,
+   where a^2 - 1 cancels and the two roundings give different results. */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_asin_cut_(const int fast, const int how, rsimd_vf64 x,
+                                                  rsimd_vf64 *re, rsimd_vf64 *im) {
+  const rsimd_vf64 one = RSIMD_CM_V(1.0), half = RSIMD_CM_V(0.5);
+  const rsimd_vf64 t1 = rsimd_vf64_mul(half, rsimd_vf64_abs(rsimd_vf64_add(x, one))),
+                   t2 = rsimd_vf64_mul(half, rsimd_vf64_abs(rsimd_vf64_sub(x, one)));
+  const rsimd_vf64 a = rsimd_vf64_add(t1, t2), d = rsimd_vf64_sub(t1, t2);
+  const rsimd_vf64 a21 = how == RSIMD_CUT_FUSED ? rsimd_vf64_fma(a, a, rsimd_vf64_neg(one))
+                                                : rsimd_vf64_sub(rsimd_vf64_mul(a, a), one);
+  const rsimd_vf64 l = RSIMD_CM_F1(log, rsimd_vf64_add(a, rsimd_vf64_sqrt(a21)));
+  const rsimd_mf64 unit = rsimd_vf64_cmp_eq(rsimd_vf64_abs(d), one);
+  /* asin(+-1) is +-pi/2 correctly rounded, as the C library gives it. */
+  rsimd_vf64 as = rsimd_vf64_mul(d, RSIMD_CM_V(M_PI_2));
+  if (!rsimd_mf64_all(unit)) as = rsimd_vf64_blend(RSIMD_CM_F1(asin, d), as, unit);
+  *im = rsimd_vf64_blend(l, rsimd_vf64_neg(l), rsimd_vf64_cmp_gt(x, one));
+  /* Base R adds the real part of im * I, a zero, or NaN where im is
+     infinite (a^2 overflows). */
+  *re = rsimd_vf64_add(as, rsimd_vf64_mul(*im, rsimd_vf64_zero()));
+  if (how != RSIMD_CUT_UNKNOWN) return rsimd_mf64_none();
+  return rsimd_vf64_cmp_lt(a, RSIMD_CM_V(1.5));
+}
+
+/* asin (acos = 0) or acos (acos = 1) of x + iy: base R's branch-cut code
+   in the lanes on its cut (base R's acos there is pi/2 - asin), Hull et
+   al. elsewhere, each computed only if some lane needs it; `how` as in
+   rsimd_cm_asin_cut_(). */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_asin_(const int acos, const int fast, const int how,
+                                              rsimd_vf64 x, rsimd_vf64 y, rsimd_vf64 *re,
+                                              rsimd_vf64 *im) {
+  const rsimd_mf64 cut = rsimd_cm_on_cut_(x, y);
+  rsimd_vf64 r = rsimd_vf64_zero(), i = r;
+  rsimd_mf64 m = rsimd_mf64_none();
+  if (!rsimd_mf64_all(cut)) {
+    m = rsimd_cm_asin_core_(acos, fast, rsimd_vf64_abs(x), rsimd_vf64_abs(y), &r, &i);
+    if (acos) { /* (R or pi - R for x < 0, -copysign(I, y)) */
+      r = rsimd_vf64_blend(r, rsimd_vf64_sub(RSIMD_CM_V(M_PI), r),
+                           rsimd_vf64_cmp_lt(x, rsimd_vf64_zero()));
+      i = rsimd_vf64_neg(rsimd_cm_copysign_(i, y));
+    } else { /* (copysign(R, x), copysign(I, y)) */
+      r = rsimd_cm_copysign_(r, x);
+      i = rsimd_cm_copysign_(i, y);
     }
-    return m;
   }
+  if (rsimd_mf64_any(cut)) {
+    rsimd_vf64 cr, ci;
+    const rsimd_mf64 cm = rsimd_cm_asin_cut_(fast, how, x, &cr, &ci);
+    if (acos) {
+      cr = rsimd_vf64_sub(RSIMD_CM_V(M_PI_2), cr);
+      ci = rsimd_vf64_neg(ci);
+    }
+    r = rsimd_vf64_blend(r, cr, cut);
+    i = rsimd_vf64_blend(i, ci, cut);
+    m = rsimd_mf64_or(rsimd_mf64_andnot(cut, m), rsimd_mf64_and(cut, cm));
+  }
+  *re = r;
+  *im = i;
+  return m;
 }
 
 /* atan(x + iy) as C99's catan: (atan2(2x, 1 - x^2 - y^2) + i log1p(4|y| /
    (x^2 + (1 - |y|)^2)) sign(y)) / (2, 4), with 1 - x^2 - y^2 in
    double-double. Parts beyond 2^500 are left out, and so are x = 0 with
-   |y| >= 1 (base R's branch-cut code for atan, and the poles) and
-   x^2 + (1 - |y|)^2 below 2^-960 (near the poles, where it underflows). */
+   |y| >= 1 (the poles, and base R's branch cut, which rsimd_cm_atan_()
+   computes) and x^2 + (1 - |y|)^2 below 2^-960 (near the poles, where it
+   underflows). */
 RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_atan_core_(const int fast, rsimd_vf64 x, rsimd_vf64 y,
                                                    rsimd_vf64 *re, rsimd_vf64 *im) {
   const rsimd_vf64 ay = rsimd_vf64_abs(y), one = RSIMD_CM_V(1.0), oy = rsimd_vf64_sub(one, ay);
@@ -415,6 +481,29 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_atan_core_(const int fast, rsimd_vf64 x,
                                      rsimd_vf64_cmp_lt(den, RSIMD_CM_V(0x1p-960))),
                        rsimd_mf64_and(rsimd_vf64_cmp_eq(x, rsimd_vf64_zero()),
                                       rsimd_vf64_cmp_ge(ay, one)));
+}
+
+/* atan(x + iy): base R's branch-cut code in the lanes on its cut (x = 0,
+   |y| > 1), +-pi/2 + i log((y + 1)^2 / (y - 1)^2) / 4 with base R's
+   operations (only the logarithm is SLEEF's), C99's formula elsewhere,
+   each computed only if some lane needs it. */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_atan_(const int fast, rsimd_vf64 x, rsimd_vf64 y,
+                                              rsimd_vf64 *re, rsimd_vf64 *im) {
+  const rsimd_mf64 cut = rsimd_cm_on_cut_(y, x);
+  rsimd_vf64 r = rsimd_vf64_zero(), i = r;
+  rsimd_mf64 m = rsimd_mf64_none();
+  if (!rsimd_mf64_all(cut)) m = rsimd_cm_atan_core_(fast, x, y, &r, &i);
+  if (rsimd_mf64_any(cut)) {
+    const rsimd_vf64 one = RSIMD_CM_V(1.0);
+    const rsimd_vf64 yp = rsimd_vf64_add(y, one), ym = rsimd_vf64_sub(y, one);
+    const rsimd_vf64 q = rsimd_vf64_div(rsimd_vf64_mul(yp, yp), rsimd_vf64_mul(ym, ym));
+    r = rsimd_vf64_blend(r, rsimd_cm_copysign_(RSIMD_CM_V(M_PI_2), y), cut);
+    i = rsimd_vf64_blend(i, rsimd_vf64_mul(RSIMD_CM_V(0.25), RSIMD_CM_F1(log, q)), cut);
+    m = rsimd_mf64_andnot(cut, m);
+  }
+  *re = r;
+  *im = i;
+  return m;
 }
 
 /* z * i and -i * z as base R's z_asinh and z_atanh compute them: full
@@ -433,9 +522,10 @@ RSIMD_ALWAYS_INLINE void rsimd_cm_mul_negi_(rsimd_vf64 x, rsimd_vf64 y, rsimd_vf
   *im = rsimd_vf64_add(rsimd_vf64_mul(nz, y), rsimd_vf64_neg(x));
 }
 
-/* Function op of x + iy, finite. */
-RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm1_v_(const int op, const int fast, rsimd_vf64 x,
-                                            rsimd_vf64 y, rsimd_vf64 *re, rsimd_vf64 *im) {
+/* Function op of x + iy, finite; `how` is b->asin_cut. */
+RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm1_v_(const int op, const int fast, const int how,
+                                            rsimd_vf64 x, rsimd_vf64 y, rsimd_vf64 *re,
+                                            rsimd_vf64 *im) {
   rsimd_vf64 r, i;
   rsimd_mf64 m;
   switch (op) {
@@ -448,34 +538,24 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm1_v_(const int op, const int fast, rsimd_
   case RSIMD_CM_COSH: return rsimd_cm_trig_(op, fast, x, y, re, im);
   case RSIMD_CM_TAN: return rsimd_cm_tanh_(1, fast, x, y, re, im);
   case RSIMD_CM_TANH: return rsimd_cm_tanh_(0, fast, x, y, re, im);
-  case RSIMD_CM_ASIN: /* (copysign(R, x), copysign(I, y)) */
-    m = rsimd_cm_asin_core_(0, 1, fast, rsimd_vf64_abs(x), rsimd_vf64_abs(y), &r, &i);
-    *re = rsimd_cm_copysign_(r, x);
-    *im = rsimd_cm_copysign_(i, y);
-    return m;
-  case RSIMD_CM_ACOS: /* (R or pi - R for x < 0, -copysign(I, y)) */
+  case RSIMD_CM_ASIN: return rsimd_cm_asin_(0, fast, how, x, y, re, im);
+  case RSIMD_CM_ACOS: return rsimd_cm_asin_(1, fast, how, x, y, re, im);
   case RSIMD_CM_ACOSH: /* C99's cacosh: (I, copysign(acos's real part, y)) */
-    m = rsimd_cm_asin_core_(1, op == RSIMD_CM_ACOS, fast, rsimd_vf64_abs(x), rsimd_vf64_abs(y), &r,
-                            &i);
+    m = rsimd_cm_asin_core_(1, fast, rsimd_vf64_abs(x), rsimd_vf64_abs(y), &r, &i);
     r = rsimd_vf64_blend(r, rsimd_vf64_sub(RSIMD_CM_V(M_PI), r),
                          rsimd_vf64_cmp_lt(x, rsimd_vf64_zero()));
-    if (op == RSIMD_CM_ACOS) {
-      *re = r;
-      *im = rsimd_vf64_neg(rsimd_cm_copysign_(i, y));
-      return m;
-    }
     *re = i;
     *im = rsimd_cm_copysign_(r, y);
     return m;
   case RSIMD_CM_ASINH: /* -i asin(iz), multiplied as base R does */
     rsimd_cm_mul_i_(x, y, &x, &y);
-    m = rsimd_cm_asin_core_(0, 1, fast, rsimd_vf64_abs(x), rsimd_vf64_abs(y), &r, &i);
-    rsimd_cm_mul_negi_(rsimd_cm_copysign_(r, x), rsimd_cm_copysign_(i, y), re, im);
+    m = rsimd_cm_asin_(0, fast, how, x, y, &r, &i);
+    rsimd_cm_mul_negi_(r, i, re, im);
     return m;
-  case RSIMD_CM_ATAN: return rsimd_cm_atan_core_(fast, x, y, re, im);
+  case RSIMD_CM_ATAN: return rsimd_cm_atan_(fast, x, y, re, im);
   default: /* ATANH: -i atan(iz) */
     rsimd_cm_mul_i_(x, y, &x, &y);
-    m = rsimd_cm_atan_core_(fast, x, y, &r, &i);
+    m = rsimd_cm_atan_(fast, x, y, &r, &i);
     rsimd_cm_mul_negi_(r, i, re, im);
     return m;
   }
@@ -537,7 +617,7 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(cmath1_)(const int op, const int fast, cons
     rsimd_vf64 xr, xi, re, im;
     rsimd_mf64 redo;
     rsimd_cm_load_(x, i, m, 0, &xr, &xi);
-    redo = rsimd_cm1_v_(op, fast, xr, xi, &re, &im);
+    redo = rsimd_cm1_v_(op, fast, b->asin_cut, xr, xi, &re, &im);
     redo = rsimd_mf64_or(redo, rsimd_mf64_or(rsimd_cm_nonfinite_(xr), rsimd_cm_nonfinite_(xi)));
     redo = rsimd_mf64_or(redo, rsimd_mf64_or(rsimd_vf64_is_nan(re), rsimd_vf64_is_nan(im)));
     /* On an axis, exp and the (hyperbolic) sines and cosines give a zero

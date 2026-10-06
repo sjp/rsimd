@@ -45,7 +45,8 @@ snapshots <- lapply(csv_files, read.csv, stringsAsFactors = FALSE)
 
 tier_order <- c("avx512", "avx2", "sse2", "sve2", "sve", "neon", "none")
 op_order <- c("sum", "mean", "dot", "add", "fma", "pmax", "exp", "any_na",
-  "is_na", "as_integer", "sin", "log", "tanh", "atan2", "hypot")
+  "is_na", "as_integer", "sin", "log", "tanh", "atan2", "hypot", "pow", "asinh",
+  "sqrt", "asin", "asin_cut")
 mode_order <- c("accurate", "fast", "pairwise", "compensated")
 
 tex_escape <- function(s) {
@@ -185,7 +186,13 @@ values; a table for inputs with 1\% missing values, which exercises the
 code that handles them; and the cost of the precision modes for
 \code{sum} and \code{dot} at $10^7$ elements. Newer runs add a fourth,
 \code{sin}, \code{log}, \code{tanh}, \code{atan2} and \code{hypot} in both
-math accuracy modes (\code{?simd\_math\_accuracy}) at $10^7$ elements.
+math accuracy modes (\code{?simd\_math\_accuracy}) at $10^7$ elements,
+with \code{pow}, \code{asinh} and complex functions in the latest runs
+(\code{asin\_cut} is \code{asin} on its branch cut, real $|x|$ from 1.01
+to 10). On \code{neon}, \code{log}, \code{pow} and \code{asinh} in
+accurate mode call the C math library, as \code{none} does, because it is
+faster there than SLEEF's two-lane code; their \code{neon} and
+\code{none} rows differ only by noise.
 
 \subsection*{Reading the tables}
 

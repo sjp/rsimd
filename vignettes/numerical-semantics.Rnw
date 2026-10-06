@@ -327,8 +327,10 @@ Odd functions of \code{-0} &
   Exactness. No workaround needed. \\
 Complex elementary functions &
   The SIMD implementations are within 2 to 5 ULP of the exact value
-  (\code{?simd\_exp}); the \code{"none"} implementation and whole-number
-  powers are identical to base R. &
+  (\code{?simd\_exp}); on base R's branch cuts (such as
+  \code{asin(2+0i)}) they compute base R's own branch-cut formula, within
+  2 ULP of it; the \code{"none"} implementation and whole-number powers
+  are identical to base R. &
   Speed. Base R's C library is within about 5 ULP itself; use
   \code{simd\_with\_impl("none", ...)} for base R's exact values. \\
 Complex \code{acosh} &

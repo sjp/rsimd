@@ -222,6 +222,41 @@ test_that("special values and branch cuts are base R's exactly on every tier", {
   }
 })
 
+test_that("on base R's branch cuts every tier follows base R's own formula", {
+  # The SIMD tiers compute base R's branch-cut code for asin, acos and atanh
+  # (real |x| > 1) and asinh and atan (imaginary |y| > 1) in vector form,
+  # with base R's roundings; only their asin and log are SLEEF's. Near 1,
+  # where how base R rounds alpha^2 - 1 matters, and for huge parts, where
+  # base R's formula overflows or loses the real part, they must still agree.
+  m <- with_seed(33L, c(
+    1 + 2^-(1:52), 1 + stats::runif(200) * 1e-3, stats::runif(400, 1, 3),
+    10^stats::runif(200, 0, 300), 2^53 + c(-1, 0, 2), 3 + 2^-51, 7 + 2^-50, 1e154, 1.4e154,
+    .Machine$double.xmax
+  ))
+  m <- c(m, -m)
+  zero <- sample(c(0, -0), length(m), TRUE)
+  on_real <- complex(real = m, imaginary = zero)
+  on_imag <- complex(real = zero, imaginary = m)
+  off <- with_seed(34L, complex(real = stats::rnorm(400), imaginary = stats::rnorm(400)))
+  for (f in c("asin", "acos", "atanh", "asinh", "atan")) {
+    z <- if (f %in% c("asin", "acos", "atanh")) on_real else on_imag
+    # Alone, and mixed with elements off the cut in every vector position.
+    z <- c(z, with_seed(35L, sample(c(z, off))))
+    cut <- Re(z) == 0 | Im(z) == 0
+    for (acc in c("accurate", "fast")) {
+      # Within 2 ULP (5 in fast mode) of base R on the cut, the usual bound off it.
+      tol <- ifelse(cut, if (acc == "fast") 5 else 2, cm_tol(f, acc == "fast"))
+      with_accuracy(acc, {
+        want <- suppressWarnings(simd_with_impl("none", simd_fn(f)(z)))
+        for (tier in setdiff(tiers_to_test(), "none")) {
+          got <- suppressWarnings(simd_with_impl(tier, simd_fn(f)(z)))
+          expect_null(cm_mismatch(got, want, tol, z), label = paste(f, acc, tier))
+        }
+      })
+    }
+  }
+})
+
 test_that("whole-number powers are identical to base R on every tier", {
   z <- cm_inputs(300L)
   k <- with_seed(31L, sample(c(-70:70, 65536, -65536, 65535), length(z), TRUE))

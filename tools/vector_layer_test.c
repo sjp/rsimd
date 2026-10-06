@@ -3628,13 +3628,16 @@ static double complex z_tan(double complex z) {
   if (isfinite(y) && fabs(y) > 25.0) r = CMPLX(creal(r), y < 0 ? -1.0 : 1.0);
   return r;
 }
+/* Whether z_asin fuses alpha * alpha - 1, as base R built by a compiler
+   that contracts does (this file is compiled with -ffp-contract=off). */
+static int cm_asin_fused = 0;
 static double complex z_asin(double complex z) {
   if (cimag(z) == 0 && fabs(creal(z)) > 1) {
     double alpha, t1, t2, x = creal(z), ri;
     t1 = 0.5 * fabs(x + 1);
     t2 = 0.5 * fabs(x - 1);
     alpha = t1 + t2;
-    ri = log(alpha + sqrt(alpha * alpha - 1));
+    ri = log(alpha + sqrt(cm_asin_fused ? fma(alpha, alpha, -1) : alpha * alpha - 1));
     if (x > 1) ri *= -1;
     return asin(t1 - t2) + ri * I;
   }
@@ -3734,19 +3737,58 @@ static void h_catan2(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
   cm_out(d, out);
 }
 
-static const rsimd_cmath_base cm_base = {
+static rsimd_cmath_base cm_base = {
   {h_csqrt, h_cexp, h_clog, h_csin, h_ccos, h_ctan, h_csinh, h_ccosh, h_ctanh, h_casin, h_cacos,
    h_catan, h_casinh, h_cacosh, h_catanh},
-  {h_cpow, h_clogb, h_catan2}};
+  {h_cpow, h_clogb, h_catan2},
+  RSIMD_CUT_UNFUSED};
 
 static const char *const cm_names[RSIMD_CM_COUNT + RSIMD_CM2_COUNT] = {
   "sqrt", "exp", "log", "sin", "cos", "tan", "sinh", "cosh", "tanh", "asin",
   "acos", "atan", "asinh", "acosh", "atanh", "pow", "logb", "atan2"};
 
 /* The exact value (long double) of op at x (and y). */
+/* The exact value of base R's branch-cut code (z_asin, z_acos, z_atan, and
+   asinh and atanh through them), whose values on the cuts are not C99's,
+   from the doubles base R rounds before its logarithms (alpha^2 - 1 as
+   z_asin rounds it): in *r, returning 1, for x on that cut. */
+static int cm_ref_cut(int op, Rcomplex x, long double complex *r) {
+  const long double pi2 = 1.570796326794896619231321691639751442L;
+  double X = x.r, Y = x.i;
+  long double re, im;
+  if (op == RSIMD_CM_ASINH || op == RSIMD_CM_ATANH) { /* iz, multiplied as base R does */
+    X = x.r * 0.0 - x.i;
+    Y = x.r + x.i * 0.0;
+  }
+  if (op == RSIMD_CM_ASIN || op == RSIMD_CM_ACOS || op == RSIMD_CM_ASINH) {
+    double t1, t2, a;
+    if (!(Y == 0 && fabs(X) > 1)) return 0;
+    t1 = 0.5 * fabs(X + 1);
+    t2 = 0.5 * fabs(X - 1);
+    a = t1 + t2;
+    re = asinl((long double) (t1 - t2));
+    im = logl(a + sqrt(cm_asin_fused ? fma(a, a, -1) : a * a - 1));
+    if (X > 1) im = -im;
+    if (op == RSIMD_CM_ACOS) {
+      re = pi2 - re;
+      im = -im;
+    }
+  } else if (op == RSIMD_CM_ATAN || op == RSIMD_CM_ATANH) {
+    if (!(X == 0 && fabs(Y) > 1)) return 0;
+    re = Y > 0 ? pi2 : -pi2;
+    im = 0.25L * logl(((Y + 1) * (Y + 1)) / ((Y - 1) * (Y - 1)));
+  } else {
+    return 0;
+  }
+  /* asinh and atanh: -i (re + i im). */
+  *r = op == RSIMD_CM_ASINH || op == RSIMD_CM_ATANH ? CMPLXL(im, -re) : CMPLXL(re, im);
+  return 1;
+}
+
 static long double complex cm_ref(int op, Rcomplex x, Rcomplex y) {
   const long double complex z = CMPLXL(x.r, x.i), w = CMPLXL(y.r, y.i);
   long double complex d;
+  if (cm_ref_cut(op, x, &d)) return d;
   switch (op) {
   case RSIMD_CM_SQRT: return csqrtl(z);
   case RSIMD_CM_EXP: return cexpl(z);
@@ -3810,6 +3852,8 @@ static double cm_worst[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2][2];
 static Rcomplex cm_worst_at[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2][2];
 /* The worst pow error divided by 1 + |y log x|. */
 static double cm_pow_scaled[2];
+/* The worst errors of rsimd's formulas on base R's branch cuts. */
+static double cm_cut_worst[RSIMD_CM_COUNT][2];
 
 static double cm_rand_part(int kind) {
   uint64_t r = next_rand();
@@ -3955,6 +3999,10 @@ static void cm_check(int op, int fast, ptrdiff_t n, int flags, double bound) {
         if (!is_base && e / s > cm_pow_scaled[fast]) cm_pow_scaled[fast] = e / s;
       }
       if (!isfinite((double) creall(r)) || !isfinite((double) cimagl(r))) continue;
+      long double complex on_cut;
+      if (!is_base && !two && cm_ref_cut(op, x, &on_cut) && e > cm_cut_worst[op][fast]) {
+        cm_cut_worst[op][fast] = e;
+      }
       if (!is_base && e > cm_worst[op][fast][0]) {
         cm_worst[op][fast][0] = e;
         cm_worst_at[op][fast][0] = x;
@@ -4038,12 +4086,38 @@ static void test_cmath_fns(ptrdiff_t n) {
   }
 }
 
+/* asin, acos and asinh on and near base R's branch cuts with base R's
+   alpha^2 - 1 fused (the kernels told so) and unfused with the kernels not
+   told how it is rounded, at full length and at tails. */
+static void test_cmath_cut_modes(void) {
+  static const int ops[] = {RSIMD_CM_ASIN, RSIMD_CM_ACOS, RSIMD_CM_ASINH};
+  int mode, k, fast, kind;
+  ptrdiff_t n;
+  for (mode = 0; mode < 2; mode++) {
+    cm_asin_fused = mode == 0;
+    cm_base.asin_cut = mode == 0 ? RSIMD_CUT_FUSED : RSIMD_CUT_UNKNOWN;
+    for (k = 0; k < 3; k++) {
+      for (fast = 0; fast < 2; fast++) {
+        for (kind = 3; kind <= 4; kind++) {
+          for (n = 1; n <= CM_M; n = n < 8 ? n + 1 : n * 4) {
+            cm_fill(cmx, n, kind);
+            cm_check(ops[k], fast, n, 0, cm_bound[ops[k]][fast]);
+          }
+        }
+      }
+    }
+  }
+  cm_asin_fused = 0;
+  cm_base.asin_cut = RSIMD_CUT_UNFUSED;
+}
+
 /* Many more inputs at full length, for the error statistics, then whole
    powers in the unfused multiply variant (x86-64 builds of R). */
 static void test_cmath_sweep(void) {
   const char *e = getenv("RSIMD_CMATH_REPS");
   int rep, reps = e ? atoi(e) : 2;
   for (rep = 0; rep < reps; rep++) test_cmath_fns(CM_M);
+  test_cmath_cut_modes();
   cm_arith.mul_re = cm_arith.mul_im = RSIMD_CMUL_UNFUSED;
   cm_arith.div = RSIMD_CDIV_UNFUSED;
   cm_fill(cmx, CM_M, 0);
@@ -4066,6 +4140,13 @@ static void cm_report(void) {
     }
   }
   printf("  pow per 1 + |y log x|: %.3f / %.3f\n", cm_pow_scaled[0], cm_pow_scaled[1]);
+  printf("  on base R's branch cuts (included above):");
+  for (op = RSIMD_CM_ASIN; op <= RSIMD_CM_ATANH; op++) {
+    if (op != RSIMD_CM_ACOSH) {
+      printf(" %s %.3f / %.3f", cm_names[op], cm_cut_worst[op][0], cm_cut_worst[op][1]);
+    }
+  }
+  printf("\n");
 }
 #endif
 

@@ -229,10 +229,41 @@ static void b_pow(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
   from_c99(mycpow(to_c99(x), to_c99(y)), out);
 }
 
-static const rsimd_cmath_base cmath_base = {
+/* asin_cut is found by cmath_base_get(). */
+static rsimd_cmath_base cmath_base = {
   {b_sqrt, b_exp, b_log, b_sin, b_cos, b_tan, b_sinh, b_cosh, b_tanh, b_asin, b_acos, b_atan,
    b_asinh, b_acosh, b_atanh},
-  {b_pow, z_logbase, z_atan2}};
+  {b_pow, z_logbase, z_atan2},
+  RSIMD_CUT_UNKNOWN};
+
+/* How z_asin, as this file's compiler built it, rounds alpha * alpha - 1
+   on its branch cut (rsimd_cmath_base in kernel_types.h): b_asin is
+   compared with both roundings on real inputs just above 1, where they
+   give different results. */
+static int probe_asin_cut(void) {
+  int k, fused = 1, unfused = 1;
+  for (k = 1; k <= 8; k++) {
+    const double x = 1 + ldexp((double) (2 * k + 1), -30);
+    const double alpha = 0.5 * fabs(x + 1) + 0.5 * fabs(x - 1);
+    volatile double sq = alpha * alpha; /* rounded on its own */
+    Rcomplex z, r;
+    z.r = x;
+    z.i = 0;
+    b_asin(&z, &r);
+    if (r.i != -log(alpha + sqrt(sq - 1))) unfused = 0;
+    if (r.i != -log(alpha + sqrt(fma(alpha, alpha, -1)))) fused = 0;
+  }
+  return fused == unfused ? RSIMD_CUT_UNKNOWN : fused ? RSIMD_CUT_FUSED : RSIMD_CUT_UNFUSED;
+}
+
+static const rsimd_cmath_base *cmath_base_get(void) {
+  static int probed = 0;
+  if (!probed) {
+    cmath_base.asin_cut = probe_asin_cut();
+    probed = 1;
+  }
+  return &cmath_base;
+}
 
 /* ---- Entry points --------------------------------------------------------- */
 
@@ -270,7 +301,7 @@ static SEXP simd_cmath1_impl(SEXP z, SEXP op, SEXP accuracy) {
   out = PROTECT(rsimd_alloc_like(RSIMD_C128, in.n));
   po = (Rcomplex *) rsimd_out_ptr(out);
   RSIMD_FOREACH_CHUNK(&in, Rcomplex, px, len, off, {
-    nan |= rsimd_active->cmath1_c128(code | fast, px, len, po + off, &cmath_base);
+    nan |= rsimd_active->cmath1_c128(code | fast, px, len, po + off, cmath_base_get());
   });
   if (nan) rsimd_warn("NaNs produced in function \"%s\"", cm1_names[code]);
   UNPROTECT(1);
@@ -302,7 +333,7 @@ static SEXP simd_cmath2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy, SEXP name) 
   out = PROTECT(rsimd_alloc_like(RSIMD_C128, b.n));
   po = (Rcomplex *) rsimd_out_ptr(out);
   RSIMD_FOREACH_CHUNK2(&b, Rcomplex, px, py, len, off, {
-    nan |= rsimd_active->cmath2_c128(code | fast, px, py, len, flags, po + off, &cmath_base,
+    nan |= rsimd_active->cmath2_c128(code | fast, px, py, len, flags, po + off, cmath_base_get(),
                                      rsimd_c128_arith_get());
   });
   if (nan) rsimd_warn("NaNs produced in function \"%s\"", fname);

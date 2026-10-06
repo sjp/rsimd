@@ -90,13 +90,19 @@ SLEEF's real functions (for example \eqn{e^x(\cos y + i \sin y)} for
 \code{exp}, \eqn{\log|z| + i\,\mathrm{atan2}(y, x)} for \code{log} with
 \eqn{\log|z|} as \code{log1p(x^2 + y^2 - 1) / 2} near \eqn{|z| = 1},
 Kahan's formula for \code{tan} and \code{tanh}, and Hull, Fairgrieve and
-Tang's algorithm for \code{asin} and \code{acos}). The C library's (and
-base R's) code computes every other element: those with an infinite,
-\code{NaN} or \code{NA} part, those on base R's branch-cut code (such as
-\code{asin(2+0i)}), and the regions the formulas do not handle accurately
-(parts beyond \eqn{2^{500}} or near the subnormal range, \eqn{|x| > 708}
-in \code{exp}, a hyperbolic part beyond 20 in \code{tan} and \code{tanh}).
-So special values, branch cuts and the signs of zero parts are base R's.
+Tang's algorithm for \code{asin} and \code{acos}). On the lines where base
+R has its own branch-cut code for \code{asin}, \code{acos}, \code{asinh},
+\code{atan} and \code{atanh} (such as \code{asin(2+0i)} or
+\code{atan(2i)}) they compute that code's formula with base R's roundings,
+only its \code{asin} and \code{log} being SLEEF's, so the results are
+within 2 ULP of base R's there (bit for bit in most elements). The C
+library's (and base R's) code computes every other element: those with an
+infinite, \code{NaN} or \code{NA} part, a result with a \code{NaN} part,
+and the regions the formulas do not handle accurately (parts beyond
+\eqn{2^{500}} or near the subnormal range, \eqn{|x| > 708} in \code{exp},
+a hyperbolic part beyond 20 in \code{tan} and \code{tanh}). So special
+values, the choices on the branch cuts and the signs of zero parts are base
+R's.
 Each part of a result is within the bound below of the exact value, in
 units in the last place (ULP), or within that many ULP of the result's
 modulus where the part is much smaller than the modulus. The C library's
