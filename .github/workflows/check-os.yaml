@@ -1,0 +1,191 @@
+# One platform's check, called by R-CMD-check.yaml: R CMD check --as-cran,
+# whose tests loop over every available tier (NOT_CRAN=true), then the
+# dispatch tests once per available tier with RSIMD_IMPL set to it, against
+# the package R CMD check installed. With `vignettes` the vignettes are
+# built into PDFs (TinyTeX, cached); without, they are neither built nor
+# checked. With `manual` the PDF reference manual is built too.
+on:
+  workflow_call:
+    inputs:
+      os:
+        type: string
+        required: true
+      r:
+        type: string
+        required: true
+      http-user-agent:
+        type: string
+        default: ""
+      linux-checks:
+        description: also lint the C sources and check the Makevars and the build flags
+        type: boolean
+        default: false
+      vignettes:
+        type: boolean
+        default: false
+      manual:
+        type: boolean
+        default: false
+
+permissions: read-all
+
+jobs:
+  check:
+    runs-on: ${{ inputs.os }}
+    name: ${{ inputs.os }} (${{ inputs.r }})
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+      NOT_CRAN: true
+      # Hosted runners have 3 or 4 cores; the tier objects compile in parallel.
+      MAKEFLAGS: -j4
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check raw R vector access is confined to the access layer
+        if: inputs.linux-checks
+        run: sh tools/lint_c.sh
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ inputs.r }}
+          http-user-agent: ${{ inputs.http-user-agent }}
+          use-public-rspm: true
+
+      # The Sweave vignettes are built into PDFs with pdflatex. TinyTeX with
+      # the packages of tools/ci/latex-packages.txt is cached, so a cache hit
+      # skips the download and the tlmgr installs.
+      - name: Restore TinyTeX
+        if: inputs.vignettes
+        id: tinytex
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.os == 'Linux' && '~/.TinyTeX' || runner.os == 'macOS' && '~/Library/TinyTeX' || '~/AppData/Roaming/TinyTeX' }}
+          key: tinytex-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.manual }}-${{ hashFiles('tools/ci/latex-packages.txt') }}
+
+      - uses: r-lib/actions/setup-tinytex@v2
+        if: inputs.vignettes && steps.tinytex.outputs.cache-hit != 'true'
+
+      - name: Install the LaTeX packages
+        if: inputs.vignettes && steps.tinytex.outputs.cache-hit != 'true'
+        run: |
+          list() { sed -n "s/^$1: //p" tools/ci/latex-packages.txt; }
+          pkgs=$(list vignettes)
+          if [ "${{ inputs.manual }}" = true ]; then pkgs="$pkgs $(list manual)"; fi
+          # TinyTeX's bundle can ship a tlmgr older than the repository's,
+          # which then refuses to install anything until it updates itself.
+          # On Windows tlmgr is a batch file, which bash cannot run itself.
+          if [ "$RUNNER_OS" = Windows ]; then
+            cmd //c "tlmgr update --self && tlmgr install $pkgs"
+          else
+            tlmgr update --self
+            # shellcheck disable=SC2086 # one word per package
+            tlmgr install $pkgs
+          fi
+
+      - name: Put the cached TinyTeX on the PATH
+        if: inputs.vignettes && steps.tinytex.outputs.cache-hit == 'true'
+        run: |
+          case "$RUNNER_OS" in
+            Linux) bin=$(ls -d "$HOME"/.TinyTeX/bin/*) ;;
+            macOS) bin=$(ls -d "$HOME"/Library/TinyTeX/bin/*) ;;
+            Windows) bin=$(cygpath -w "$(ls -d "$(cygpath -u "$APPDATA")"/TinyTeX/bin/win*)") ;;
+          esac
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Install texinfo, qpdf and Ghostscript for building and compacting the vignettes
+        if: inputs.vignettes
+        run: |
+          case "$RUNNER_OS" in
+            Linux) sudo apt-get update && sudo apt-get install -y texinfo qpdf ghostscript ;;
+            macOS) brew install qpdf ghostscript ;;
+          esac
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck, any::bit64, any::bench
+          needs: check
+          cache-version: 1
+
+      - name: Check the Makevars templates and the generated Makevars
+        if: inputs.linux-checks
+        run: |
+          sh ./configure > /dev/null
+          sh tools/check_makevars.sh
+          sh ./cleanup
+
+      # R CMD build's vignette step shows nothing when R crashes in a chunk,
+      # so on Windows weave the vignettes first, with each chunk's label
+      # printed before it runs: the last label shown is the one that crashed.
+      - name: Weave the vignettes with visible output (Windows)
+        if: inputs.vignettes && runner.os == 'Windows'
+        run: |
+          mkdir -p "$RUNNER_TEMP/rsimd-lib" "$RUNNER_TEMP/vignettes"
+          R CMD INSTALL --library="$RUNNER_TEMP/rsimd-lib" . 2>&1 | tee "$RUNNER_TEMP/install.log"
+          cp vignettes/*.Rnw "$RUNNER_TEMP/vignettes"
+          cp -r vignettes/benchmark-results "$RUNNER_TEMP/vignettes"
+          cd "$RUNNER_TEMP/vignettes"
+          export R_LIBS="$RUNNER_TEMP/rsimd-lib"
+          Rscript -e 'library(rsimd); str(simd_cpu_features()); print(simd_available()); print(simd_current())'
+          for f in *.Rnw; do
+            echo "::group::$f"
+            Rscript -e "utils::Sweave('$f')"
+            echo "::endgroup::"
+          done
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: >-
+            ${{ !inputs.vignettes && 'c("--no-manual", "--as-cran", "--ignore-vignettes")'
+            || inputs.manual && 'c("--as-cran")' || 'c("--no-manual", "--as-cran")' }}
+          build_args: >-
+            ${{ inputs.vignettes && 'c("--no-manual", "--compact-vignettes=both")'
+            || 'c("--no-manual", "--no-build-vignettes")' }}
+          error-on: '"warning"'
+          upload-snapshots: true
+
+      - name: Show the CPU features and tiers of this runner
+        if: always()
+        run: |
+          # When the build or check failed early there is no installed
+          # package to load, and that failure is already reported above.
+          if [ ! -d check/rsimd.Rcheck/rsimd ]; then
+            echo "rsimd was not installed by R CMD check; skipping."
+            exit 0
+          fi
+          Rscript -e '.libPaths(c("check/rsimd.Rcheck", .libPaths())); library(rsimd)
+            str(simd_cpu_features()); print(simd_available())'
+
+      - name: Check tier compile flags and exported symbols
+        if: inputs.linux-checks
+        run: sh tools/check_build.sh check/rsimd.Rcheck/00install.out check/rsimd.Rcheck/rsimd/libs/rsimd.so
+
+      # R CMD check ran the whole suite; this checks the required tiers and
+      # runs the dispatch tests once per tier, on the package it installed.
+      - name: Run the dispatch tests once per tier
+        if: always()
+        run: |
+          if [ ! -d check/rsimd.Rcheck/rsimd ]; then
+            echo "rsimd was not installed by R CMD check; skipping."
+            exit 0
+          fi
+          R_LIBS=check/rsimd.Rcheck sh tools/ci/test_tiers.sh --smoke-only --out tiers.txt --logs logs
+
+      - name: Record the compiler and flags
+        if: always()
+        run: |
+          for v in CC CFLAGS; do echo "$v = $(R CMD config $v)"; done | tee r-config.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check-${{ inputs.os }}-${{ inputs.r }}
+          path: |
+            tiers.txt
+            r-config.txt
+            check/rsimd.Rcheck/00install.out
+            check/rsimd.Rcheck/tests/testthat.Rout*
+            logs

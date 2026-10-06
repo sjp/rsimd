@@ -1,11 +1,17 @@
 # Test coverage with covr, uploaded to Codecov (needs the CODECOV_TOKEN
-# secret). Informational: an upload failure does not fail the job. Only the
-# tiers of the runner's CPU execute, so tier kernels of other architectures
-# show as uncovered.
+# secret), on pushes to main only. Informational: an upload failure does not
+# fail the job. Only the tiers of the runner's CPU execute, so tier kernels
+# of other architectures show as uncovered.
 on:
   push:
     branches: [main]
-  pull_request:
+    paths-ignore:
+      - "issues/**"
+      - "bench/**"
+      - ".devcontainer/**"
+      - "CONTRIBUTING.md"
+      - "cran-comments.md"
+      - "LICENSE.md"
 
 name: coverage
 

@@ -1,0 +1,78 @@
+# The first signal on every pull request and push to main, meant to finish
+# within 5 minutes: on x86-64 and arm64 Linux, install the package and run
+# the whole test suite at quick lengths (RSIMD_TEST_SUBSET=quick, which
+# keeps the cases around every vector width), the kernel tests looping
+# over every available tier, then the dispatch tests once per tier. No
+# R CMD check and no vignettes: R-CMD-check.yaml does those.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "issues/**"
+      - "bench/**"
+      - ".devcontainer/**"
+      - "CONTRIBUTING.md"
+      - "cran-comments.md"
+      - "LICENSE.md"
+  pull_request:
+    paths-ignore:
+      - "issues/**"
+      - "bench/**"
+      - ".devcontainer/**"
+      - "CONTRIBUTING.md"
+      - "cran-comments.md"
+      - "LICENSE.md"
+
+name: fast
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      MAKEFLAGS: -j4
+      RSIMD_TEST_SUBSET: quick
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: any::testthat, any::callr, any::bit64
+          cache-version: 1
+
+      - name: Install
+        run: R CMD INSTALL . 2>&1 | tee install.log
+
+      - name: Run the quick suite, then the dispatch tests once per tier
+        run: sh tools/ci/test_tiers.sh --out tiers.txt --logs logs
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: fast-${{ matrix.name }}
+          path: |
+            tiers.txt
+            install.log
+            logs

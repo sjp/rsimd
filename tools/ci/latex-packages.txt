@@ -1,0 +1,9 @@
+# The TinyTeX packages the CI check jobs install with tlmgr, which does not
+# install a package's dependencies. The TinyTeX cache is keyed on this file.
+#
+# vignettes: the packages the Sweave vignettes load, directly or through
+# Sweave.sty, graphicx and hyperref (from pdflatex -recorder).
+vignettes: lm ec fontname geometry hyperref tools url fancyvrb etoolbox graphics graphics-cfg graphics-def epstopdf-pkg grfext bigintcalc bitset gettitlestring hycolor iftex infwarerr intcalc kvdefinekeys kvoptions kvsetkeys ltxcmds pdfescape pdftexcmds refcount rerunfilecheck stringenc uniquecounter
+# manual: on top of those, for the PDF reference manual: Rd.sty's fonts
+# (inconsolata, times, rsfs), the packages it loads, and makeindex.
+manual: amsfonts amsmath inconsolata jknapltx rsfs psnfss times xkeyval makeindex

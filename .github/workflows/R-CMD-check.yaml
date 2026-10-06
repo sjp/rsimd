@@ -1,9 +1,30 @@
-# R CMD check --as-cran on every platform the package must pass on, plus
+# R CMD check --as-cran on every platform the package must pass on, each
+# job also running the dispatch tests once per tier (check-os.yaml), plus
 # builds that must keep working (no SLEEF; a compiler without AVX-512).
+#
+# On pull requests: ubuntu release (with the vignettes and the PDF manual),
+# devel and oldrel-1, ubuntu arm64, macOS arm64 and Windows, the others
+# without vignettes or LaTeX. On pushes to main also macOS x86-64, the
+# vignettes on every platform, and the build variants. The fast workflow
+# gives the first signal; coverage runs on pushes to main.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "issues/**"
+      - "bench/**"
+      - ".devcontainer/**"
+      - "CONTRIBUTING.md"
+      - "cran-comments.md"
+      - "LICENSE.md"
   pull_request:
+    paths-ignore:
+      - "issues/**"
+      - "bench/**"
+      - ".devcontainer/**"
+      - "CONTRIBUTING.md"
+      - "cran-comments.md"
+      - "LICENSE.md"
 
 name: R-CMD-check
 
@@ -14,9 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  R-CMD-check:
-    runs-on: ${{ matrix.config.os }}
-    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+  check:
     strategy:
       fail-fast: false
       matrix:
@@ -26,126 +45,32 @@ jobs:
           - { os: ubuntu-latest, r: oldrel-1 }
           - { os: ubuntu-24.04-arm, r: release, linux-checks: true }
           - { os: macos-latest, r: release }
-          - { os: macos-15-intel, r: release }
           - { os: windows-latest, r: release }
-    env:
-      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      R_KEEP_PKG_SOURCE: yes
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
+    uses: ./.github/workflows/check-os.yaml
+    secrets: inherit
+    with:
+      os: ${{ matrix.config.os }}
+      r: ${{ matrix.config.r }}
+      http-user-agent: ${{ matrix.config.http-user-agent || '' }}
+      linux-checks: ${{ matrix.config.linux-checks || false }}
+      manual: ${{ matrix.config.manual || false }}
+      # Every job builds the vignettes on main; on pull requests only the
+      # one that builds the manual.
+      vignettes: ${{ matrix.config.manual || github.event_name != 'pull_request' }}
 
-      - name: Check raw R vector access is confined to the access layer
-        if: matrix.config.linux-checks
-        run: sh tools/lint_c.sh
-
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: ${{ matrix.config.r }}
-          http-user-agent: ${{ matrix.config.http-user-agent }}
-          use-public-rspm: true
-
-      # The Sweave vignettes are built into PDFs with pdflatex.
-      - uses: r-lib/actions/setup-tinytex@v2
-
-      - name: Install the LaTeX packages the vignettes use
-        run: |
-          # tlmgr does not install a package's dependencies, so this is the
-          # full set of packages the vignettes load, directly or through
-          # Sweave.sty, graphicx and hyperref (from pdflatex -recorder).
-          pkgs="lm ec fontname geometry hyperref tools url fancyvrb etoolbox
-            graphics graphics-cfg graphics-def epstopdf-pkg grfext
-            bigintcalc bitset gettitlestring hycolor iftex infwarerr intcalc
-            kvdefinekeys kvoptions kvsetkeys ltxcmds pdfescape pdftexcmds
-            refcount rerunfilecheck stringenc uniquecounter"
-          pkgs=$(echo $pkgs)
-          # TinyTeX's bundle can ship a tlmgr older than the repository's,
-          # which then refuses to install anything until it updates itself.
-          # On Windows tlmgr is a batch file, which bash cannot run itself.
-          if [ "$RUNNER_OS" = Windows ]; then
-            cmd //c "tlmgr update --self && tlmgr install $pkgs"
-          else
-            tlmgr update --self
-            tlmgr install $pkgs
-          fi
-
-      - name: Install the LaTeX packages the PDF reference manual uses
-        if: matrix.config.manual
-        run: |
-          # On top of the vignettes' packages: Rd.sty's fonts (inconsolata,
-          # times, rsfs) and the packages it loads, and makeindex.
-          tlmgr install amsfonts amsmath inconsolata jknapltx rsfs psnfss times \
-            xkeyval makeindex
-
-      - name: Install qpdf and Ghostscript for compacting the vignette PDF
-        run: |
-          case "$RUNNER_OS" in
-            Linux) sudo apt-get update && sudo apt-get install -y qpdf ghostscript ;;
-            macOS) brew install qpdf ghostscript ;;
-          esac
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: any::rcmdcheck, any::bit64, any::bench
-          needs: check
-          cache-version: 1
-
-      - name: Check the Makevars templates and the generated Makevars
-        if: matrix.config.linux-checks
-        run: |
-          sh ./configure > /dev/null
-          sh tools/check_makevars.sh
-          sh ./cleanup
-
-      # R CMD build's vignette step shows nothing when R crashes in a chunk,
-      # so on Windows weave the vignettes first, with each chunk's label
-      # printed before it runs: the last label shown is the one that crashed.
-      - name: Weave the vignettes with visible output (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          mkdir -p "$RUNNER_TEMP/rsimd-lib" "$RUNNER_TEMP/vignettes"
-          R CMD INSTALL --library="$RUNNER_TEMP/rsimd-lib" . 2>&1 | tee "$RUNNER_TEMP/install.log"
-          cp vignettes/*.Rnw "$RUNNER_TEMP/vignettes"
-          cp -r vignettes/benchmark-results "$RUNNER_TEMP/vignettes"
-          cd "$RUNNER_TEMP/vignettes"
-          export R_LIBS="$RUNNER_TEMP/rsimd-lib"
-          Rscript -e 'library(rsimd); str(simd_cpu_features()); print(simd_available()); print(simd_current())'
-          for f in *.Rnw; do
-            echo "::group::$f"
-            Rscript -e "utils::Sweave('$f')"
-            echo "::endgroup::"
-          done
-
-      # One job also builds the PDF reference manual, as CRAN does.
-      - uses: r-lib/actions/check-r-package@v2
-        with:
-          args: ${{ matrix.config.manual && 'c("--as-cran")' || 'c("--no-manual", "--as-cran")' }}
-          build_args: 'c("--no-manual", "--compact-vignettes=both")'
-          error-on: '"warning"'
-          upload-snapshots: true
-
-      - name: Show the CPU features and tiers of this runner
-        if: always()
-        shell: bash
-        run: |
-          # When the build or check failed early there is no installed
-          # package to load, and that failure is already reported above.
-          if [ ! -d check/rsimd.Rcheck/rsimd ]; then
-            echo "rsimd was not installed by R CMD check; skipping."
-            exit 0
-          fi
-          Rscript -e '.libPaths(c("check/rsimd.Rcheck", .libPaths())); library(rsimd)
-            str(simd_cpu_features()); print(simd_available())'
-
-      - name: Check tier compile flags and exported symbols
-        if: matrix.config.linux-checks
-        run: sh tools/check_build.sh check/rsimd.Rcheck/00install.out check/rsimd.Rcheck/rsimd/libs/rsimd.so
+  check-main:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/check-os.yaml
+    secrets: inherit
+    with:
+      os: macos-15-intel
+      r: release
+      vignettes: true
 
   build-variants:
     # Builds that must still work: without SLEEF, and with a compiler that
     # cannot build the avx512 tier or SLEEF's AVX-512 header.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -153,6 +78,7 @@ jobs:
         variant: [no-sleef, no-avx512]
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      MAKEFLAGS: -j4
     defaults:
       run:
         shell: bash
@@ -166,8 +92,8 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::testthat, any::callr, any::bit64
-          needs: check
+          packages: any::testthat, any::callr, any::bit64
+          cache-version: 1
 
       - name: Configure the variant
         run: |
@@ -195,5 +121,4 @@ jobs:
           fi
 
       - name: Test
-        run: |
-          Rscript -e 'testthat::test_dir("tests/testthat", package = "rsimd", load_package = "installed", stop_on_failure = TRUE)'
+        run: sh tools/ci/run_tests.sh --label "${{ matrix.variant }}"
