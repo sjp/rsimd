@@ -72,22 +72,27 @@ The GitHub Actions workflows in `.github/workflows/` call POSIX shell scripts in
 (label, platform, result, duration) to the job summary, or to the terminal outside
 Actions.
 
-On every push to `main` and every pull request:
+On every pull request and every push to `main` (except changes only to `issues/`,
+`bench/`, `.devcontainer/`, `CONTRIBUTING.md`, `cran-comments.md` and
+`LICENSE.md`, which do not ship):
 
-| Workflow | What it does |
-|----------|--------------|
-| `R-CMD-check` | `R CMD check --as-cran` (warnings fail) on Linux x86-64 (R release, devel, oldrel-1), Linux arm64, macOS arm64, macOS x86-64 and Windows x86-64, and prints each runner's CPU features and tiers; the PDF manual on Linux x86-64 R release; the C lint, `tools/check_makevars.sh` and `tools/check_build.sh` on Linux; builds without SLEEF and with a compiler that rejects AVX-512. |
-| `tiers` | The whole test suite once per available tier, with that tier as the default (`RSIMD_IMPL`); fails if `none`, or `sse2` and `avx2` on x86-64, or `neon` on arm64, is missing. |
-| `size-check` | `tools/check_size.sh`: tarball and installed package (library stripped) under 5 MB, no installed directory but `libs` over 1 MB, vendored code and library budgets. |
-| `coverage` | covr, uploaded to Codecov (needs the `CODECOV_TOKEN` secret); informational. |
+| Workflow | Pull requests | Pushes to `main` add |
+|----------|---------------|----------------------|
+| `fast` | The first signal, meant to take under 5 minutes: on Linux x86-64 and arm64, install, then the whole suite at quick lengths (`RSIMD_TEST_SUBSET=quick`) with the kernel tests looping over every available tier, then the dispatch tests once per tier. | |
+| `R-CMD-check` | `R CMD check --as-cran` (warnings fail; the tests loop over every tier) on Linux x86-64 (R release, devel, oldrel-1), Linux arm64, macOS arm64 and Windows x86-64. Each job then runs the dispatch tests once per tier with that tier as the default (`RSIMD_IMPL`), fails if `none`, or `sse2` and `avx2` on x86-64, or `neon` on arm64, is missing, and prints the runner's CPU features and tiers. Only Linux x86-64 R release builds the vignettes and the PDF manual; the others neither build nor check the vignettes. The C lint, `tools/check_makevars.sh` and `tools/check_build.sh` on Linux. | macOS x86-64; the vignettes on every platform; builds without SLEEF and with a compiler that rejects AVX-512. |
+| `size-check` | `tools/check_size.sh`: tarball and installed package (library stripped) under 5 MB, no installed directory but `libs` over 1 MB, vendored code and library budgets. | |
+| `coverage` | | covr, uploaded to Codecov (needs the `CODECOV_TOKEN` secret); informational. |
+
+The per-platform check job is `check-os.yaml`, which `R-CMD-check` calls. It caches
+TinyTeX with the packages listed in `tools/ci/latex-packages.txt`.
 
 On a schedule, and on demand with "Run workflow":
 
 | Workflow | When | What it does |
 |----------|------|--------------|
-| `sanitizers` | nightly | R CMD check and the suite per tier on R-hub's `gcc-asan`, `clang-asan` and `clang-ubsan` R-devel containers; any sanitizer report fails. |
+| `sanitizers` | nightly | R CMD check, the suite (every tier) and the dispatch tests per tier on R-hub's `gcc-asan`, `clang-asan` and `clang-ubsan` R-devel containers; any sanitizer report fails. |
 | `valgrind` | weekly | `R CMD check --use-valgrind` (examples), then the quick subset on the `avx2` and `none` tiers under memcheck with leak checking. |
-| `noLD` | weekly | R CMD check and the suite per tier on R-hub's `nold` container (R without long double). |
+| `noLD` | weekly | R CMD check, the suite (every tier) and the dispatch tests per tier on R-hub's `nold` container (R without long double). |
 | `emulation-sde` | weekly | The `avx512` tier under Intel SDE (Sapphire Rapids and Ice Lake models, `tier_emulation` subset), and `auto` choosing `sse2` on a Merom model (quick subset). |
 | `emulation-qemu` | weekly | The `sve` and `sve2` tiers under `qemu-aarch64` at 256- and 512-bit vectors (`tier_emulation` subset), and `auto` choosing `neon` on a Cortex-A72 model (quick subset). |
 | `cran-incoming` | release branches (`release/**`), `v*` tags | `R CMD check --as-cran` with CRAN's remote incoming checks (URLs, maintainer), the PDF manual and the spelling check; and a check without the suggested packages bit64 and bench. Errors and warnings fail. |
@@ -99,7 +104,8 @@ The emulated runs use the reduced test subsets described in `tests/README.md`
 package first (`R CMD INSTALL .`), then from the package root:
 
 ```sh
-# The suite once per tier, checking the tiers every machine of this architecture must have.
+# The suite once (every tier), then the dispatch tests once per tier, checking the tiers
+# every machine of this architecture must have. With RSIMD_TEST_SUBSET=quick, as the fast job.
 sh tools/ci/test_tiers.sh --logs logs
 
 # One run, optionally under an emulator; --expect-impl and --expect-tiers fail early
