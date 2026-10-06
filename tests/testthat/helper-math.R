@@ -67,6 +67,13 @@ base_has_platform_sinpi <- function() 1 / sinpi(-0) < 0
 # .Machine$double.xmax), and base R's and the none tier's with it.
 libm_reduces_trig <- function() abs(sin(1e22) + 0.8522008497671888) < 1e-15
 
+# Does the active tier reduce large trig arguments accurately? Tiers built
+# with SLEEF do; the others call the C library (libm_reduces_trig).
+tier_reduces_trig <- function() {
+  sleef <- strsplit(attr(simd_compiled_tiers(), "sleef"), "[ ,]+")[[1]]
+  libm_reduces_trig() || as.vector(simd_current()) %in% sleef
+}
+
 # The absolute error allowed, beyond the ULP bound, when the `name`
 # function of x is compared with the C library's (the none tier or base
 # R): 0, except for sin, cos and tan where the library does not reduce

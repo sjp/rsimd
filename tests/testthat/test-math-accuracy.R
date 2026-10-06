@@ -162,10 +162,14 @@ test_that("sin, cos and tan reduce large arguments correctly", {
       )
     }
   }
-  expect_equal(simd_sin(1e22), -0.8522008497671888, tolerance = 1e-15)
-  # 1e300 written exactly: where long double is double (arm64 macOS), R
-  # parses the decimal literal to a neighbouring double.
-  expect_equal(simd_cos(0x1.7e43c8800759cp+996), -0.5753861119575491, tolerance = 1e-15)
+  # The active tier's own values are exact unless it calls a C library that
+  # does not reduce accurately (the none tier on Windows).
+  if (tier_reduces_trig()) {
+    expect_equal(simd_sin(1e22), -0.8522008497671888, tolerance = 1e-15)
+    # 1e300 written exactly: where long double is double (arm64 macOS), R
+    # parses the decimal literal to a neighbouring double.
+    expect_equal(simd_cos(0x1.7e43c8800759cp+996), -0.5753861119575491, tolerance = 1e-15)
+  }
 })
 
 test_that("hyperbolic functions are accurate up to overflow", {
