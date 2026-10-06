@@ -43,6 +43,8 @@ jobs:
 
       - name: Install the LaTeX packages the vignettes and the manual use
         run: |
+          # As in R-CMD-check.yaml, tlmgr may need to update itself first.
+          tlmgr update --self
           # The vignettes' packages (as in R-CMD-check.yaml), then Rd.sty's.
           tlmgr install lm ec fontname geometry hyperref tools url fancyvrb etoolbox \
             graphics graphics-cfg graphics-def epstopdf-pkg grfext \

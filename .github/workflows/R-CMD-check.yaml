@@ -61,10 +61,13 @@ jobs:
             kvdefinekeys kvoptions kvsetkeys ltxcmds pdfescape pdftexcmds
             refcount rerunfilecheck stringenc uniquecounter"
           pkgs=$(echo $pkgs)
+          # TinyTeX's bundle can ship a tlmgr older than the repository's,
+          # which then refuses to install anything until it updates itself.
           # On Windows tlmgr is a batch file, which bash cannot run itself.
           if [ "$RUNNER_OS" = Windows ]; then
-            cmd //c "tlmgr install $pkgs"
+            cmd //c "tlmgr update --self && tlmgr install $pkgs"
           else
+            tlmgr update --self
             tlmgr install $pkgs
           fi
 
