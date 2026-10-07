@@ -56,16 +56,28 @@ jobs:
       - name: Install qpdf, Ghostscript, pandoc and HTML Tidy
         run: sudo apt-get update && sudo apt-get install -y qpdf ghostscript pandoc tidy
 
-      - name: Install the packages the check uses
+      # pak (with RSPM binaries) fails the step if a package does not
+      # install, where install.packages() only warns. Only the hard
+      # dependencies come from DESCRIPTION; the suggested packages each check
+      # needs are listed here.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: >-
+            any::testthat
+            any::callr
+            ${{ matrix.check == 'incoming' && 'any::bit64 any::bench any::spelling' || '' }}
+          cache-version: ${{ matrix.check }}
+
+      - name: Confirm the packages the check uses are installed
         run: |
-          if [ "${{ matrix.check }}" = incoming ]; then
-            pkgs='c("testthat", "callr", "bit64", "bench", "spelling")'
-          else
-            pkgs='c("testthat", "callr")'
-          fi
-          Rscript -e "install.packages($pkgs, repos = 'https://cloud.r-project.org')"
-          Rscript -e 'stopifnot(!"${{ matrix.check }}" == "no-suggests" ||
-            !any(c("bit64", "bench") %in% rownames(installed.packages())))'
+          Rscript -e 'need <- c("testthat", "callr")
+            if ("${{ matrix.check }}" == "incoming") need <- c(need, "bit64", "bench", "spelling")
+            miss <- need[!vapply(need, requireNamespace, NA, quietly = TRUE)]
+            if (length(miss)) stop("not installed: ", toString(miss))
+            if ("${{ matrix.check }}" == "no-suggests" &&
+                any(c("bit64", "bench") %in% rownames(installed.packages())))
+              stop("bit64 or bench is installed for the no-suggests check")'
 
       - name: Check spelling
         if: matrix.check == 'incoming'
