@@ -48,7 +48,7 @@ void RSIMD_KERNEL(softmax_f64)(int op, const double *x, R_xlen_t n, double m, do
 void RSIMD_KERNEL(softmax_f64)(int op, const double *x, R_xlen_t n, double m, double c,
                                double *out, rsimd_reduce_result *r, const rsimd_opts *o) {
   /* The precision mode only: the input has no missing values. */
-  const rsimd_opts fo = {0, 0, o->precision};
+  const rsimd_opts fo = {0, 0, o->precision, RSIMD_EXT_BOTH};
   double buf[RSIMD_PAIRWISE_LEAF];
   ptrdiff_t i, len;
   switch (op) {

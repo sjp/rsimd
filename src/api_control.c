@@ -9,7 +9,8 @@
 SEXP C_simd_cpu_features(void) {
   const rsimd_cpu_features *f = rsimd_cpu();
   const rsimd_cpu_features *raw = rsimd_cpu_unmasked();
-  const char *names[] = {"arch", "os", "method", "features", "sve_vector_length_bits", "masked", ""};
+  const char *names[] = {"arch",   "os",        "method", "features", "sve_vector_length_bits",
+                         "masked", "apple_core", ""};
   SEXP out, feat, feat_names, masked;
   int i, n_masked = 0, k = 0;
 
@@ -38,6 +39,7 @@ SEXP C_simd_cpu_features(void) {
       SET_STRING_ELT(masked, k++, Rf_mkChar(rsimd_cpu_feature_names[i]));
     }
   }
+  SET_VECTOR_ELT(out, 6, Rf_ScalarLogical(f->apple_core));
 
   UNPROTECT(3);
   return out;

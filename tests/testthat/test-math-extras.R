@@ -275,9 +275,16 @@ test_that("the approximations are within 2^-22 of the exact value on every tier"
     s <- simd_rsqrt_approx(abs(x))
     expect_true(max(abs(s * sqrt(abs(x)) - 1)) <= bound * 1.01, info = tier)
   })
-  # On none they are exact.
+  # On none they are exact, and on neon recip_approx is, and rsqrt_approx
+  # on Apple cores.
   expect_identical(simd_with_impl("none", simd_recip_approx(x)), 1 / x)
   expect_identical(simd_with_impl("none", simd_rsqrt_approx(abs(x))), 1 / sqrt(abs(x)))
+  if ("neon" %in% simd_available() && simd_cpu_features()$arch == "aarch64") {
+    expect_identical(simd_with_impl("neon", simd_recip_approx(x)), 1 / x)
+    if (simd_cpu_features()$apple_core) {
+      expect_identical(simd_with_impl("neon", simd_rsqrt_approx(abs(x))), 1 / sqrt(abs(x)))
+    }
+  }
 })
 
 test_that("the approximations are exact for special values and keep missing values", {

@@ -235,6 +235,32 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(hamming_i32_)(const int32_t *x, const int3
   const rsimd_vi32 vx = rsimd_vi32_set1(bytes ? bx[0] : x[0]),
                    vy = rsimd_vi32_set1(bytes ? by[0] : y[0]);
   ptrdiff_t i = 0;
+  if (bytes) {
+    /* Whole vectors of bytes four to a 32-bit lane first. A byte of
+       v = a ^ b is nonzero when the top bit of ((v & 0x7F) + 0x7F) | v is
+       set; those bits are added in byte counters for up to 255 vectors,
+       then the four counters of each lane into tot. */
+    const ptrdiff_t per = 4 * RSIMD_LANES_32;
+    const rsimd_vi32 m7f = rsimd_vi32_set1(0x7F7F7F7F), m01 = rsimd_vi32_set1(0x01010101),
+                     m00ff = rsimd_vi32_set1(0x00FF00FF), mffff = rsimd_vi32_set1(0xFFFF);
+    const rsimd_vi32 wx = rsimd_vi32_set1((int32_t) ((uint32_t) bx[0] * UINT32_C(0x01010101))),
+                     wy = rsimd_vi32_set1((int32_t) ((uint32_t) by[0] * UINT32_C(0x01010101)));
+    rsimd_vi32 tot = rsimd_vi32_zero();
+    while (i + per <= n) {
+      rsimd_vi32 c = rsimd_vi32_zero();
+      int k;
+      for (k = 0; k < 255 && i + per <= n; k++, i += per) {
+        rsimd_vi32 a = sx ? wx : rsimd_vi32_loadu((const int32_t *) (const void *) (bx + i));
+        rsimd_vi32 b = sy ? wy : rsimd_vi32_loadu((const int32_t *) (const void *) (by + i));
+        rsimd_vi32 v = rsimd_vi32_xor(a, b);
+        rsimd_vi32 t = rsimd_vi32_or(rsimd_vi32_add(rsimd_vi32_and(v, m7f), m7f), v);
+        c = rsimd_vi32_add(c, rsimd_vi32_and(rsimd_vi32_srl(t, 7), m01));
+      }
+      c = rsimd_vi32_add(rsimd_vi32_and(c, m00ff), rsimd_vi32_and(rsimd_vi32_srl(c, 8), m00ff));
+      tot = rsimd_vi32_add(tot, rsimd_vi32_add(rsimd_vi32_and(c, mffff), rsimd_vi32_srl(c, 16)));
+    }
+    r->i64 += rsimd_vi32_reduce_add(tot);
+  }
   while (i + RSIMD_LANES_32 <= n) {
     const ptrdiff_t end = (n - i) / RSIMD_LANES_32 > RSIMD_HAMMING_BLOCK
                               ? i + RSIMD_HAMMING_BLOCK * RSIMD_LANES_32

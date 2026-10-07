@@ -39,10 +39,10 @@ Integer results, and all results of \code{simd_cummin()} and
 \code{simd_cummax()}, are identical to base R's on every implementation,
 including the sign of a zero (of equal values the later one is kept, so
 \code{simd_cummax(c(0, -0))} ends in \code{-0}). Double sums and products
-are computed a vector register at a time: the elements of a register are
-combined in a tree before the running value is applied, so the results can
-differ from base R's sequential ones in the last bits and between
-implementations. In \code{"compensated"} precision mode
+are computed four vector registers at a time: the elements of each register
+are combined in a tree and the registers chained before the running value
+is applied, so the results can differ from base R's sequential ones in the
+last bits and between implementations. In \code{"compensated"} precision mode
 \code{simd_cumsum()} instead computes a sequential compensated running sum,
 identical on every implementation and usually closer to the exact one, at
 the speed of a scalar loop. \code{simd_cumprod()} ignores the precision

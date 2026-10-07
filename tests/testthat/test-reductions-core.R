@@ -548,3 +548,42 @@ test_that("extended: long vectors", {
   expect_identical(simd_which_max(x), n)
   expect_identical(simd_which_min(x), 1)
 })
+
+test_that("min and max skip NA (a signalling NaN) and NaN with na.rm on every tier", {
+  set.seed(11)
+  for (n in c(5L, 9L, 17L, 33L, 5000L)) {
+    x <- runif(n, -100, 100)
+    for (pos in unique(c(1L, n %/% 2L + 1L, n))) {
+      for (miss in list(NA_real_, NaN)) {
+        y <- x
+        y[pos] <- miss
+        expect_tiers_give(min(y, na.rm = TRUE), function(v) simd_min(v, na.rm = TRUE), y)
+        expect_tiers_give(max(y, na.rm = TRUE), function(v) simd_max(v, na.rm = TRUE), y)
+        expect_tiers_give(max(abs(y), na.rm = TRUE), function(v) simd_max_abs(v, na.rm = TRUE), y)
+        expect_tiers_give(which.min(y), simd_which_min, y)
+        expect_tiers_give(min(y), simd_min, y)
+      }
+    }
+  }
+})
+
+test_that("reductions without na.rm stop at an NA and still give NA on every tier", {
+  n <- 3e4
+  x <- runif(n)
+  xi <- sample.int(1000L, n, TRUE)
+  for (pos in c(1, 4096, 4097, n)) {
+    y <- x
+    y[pos] <- NA
+    yi <- xi
+    yi[pos] <- NA
+    for (f in list(simd_sum, simd_mean, simd_min, simd_max, simd_sum_sq, simd_prod)) {
+      expect_tiers_give(NA_real_, f, y)
+    }
+    expect_tiers_give(NA_integer_, simd_sum, yi)
+    expect_tiers_give(NA_integer_, simd_min, yi)
+    expect_tiers_give(NA_real_, simd_mean, yi)
+    # NA wins over a NaN before it.
+    y[1] <- NaN
+    if (pos > 1) expect_tiers_give(NA_real_, simd_sum, y)
+  }
+})

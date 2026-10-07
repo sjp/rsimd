@@ -431,15 +431,16 @@ RSIMD_ALWAYS_INLINE ptrdiff_t RSIMD_KERNEL(split_c128_v_)(const Rcomplex *x, ptr
                                                           const int narm) {
   const ptrdiff_t W = RSIMD_LANES_64;
   const rsimd_vf64 zero = rsimd_vf64_zero();
-  ptrdiff_t i = 0, removed = 0;
+  ptrdiff_t i = 0;
   rsimd_vf64 vr, vi;
+  rsimd_vi64 rcnt = rsimd_vi64_zero();
   rsimd_mf64 m;
 #define RSIMD_CPLX_DROP_                                                                   \
   if (narm) {                                                                              \
     m = rsimd_mf64_or(rsimd_vf64_is_nan(vr), rsimd_vf64_is_nan(vi));                      \
     vr = rsimd_vf64_blend(vr, zero, m);                                                    \
     vi = rsimd_vf64_blend(vi, zero, m);                                                    \
-    removed += rsimd_mf64_count(m);                                                        \
+    rcnt = rsimd_vi64_inc(rcnt, rsimd_mf64_to_mi64(m));                                    \
   }
   for (; i + W <= n; i += W) {
     rsimd_c128_load_(x, i, &vr, &vi);
@@ -456,7 +457,7 @@ RSIMD_ALWAYS_INLINE ptrdiff_t RSIMD_KERNEL(split_c128_v_)(const Rcomplex *x, ptr
     rsimd_vf64_storeu_p(pg, im + i, vi);
   }
 #undef RSIMD_CPLX_DROP_
-  return removed;
+  return (ptrdiff_t) rsimd_vi64_reduce_add(rcnt);
 }
 
 /* As the none tier's split_c128_. */
@@ -577,12 +578,19 @@ void RSIMD_KERNEL(na_c128)(const Rcomplex *x, R_xlen_t n, int mode, R_xlen_t off
     RSIMD_KERNEL(na_f64)((const double *) x, 2 * n, mode, 0, NULL, r);
     return;
   }
+  if (mode == RSIMD_NAMODE_COUNT) {
+    rsimd_vi64 c = rsimd_vi64_zero();
+    for (; i + W <= n; i += W) {
+      rsimd_c128_load_(x, i, &re, &im);
+      c = rsimd_vi64_inc(c, rsimd_mf64_to_mi64(rsimd_mf64_or(rsimd_vf64_is_nan(re),
+                                                             rsimd_vf64_is_nan(im))));
+    }
+    r->i64 += rsimd_vi64_reduce_add(c);
+  }
   for (; i + W <= n; i += W) {
     rsimd_c128_load_(x, i, &re, &im);
     m = rsimd_mf64_or(rsimd_vf64_is_nan(re), rsimd_vf64_is_nan(im));
-    if (mode == RSIMD_NAMODE_COUNT) {
-      r->i64 += rsimd_mf64_count(m);
-    } else if (rsimd_mf64_any(m)) {
+    if (rsimd_mf64_any(m)) {
       for (j = i; j < i + W; j++) {
         if (isnan(x[j].r) || isnan(x[j].i)) RSIMD_KERNEL(put_index_)(mode, out, r, off + j);
       }

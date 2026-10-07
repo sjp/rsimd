@@ -20,6 +20,11 @@ static int is_numeric(rsimd_etype t) {
    stack). */
 #define RSIMD_MOD_BLOCK 1024
 
+/* In a chunk loop of a reduction whose result is NA once an NA is seen
+   without na.rm: stop reading. */
+#define RSIMD_STOP_AT_NA(r) \
+  if ((r).saw_na && !o.na_rm) break
+
 /* RSIMD_MATH_FAST for accuracy code 1 (option rsimd.math_accuracy =
    "fast"), 0 for 0; NULL reads the option. */
 static int accuracy_bit(SEXP accuracy) {
@@ -43,15 +48,24 @@ static SEXP simd_sum_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:
-    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->sum_f64(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      rsimd_active->sum_f64(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sum_i32(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+      rsimd_active->sum_i32(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   case RSIMD_I64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
-                        { rsimd_active->sum_i64((const int64_t *) px, len, &r, &o); });
+                        {
+                          rsimd_active->sum_i64((const int64_t *) px, len, &r, &o);
+                          RSIMD_STOP_AT_NA(r);
+                        });
     break;
   case RSIMD_C128: return rsimd_c128_sum(&in, &o);
   default: bad_type(in.type);
@@ -78,11 +92,17 @@ static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   switch (in.type) {
   case RSIMD_C128: return rsimd_c128_prod(&in, &o);
   case RSIMD_F64:
-    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->prod_f64(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      rsimd_active->prod_f64(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->prod_i32(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+      rsimd_active->prod_i32(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   default: bad_type(in.type);
   }
@@ -176,11 +196,17 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   switch (in.type) {
   case RSIMD_C128: return rsimd_c128_mean(&in, &o);
   case RSIMD_F64:
-    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->sum_f64(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      rsimd_active->sum_f64(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sum_i32(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+      rsimd_active->sum_i32(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   default: bad_type(in.type);
   }
@@ -229,19 +255,29 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP ab
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  o.extrema = which == 0 ? RSIMD_EXT_MIN : which == 1 ? RSIMD_EXT_MAX : RSIMD_EXT_BOTH;
   rsimd_reduce_result_init(&r, RSIMD_RED_MIN);
   switch (in.type) {
   case RSIMD_F64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
-                        { rsimd_active->minmax_f64(px, len, ab, &r, &o); });
+                        {
+                          rsimd_active->minmax_f64(px, len, ab, &r, &o);
+                          RSIMD_STOP_AT_NA(r);
+                        });
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->minmax_i32(px, len, ab, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+      rsimd_active->minmax_i32(px, len, ab, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   case RSIMD_I64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
-                        { rsimd_active->minmax_i64((const int64_t *) px, len, ab, &r, &o); });
+                        {
+                          rsimd_active->minmax_i64((const int64_t *) px, len, ab, &r, &o);
+                          RSIMD_STOP_AT_NA(r);
+                        });
     break;
   case RSIMD_C128:
     if (!ab) bad_type(in.type);
@@ -327,6 +363,7 @@ static SEXP simd_which_impl(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
   o.na_rm = 1;
+  o.extrema = dir ? RSIMD_EXT_MAX : RSIMD_EXT_MIN;
   rsimd_reduce_result_init(&r, op);
   switch (in.type) {
   case RSIMD_F64: {
@@ -585,17 +622,29 @@ static SEXP simd_sum_sq_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP pr
   case RSIMD_F64:
     if (which == 2) {
       RSIMD_FOREACH_CHUNK(&in, double, px, len, off,
-                          { rsimd_active->sumabs_f64(px, len, &r, &o); });
+                          {
+                            rsimd_active->sumabs_f64(px, len, &r, &o);
+                            RSIMD_STOP_AT_NA(r);
+                          });
     } else {
-      RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->sumsq_f64(px, len, &r, &o); });
+      RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+        rsimd_active->sumsq_f64(px, len, &r, &o);
+        RSIMD_STOP_AT_NA(r);
+      });
     }
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
     if (which == 2) {
-      RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sumabs_i32(px, len, &r, &o); });
+      RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+        rsimd_active->sumabs_i32(px, len, &r, &o);
+        RSIMD_STOP_AT_NA(r);
+      });
     } else {
-      RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sumsq_i32(px, len, &r, &o); });
+      RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+        rsimd_active->sumsq_i32(px, len, &r, &o);
+        RSIMD_STOP_AT_NA(r);
+      });
     }
     break;
   default: bad_type(in.type);
@@ -708,11 +757,17 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:
-    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, { rsimd_active->sum_f64(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+      rsimd_active->sum_f64(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   case RSIMD_I32:
   case RSIMD_LGL:
-    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, { rsimd_active->sum_i32(px, len, &r, &o); });
+    RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+      rsimd_active->sum_i32(px, len, &r, &o);
+      RSIMD_STOP_AT_NA(r);
+    });
     break;
   default: bad_type(in.type);
   }

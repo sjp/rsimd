@@ -19,7 +19,7 @@ Rscript bench/run.R --ops sum,exp --sizes 1e4,1e6 --out /tmp/bench
 | Option | Meaning |
 |--------|---------|
 | `--quick` | Sizes 1e3 and 1e5 and half the timing budget (at least 10, at most 100 iterations). |
-| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`, and the overhead-table op `eq` (the overhead table also has `sum`, `add`, `exp`, `as_integer`, `dot` and complex `mul`). |
+| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), `sum_narm`, `min`, `is_finite_all`, `bit_and` and `popcount_total` (raw), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`, and the overhead-table op `eq` (the overhead table also has `sum`, `add`, `exp`, `as_integer`, `dot` and complex `mul`). |
 | `--sizes a,b` | Input lengths (default `1e3,1e5,1e7`: L1-resident, cache-resident, DRAM-bound). |
 | `--out dir` | Output directory (default `bench/results/`, which git ignores). |
 
@@ -38,13 +38,20 @@ and once as the base R equivalent:
 | any_na | `simd_any_na(x)` | `anyNA(x)` | double, integer |
 | is_na | `simd_is_na(x)` | `is.na(x)` | double |
 | as_integer | `simd_as_integer(x, mode = "truncating")` | `as.integer(x)` | double |
+| sum_narm | `simd_sum(x, na.rm = TRUE)` | `sum(x, na.rm = TRUE)` | double |
+| min | `simd_min(x)` | `min(x)` | double, integer |
+| is_finite_all | `simd_is_finite_all(x)` | `all(is.finite(x))` | double |
+| bit_and | `simd_bit_and(rx, ry)` | `rx & ry` | raw |
+| popcount_total | `simd_popcount_total(rx)` | `sum(as.integer(rawToBits(rx)))` | raw |
 
 There are five tables:
 
 - **Main**: every op at every size, precision mode `"fast"`, no missing values.
-- **1% NA**: `sum` and `any_na` with 1% of the elements set to `NA`, which exercises the
-  NA-aware paths. Both base R and rsimd stop `anyNA()` at the first `NA` (base R's
-  integer `sum()` does too), so those rows measure call overhead, not throughput.
+- **1% NA**: `sum`, `sum_narm` (`na.rm = TRUE`), `any_na` and `min` with 1% of the
+  elements set to `NA`, which exercises the NA-aware paths. Without `na.rm` rsimd stops
+  reading at the first block that has an `NA` (the result is `NA` whatever follows), as
+  base R's `anyNA()` and integer `sum()` do, so those rows mostly measure call overhead,
+  not throughput; `sum_narm` reads everything and removes the `NA`s.
 - **Precision modes**: `sum` and `dot` under `"fast"`, `"pairwise"` and `"compensated"`
   at the largest size, showing what the more accurate modes cost.
 - **Math accuracy modes**: `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow` and `asinh`, and

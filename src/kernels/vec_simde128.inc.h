@@ -480,6 +480,7 @@ RSIMD_INLINE rsimd_vf64 rsimd_vi64_to_vf64(rsimd_vi64 a) {
    about 2^-31: 1.57x faster than 1 / sqrt(a) in a bare loop there, about
    as fast inside the kernel, and expected to gain more on the Neoverse
    cores, whose FSQRT and FDIV are slower. */
+#define RSIMD_RECIP_APPROX_EXACT 1
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
   return simde_mm_div_pd(simde_mm_set1_pd(1.0), a);
 }
@@ -490,6 +491,7 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_rsqrt_approx(rsimd_vf64 a) {
   return simde__m128d_from_neon_f64(r);
 }
 #elif defined(__aarch64__) || defined(_M_ARM64)
+#define RSIMD_RECIP_APPROX_EXACT 1
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_recip_approx(rsimd_vf64 a) {
   return simde_mm_div_pd(simde_mm_set1_pd(1.0), a);
 }

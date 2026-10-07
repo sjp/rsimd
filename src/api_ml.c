@@ -47,6 +47,7 @@ static SEXP softmax(SEXP x, SEXP precision, int log_out) {
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), 0);
   o.precision = rsimd_arg_precision(precision);
+  o.extrema = RSIMD_EXT_MAX;
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, in.n));
   po = (double *) rsimd_out_ptr(out);
 

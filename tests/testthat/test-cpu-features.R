@@ -28,7 +28,12 @@ implies <- function(f, from, to) {
 test_that("simd_cpu_features() has the documented structure", {
   cf <- simd_cpu_features()
   expect_type(cf, "list")
-  expect_named(cf, c("arch", "os", "method", "features", "sve_vector_length_bits", "masked"))
+  expect_named(cf, c(
+    "arch", "os", "method", "features", "sve_vector_length_bits", "masked", "apple_core"
+  ))
+  expect_true(isTRUE(cf$apple_core) || isFALSE(cf$apple_core))
+  if (cf$arch != "aarch64") expect_false(cf$apple_core)
+  if (cf$arch == "aarch64" && cf$os == "darwin") expect_true(cf$apple_core)
   expect_true(cf$arch %in% c("x86_64", "i686", "aarch64", "armv7", "other"))
   expect_true(cf$os %in% c("linux", "darwin", "windows", "freebsd", "other"))
   expect_true(cf$method %in% c("cpuid", "getauxval", "sysctl", "win32", "elf_aux_info", "none"))

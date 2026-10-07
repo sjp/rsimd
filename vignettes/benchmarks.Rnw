@@ -44,8 +44,9 @@ csv_files <- sort(Sys.glob(file.path(results_dir, "*.csv")))
 snapshots <- lapply(csv_files, read.csv, stringsAsFactors = FALSE)
 
 tier_order <- c("avx512", "avx2", "sse2", "sve2", "sve", "neon", "none")
-op_order <- c("sum", "mean", "dot", "add", "fma", "pmax", "exp", "any_na",
-  "is_na", "as_integer", "sin", "log", "tanh", "atan2", "hypot", "pow", "asinh",
+op_order <- c("sum", "sum_narm", "mean", "dot", "min", "add", "fma", "pmax",
+  "exp", "any_na", "is_na", "is_finite_all", "as_integer", "bit_and",
+  "popcount_total", "sin", "log", "tanh", "atan2", "hypot", "pow", "asinh",
   "sqrt", "asin", "asin_cut")
 mode_order <- c("accurate", "fast", "pairwise", "compensated")
 
@@ -226,9 +227,12 @@ code.
   for, not SIMD alone. The \code{none} column is the fairer baseline.
 \item \emph{Missing values.} \code{anyNA()} stops at the first missing
   value, and so does \code{simd\_any\_na()}, so with 1\% missing values
-  both take a tiny, size-independent time, which is call overhead. Base
-  R's integer \code{sum()} stops there too, returning \code{NA}, while
-  \code{simd\_sum()} of integers reads the whole vector.
+  both take a tiny, size-independent time, which is call overhead. Without
+  \code{na.rm}, \pkg{rsimd}'s sums, means and minima stop too, at the
+  first block of a few thousand elements with an \code{NA}, as the result
+  is then \code{NA}; base R's integer \code{sum()} stops there, and its
+  other reductions read the whole vector. With \code{na.rm = TRUE}
+  (\code{sum\_narm}) everything is read.
 \end{itemize}
 
 <<results, echo=FALSE, results=tex>>=

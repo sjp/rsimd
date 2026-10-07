@@ -42,23 +42,35 @@ static inline void rsimd_ham_bits_u8_from(const Rbyte *x, const Rbyte *y, R_xlen
   const R_xlen_t sx = RSIMD_LGL_SCALAR(0) ? 0 : 1, sy = RSIMD_LGL_SCALAR(1) ? 0 : 1;
   for (; i < n; i++) r->i64 += rsimd_popcnt_1((uint32_t) (x[i * sx] ^ y[i * sy]));
 }
+/* Leading and trailing zero bits (32 for none): the compiler's builtins
+   (a single instruction on most targets), else a loop. */
 static inline int32_t rsimd_lzcnt_1(uint32_t x) {
   int32_t k = 0;
   if (x == 0) return 32;
+#if defined(__GNUC__) || defined(__clang__)
+  (void) k;
+  return (int32_t) __builtin_clz(x);
+#else
   while (!(x & 0x80000000u)) {
     x <<= 1;
     k++;
   }
   return k;
+#endif
 }
 static inline int32_t rsimd_tzcnt_1(uint32_t x) {
   int32_t k = 0;
   if (x == 0) return 32;
+#if defined(__GNUC__) || defined(__clang__)
+  (void) k;
+  return (int32_t) __builtin_ctz(x);
+#else
   while (!(x & 1u)) {
     x >>= 1;
     k++;
   }
   return k;
+#endif
 }
 
 /* Logical value of an element: 1, 0 or NA. */
@@ -436,12 +448,72 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(bit_u8_)(const int op, const Rbyte *x, con
   }
 }
 
+/* ---- Raw bytes four to a 32-bit lane ---- */
+
+/* A vector of 4 * RSIMD_LANES_32 raw bytes, as 32-bit lanes (the layer's
+   unaligned load and store of int32 lanes move the bytes unchanged). */
+#define RSIMD_U8_PER_VEC (4 * RSIMD_LANES_32)
+RSIMD_INLINE rsimd_vi32 rsimd_vu8x4_load(const Rbyte *p) {
+  return rsimd_vi32_loadu((const int32_t *) (const void *) p);
+}
+RSIMD_INLINE void rsimd_vu8x4_store(Rbyte *p, rsimd_vi32 v) {
+  rsimd_vi32_storeu((int32_t *) (void *) p, v);
+}
+/* The 32-bit lane of four copies of byte b. */
+RSIMD_INLINE rsimd_vi32 rsimd_vu8x4_set1(Rbyte b) {
+  return rsimd_vi32_set1((int32_t) ((uint32_t) b * UINT32_C(0x01010101)));
+}
+
+/* op of every byte of the lanes a and b, count k (0 to 8 for shifts, 0 to
+   7 for rotates): the shifted words are masked so that no bit crosses into
+   the next byte. */
+RSIMD_ALWAYS_INLINE rsimd_vi32 rsimd_bit_vu8x4(const int op, rsimd_vi32 a, rsimd_vi32 b, int k) {
+  const rsimd_vi32 lmask = rsimd_vu8x4_set1((Rbyte) ((0xFFu << k) & 0xFFu)),
+                   rmask = rsimd_vu8x4_set1((Rbyte) (0xFFu >> k));
+  switch (op) {
+  case RSIMD_BIT_AND: return rsimd_vi32_and(a, b);
+  case RSIMD_BIT_OR: return rsimd_vi32_or(a, b);
+  case RSIMD_BIT_XOR: return rsimd_vi32_xor(a, b);
+  case RSIMD_BIT_NOT: return rsimd_vi32_xor(a, rsimd_vi32_set1(-1));
+  case RSIMD_BIT_SHL: return rsimd_vi32_and(rsimd_vi32_sll(a, k), lmask);
+  case RSIMD_BIT_SHR: return rsimd_vi32_and(rsimd_vi32_srl(a, k), rmask);
+  case RSIMD_BIT_ROTL:
+    return rsimd_vi32_or(rsimd_vi32_and(rsimd_vi32_sll(a, k), lmask),
+                         rsimd_vi32_and(rsimd_vi32_srl(a, 8 - k), rsimd_vi32_xor(lmask, rsimd_vi32_set1(-1))));
+  default: /* RSIMD_BIT_ROTR */
+    return rsimd_vi32_or(rsimd_vi32_and(rsimd_vi32_srl(a, k), rmask),
+                         rsimd_vi32_and(rsimd_vi32_sll(a, 8 - k), rsimd_vi32_xor(rmask, rsimd_vi32_set1(-1))));
+  }
+}
+
+/* The byte-to-byte ops on whole vectors of bytes; the rest of the chunk
+   (and the counts, whose results are int32) take bit_u8_(). */
+RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(bit_u8x4_)(const int op, const Rbyte *x, const Rbyte *y,
+                                                 R_xlen_t n, int flags, int k, void *out) {
+  const int sx = RSIMD_LGL_SCALAR(0), sy = y == NULL || RSIMD_LGL_SCALAR(1);
+  const rsimd_vi32 bx = rsimd_vu8x4_set1(x[0]), by = y != NULL ? rsimd_vu8x4_set1(y[0]) : bx;
+  Rbyte *o = (Rbyte *) out;
+  ptrdiff_t i = 0;
+  for (; i + RSIMD_U8_PER_VEC <= n; i += RSIMD_U8_PER_VEC) {
+    rsimd_vi32 a = sx ? bx : rsimd_vu8x4_load(x + i), b = sy ? by : rsimd_vu8x4_load(y + i);
+    rsimd_vu8x4_store(o + i, rsimd_bit_vu8x4(op, a, b, k));
+  }
+  if (i < n) {
+    RSIMD_KERNEL(bit_u8_)(op, sx ? x : x + i, y == NULL || sy ? y : y + i, n - i, flags, k,
+                          o + i);
+  }
+}
+
 void RSIMD_KERNEL(bit_u8)(int op, const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, int k,
                           void *out);
 void RSIMD_KERNEL(bit_u8)(int op, const Rbyte *x, const Rbyte *y, R_xlen_t n, int flags, int k,
                           void *out) {
   if (op > RSIMD_BIT_XOR) y = NULL;
-  RSIMD_BIT_DISPATCH(RSIMD_KERNEL(bit_u8_), x, y, n, flags, k, out)
+  if (rsimd_bit_counts(op)) {
+    RSIMD_BIT_DISPATCH(RSIMD_KERNEL(bit_u8_), x, y, n, flags, k, out)
+  } else {
+    RSIMD_BIT_DISPATCH(RSIMD_KERNEL(bit_u8x4_), x, y, n, flags, k, out)
+  }
 }
 
 #undef RSIMD_BIT_DISPATCH
@@ -486,6 +558,15 @@ void RSIMD_KERNEL(popcnt_sum_u8)(const Rbyte *x, R_xlen_t n, rsimd_reduce_result
 void RSIMD_KERNEL(popcnt_sum_u8)(const Rbyte *x, R_xlen_t n, rsimd_reduce_result *r) {
   rsimd_vi32 acc = rsimd_vi32_zero();
   ptrdiff_t i = 0, since = 0;
+  /* Whole vectors four bytes to a lane, then the rest a byte to a lane. */
+  for (; i + RSIMD_U8_PER_VEC <= n; i += RSIMD_U8_PER_VEC) {
+    acc = rsimd_vi32_add(acc, rsimd_vi32_popcnt(rsimd_vu8x4_load(x + i)));
+    if (++since == RSIMD_POPCNT_FLUSH) {
+      r->i64 += rsimd_vi32_reduce_add(acc);
+      acc = rsimd_vi32_zero();
+      since = 0;
+    }
+  }
   for (; i < n; i += RSIMD_LANES_32) {
     rsimd_vi32 v = i + RSIMD_LANES_32 <= n ? rsimd_vi32_loadu_u8(x + i)
                                            : rsimd_vi32_loadu_u8_p(rsimd_p32_while(i, n), x + i, 0);
@@ -511,6 +592,19 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(hamming_bits_)(const void *x, const void *
                    vy = rsimd_vi32_set1(bytes ? by[0] : iy[0]);
   rsimd_vi32 acc = rsimd_vi32_zero();
   ptrdiff_t i = 0, since = 0;
+  if (bytes) {
+    /* Whole vectors four bytes to a lane first. */
+    const rsimd_vi32 wx = rsimd_vu8x4_set1(bx[0]), wy = rsimd_vu8x4_set1(by[0]);
+    for (; i + RSIMD_U8_PER_VEC <= n; i += RSIMD_U8_PER_VEC) {
+      rsimd_vi32 a = sx ? wx : rsimd_vu8x4_load(bx + i), b = sy ? wy : rsimd_vu8x4_load(by + i);
+      acc = rsimd_vi32_add(acc, rsimd_vi32_popcnt(rsimd_vi32_xor(a, b)));
+      if (++since == RSIMD_POPCNT_FLUSH) {
+        r->i64 += rsimd_vi32_reduce_add(acc);
+        acc = rsimd_vi32_zero();
+        since = 0;
+      }
+    }
+  }
   for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
     rsimd_vi32 a = sx ? vx : bytes ? rsimd_vi32_loadu_u8(bx + i) : rsimd_vi32_loadu(ix + i);
     rsimd_vi32 b = sy ? vy : bytes ? rsimd_vi32_loadu_u8(by + i) : rsimd_vi32_loadu(iy + i);
@@ -543,5 +637,6 @@ void RSIMD_KERNEL(hamming_bits_u8)(const Rbyte *x, const Rbyte *y, R_xlen_t n, i
 }
 
 #undef RSIMD_POPCNT_FLUSH
+#undef RSIMD_U8_PER_VEC
 
 #endif /* vector tiers */

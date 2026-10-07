@@ -39,7 +39,7 @@ where that is faster:
 \code{"sse2"} \tab RCPPS + 1 step, \eqn{2^{-22.8}}{2^-22.8} \tab RSQRTPS + 1 step, \eqn{2^{-22.2}}{2^-22.2} \tab rounded twice \cr
 \code{"avx2"} \tab RCPPS + 1 step, \eqn{2^{-22.8}}{2^-22.8} \tab RSQRTPS + 1 step, \eqn{2^{-22.2}}{2^-22.2} \tab fused \cr
 \code{"avx512"} \tab VRCP14PD + 1 step, \eqn{2^{-28}}{2^-28} \tab VRSQRT14PD + 1 step, \eqn{2^{-27.4}}{2^-27.4} \tab fused \cr
-\code{"neon"} (64-bit) \tab exact \tab FRSQRTE + 2 steps, \eqn{2^{-31.3}}{2^-31.3} \tab fused \cr
+\code{"neon"} (64-bit) \tab exact \tab FRSQRTE + 2 steps, \eqn{2^{-31.3}}{2^-31.3}; exact on Apple cores \tab fused \cr
 \code{"sve"}, \code{"sve2"} \tab FRECPE + 2 steps, \eqn{2^{-33.8}}{2^-33.8} \tab FRSQRTE + 2 steps, \eqn{2^{-31.3}}{2^-31.3} \tab fused \cr
 }
 The errors are the largest relative errors. For SSE2 and AVX2 they follow
@@ -51,7 +51,9 @@ reciprocal of the significand of \code{x} and put the exponent back
 exactly, which works over the whole range of doubles. On 64-bit ARM an
 exact division was measured to be faster than the estimate and the two
 steps it needs (on the Apple M-series), so \code{simd_recip_approx} divides
-there. 32-bit ARM, and an implementation built without SLEEF (see
+there; on Apple cores (\code{simd_cpu_features()$apple_core}) the same holds
+for the square root, so \code{simd_rsqrt_approx} computes \code{1 / sqrt(x)}
+exactly there and its results depend on the core. 32-bit ARM, and an implementation built without SLEEF (see
 \code{\link{simd_available}}), use the next lower implementation's
 functions, ultimately \code{"none"}'s.
 

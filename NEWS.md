@@ -70,8 +70,9 @@ First release.
   base R on every tier; `simd_rootn()`, the real n-th root, within 1 ULP and
   exact for exact roots. Approximations `simd_recip_approx()` and
   `simd_rsqrt_approx()` (within a relative error of 2^-22, from hardware
-  estimates and Newton steps) and `simd_mul_add_approx()` (fused where the
-  CPU has a fused multiply-add).
+  estimates and Newton steps, or exact where that is faster, as on Apple
+  arm64 cores, which `simd_cpu_features()$apple_core` reports) and
+  `simd_mul_add_approx()` (fused where the CPU has a fused multiply-add).
 * **Complex vectors:** `simd_add()`, `simd_sub()`, `simd_mul()`,
   `simd_div()`, `simd_neg()`, `simd_abs()` (the modulus), `simd_sum()`,
   `simd_prod()`, `simd_mean()`, `simd_cumsum()`, `simd_cumprod()`,

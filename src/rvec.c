@@ -810,6 +810,7 @@ void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, int no_na_hint) {
   o->na_check = (Rf_isNull(na_check) ? na_check_option() : rsimd_arg_lgl1(na_check, "na_check")) &&
                 !no_na_hint;
   o->precision = RSIMD_PREC_FAST;
+  o->extrema = RSIMD_EXT_BOTH;
 }
 
 int rsimd_arg_lgl1(SEXP x, const char *name) {

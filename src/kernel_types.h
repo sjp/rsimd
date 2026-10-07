@@ -24,7 +24,12 @@ typedef struct {
   int na_check;  /* from na_check= / option rsimd.na_check, cleared when the
                     inputs are known NA-free */
   int precision; /* RSIMD_PREC_FAST / PAIRWISE / COMPENSATED */
+  int extrema;   /* min/max kernels: the extrema wanted, RSIMD_EXT_MIN,
+                    RSIMD_EXT_MAX or both (the default); the other is left
+                    as it was */
 } rsimd_opts;
+
+enum { RSIMD_EXT_MIN = 1, RSIMD_EXT_MAX = 2, RSIMD_EXT_BOTH = 3 };
 
 /* What the missing-value kernels (na_f64 ...) compute. RSIMD_NAMODE_TRUE,
    OR-ed into COUNT or a WHICH mode of na_i32, looks for TRUE (1) instead

@@ -52,6 +52,10 @@
 #include "kernels/cmath.inc.c"
 #include "kernels/ml.inc.c"
 
+/* Set by the CPU detection in the package (src/cpu_features.c); 0 here, so
+   the neon rsqrt_approx estimate is the one tested. */
+int rsimd_apple_core = 0;
+
 #define N 200 /* > 3 vectors at 2048-bit SVE for 32-bit lanes */
 #define SENTINEL_F64 -12345.678
 #define SENTINEL_I32 0x5A5A5A5A
@@ -881,7 +885,7 @@ static void test_softmax(void) {
     for (j = 0; j < n; j++) m = sx[j] > m ? sx[j] : m;
     for (j = 0; j < n; j++) sref[j] = exp(sx[j] - m);
     for (prec = RSIMD_PREC_FAST; prec <= RSIMD_PREC_COMPENSATED; prec++) {
-      const rsimd_opts o = {0, 0, prec};
+      const rsimd_opts o = {0, 0, prec, RSIMD_EXT_BOTH};
       rsimd_reduce_result r, r2, rr;
       double got, want;
       memset(&r, 0, sizeof r);
@@ -913,7 +917,7 @@ static void test_softmax(void) {
       check_int(what, n, 0, bits(rsimd_reduce_value(&r2, prec)) == bits(got), 1);
     }
     {
-      const rsimd_opts o = {0, 0, RSIMD_PREC_FAST};
+      const rsimd_opts o = {0, 0, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
       const double c = 1.2345678901234567;
       int op;
       for (op = RSIMD_SOFTMAX_DIV; op <= RSIMD_SOFTMAX_LOG; op++) {
@@ -1700,7 +1704,8 @@ static rsimd_vi32 ovf_lanes(int op, rsimd_vi32 x, rsimd_vi32 y) {
 }
 
 static void test_na_int(ptrdiff_t n) {
-  static const rsimd_opts opts[3] = {{0, 1, 0}, {1, 1, 0}, {0, 0, 0}};
+  static const rsimd_opts opts[3] = {
+    {0, 1, 0, RSIMD_EXT_BOTH}, {1, 1, 0, RSIMD_EXT_BOTH}, {0, 0, 0, RSIMD_EXT_BOTH}};
   ptrdiff_t j;
   int k;
   char buf[96];
@@ -1805,7 +1810,8 @@ static void test_na_int(ptrdiff_t n) {
 /* Missing values are found in every lane, and integer-valued data sums
    exactly in every mode, so vector and scalar folds must agree exactly. */
 static void test_na_fold(ptrdiff_t n) {
-  static const rsimd_opts base[3] = {{0, 1, 0}, {1, 1, 0}, {0, 0, 0}};
+  static const rsimd_opts base[3] = {
+    {0, 1, 0, RSIMD_EXT_BOTH}, {1, 1, 0, RSIMD_EXT_BOTH}, {0, 0, 0, RSIMD_EXT_BOTH}};
   static double xs[N + 1], ys[N + 1];
   ptrdiff_t j;
   int k, prec, term;
@@ -1835,6 +1841,9 @@ static void test_na_fold(ptrdiff_t n) {
         va = rsimd_reduce_value(&a, prec);
         vb = rsimd_reduce_value(&b, prec);
         n_checks++;
+        /* Without na.rm both folds stop at an NA, at different points:
+           only the flags are defined then. */
+        if (a.saw_na && b.saw_na && !o.na_rm && o.na_check) continue;
         if (!same_result(&a, &b) || !(bits(va) == bits(vb) || (isnan(va) && isnan(vb)))) {
           snprintf(buf, sizeof buf, "opts %d prec %d term %d: %g/%g count %ld/%ld na %d/%d",
                    k, prec, term, va, vb, (long) a.count, (long) b.count, a.saw_na, b.saw_na);
@@ -1852,7 +1861,7 @@ static void test_na_fold(ptrdiff_t n) {
 static void test_na_cancel(void) {
   static double x[257];
   static const double want[3] = {0.0, 0.0, 1.0};
-  rsimd_opts o = {0, 1, 0};
+  rsimd_opts o = {0, 1, 0, RSIMD_EXT_BOTH};
   int prec;
   memset(x, 0, sizeof x);
   x[0] = 1e16;
@@ -1953,6 +1962,12 @@ static void check_flags(const char *what, ptrdiff_t n, const rsimd_reduce_result
   check_int(what, n, 2, got->saw_nan, want->saw_nan);
 }
 
+/* A fold without na.rm stops at a block with an NA (the result is NA
+   whatever follows): then only the flag is defined. */
+static void check_stopped(const char *what, ptrdiff_t n, const rsimd_reduce_result *got) {
+  check_int(what, n, 1, got->saw_na, 1);
+}
+
 /* Three-valued any/all from the flags. */
 static int lgl3(const rsimd_reduce_result *r, int all, int narm) {
   if (all) return r->any_false ? 0 : (r->saw_na && !narm ? 2 : 1);
@@ -1982,7 +1997,7 @@ static void test_reduce(ptrdiff_t n) {
     fill_reduce(variant);
     for (narm = 0; narm < 2; narm++) {
       for (check = 0; check < 2; check++) {
-        rsimd_opts o = {narm, check, RSIMD_PREC_FAST};
+        rsimd_opts o = {narm, check, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
         int chk = check || narm;
         rsimd_reduce_result r, want;
         ptrdiff_t i;
@@ -2003,10 +2018,14 @@ static void test_reduce(ptrdiff_t n) {
           }
 #define REF_CHECK                                                                \
   snprintf(what, sizeof what, "minmax_i32 abs%d v%d narm%d way%d", ab, variant, narm, way); \
-  check_flags(what, n, &r, &want);                                               \
-  if (want.count > 0) {                                                          \
-    check_int(what, n, 3, (long) r.i64, (long) want.i64);                        \
-    check_int(what, n, 4, (long) r.i64_hi, (long) want.i64_hi);                  \
+  if (want.saw_na && !narm) {                                                    \
+    check_stopped(what, n, &r);                                                  \
+  } else {                                                                       \
+    check_flags(what, n, &r, &want);                                             \
+    if (want.count > 0) {                                                        \
+      check_int(what, n, 3, (long) r.i64, (long) want.i64);                      \
+      check_int(what, n, 4, (long) r.i64_hi, (long) want.i64_hi);                \
+    }                                                                            \
   }
           TWO_WAYS(r, reduce_init(&r, HUGE_VAL),
                    RSIMD_KERNEL(minmax_i32)(ri + off, len, ab, &r, &o))
@@ -2119,10 +2138,14 @@ static void test_reduce(ptrdiff_t n) {
           }
 #define REF_CHECK                                                                \
   snprintf(what, sizeof what, "minmax_f64 abs%d v%d narm%d way%d", ab, variant, narm, way); \
-  check_flags(what, n, &r, &want);                                               \
-  n_checks += 2;                                                                 \
-  if (bits(r.f64) != bits(want.f64)) fail(what, n, 3, "minimum differs");        \
-  if (bits(r.f64_hi) != bits(want.f64_hi)) fail(what, n, 4, "maximum differs");
+  if (want.saw_na && !narm) {                                                    \
+    check_stopped(what, n, &r);                                                  \
+  } else {                                                                       \
+    check_flags(what, n, &r, &want);                                             \
+    n_checks += 2;                                                               \
+    if (bits(r.f64) != bits(want.f64)) fail(what, n, 3, "minimum differs");      \
+    if (bits(r.f64_hi) != bits(want.f64_hi)) fail(what, n, 4, "maximum differs"); \
+  }
           TWO_WAYS(r, reduce_init(&r, HUGE_VAL),
                    RSIMD_KERNEL(minmax_f64)(rd + off, len, ab, &r, &o))
 #undef REF_CHECK
@@ -2150,7 +2173,7 @@ static void test_reduce(ptrdiff_t n) {
 
         /* sum of deviations from 0.5 (exact in every mode) */
         for (mode = 0; mode < 3; mode++) {
-          rsimd_opts om = {narm, check, mode};
+          rsimd_opts om = {narm, check, mode, RSIMD_EXT_BOTH};
           double s = 0;
           reduce_init(&want, 0.0);
           for (i = 0; i < n; i++) {
@@ -2372,7 +2395,7 @@ static void test_prod2(ptrdiff_t n) {
         }
         for (narm = 0; narm < 2; narm++) {
           for (check = 0; check < 2; check++) {
-            const rsimd_opts o = {narm, check, RSIMD_PREC_FAST};
+            const rsimd_opts o = {narm, check, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
             const int chk = check || narm;
             rsimd_reduce_result r, want;
             reduce_init(&want, 1.0);
@@ -2499,7 +2522,7 @@ static void test_linalg(ptrdiff_t n) {
         int chk = check || narm;
         if (!chk && variant == 1) continue;
         for (mode = 0; mode < 3; mode++) {
-          rsimd_opts o = {narm, check, mode};
+          rsimd_opts o = {narm, check, mode, RSIMD_EXT_BOTH};
           rsimd_reduce_result r;
           int64_t isum = 0;
           ptrdiff_t i;
@@ -2655,7 +2678,7 @@ static void test_scan(ptrdiff_t n) {
         for (way = 0; way < 2; way++) {
           ptrdiff_t k = way ? n / 3 : n, off, len, got = -1;
           rsimd_scan_state s = {inits[op], 0.0, 0, 0};
-          rsimd_opts o = {0, 1, RSIMD_PREC_FAST};
+          rsimd_opts o = {0, 1, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
           for (i = 0; i <= n; i++) {
             lout_f[i] = SENTINEL_F64;
             lout_i[i] = SENTINEL_I32;
@@ -2688,7 +2711,7 @@ static void test_scan(ptrdiff_t n) {
     /* compensated cumsum: the scalar Neumaier sum on every tier */
     {
       rsimd_scan_state s = {0.0, 0.0, 0, 0};
-      rsimd_opts o = {0, 1, RSIMD_PREC_COMPENSATED};
+      rsimd_opts o = {0, 1, RSIMD_PREC_COMPENSATED, RSIMD_EXT_BOTH};
       double S = 0.0, C = 0.0;
       ptrdiff_t i, stop = -1;
       for (i = 0; i < n; i++) {
@@ -2839,7 +2862,7 @@ static int32_t ref_ew3_i32(int op, int32_t a, int32_t b, int32_t c, int check, i
 }
 
 static void test_arith(ptrdiff_t n) {
-  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST}, o_nocheck = {0, 0, RSIMD_PREC_FAST};
+  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST, RSIMD_EXT_BOTH}, o_nocheck = {0, 0, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
   int op, f, st, want_st, check;
   ptrdiff_t j;
   char what[96];
@@ -3057,8 +3080,9 @@ static int pred_fold(const int32_t *v, ptrdiff_t n, int mode) {
 }
 
 static void test_logical(ptrdiff_t n) {
-  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST}, onc = {0, 0, RSIMD_PREC_FAST},
-                   orm = {1, 1, RSIMD_PREC_FAST};
+  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST, RSIMD_EXT_BOTH},
+                   onc = {0, 0, RSIMD_PREC_FAST, RSIMD_EXT_BOTH},
+                   orm = {1, 1, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
   const rsimd_opts *opts[3] = {&o, &onc, &orm};
   int op, f, mode, k, check, got, st, want_st;
   ptrdiff_t j;
@@ -3417,7 +3441,7 @@ static void test_complex(ptrdiff_t n) {
     for (narm = 0; narm < 2; narm++) {
       for (check = 0; check < 2; check++) {
         for (prec = 0; prec < 3; prec++) {
-          rsimd_opts o = {narm, check, prec}, po = {0, check, prec};
+          rsimd_opts o = {narm, check, prec, RSIMD_EXT_BOTH}, po = {0, check, prec, RSIMD_EXT_BOTH};
           rsimd_reduce_result r[2], want[2];
           ptrdiff_t removed = 0;
           if (!check && !narm && (variant == 1 || variant == 3)) continue;
@@ -3440,10 +3464,14 @@ static void test_complex(ptrdiff_t n) {
   for (k = 0; k < 2; k++) {                                                               \
     snprintf(what, sizeof what, "sum_c128 part%d v%d narm%d chk%d prec%d way%d", k, variant, \
              narm, check, prec, way);                                                     \
-    check_flags(what, n, &r[k], &want[k]);                                                \
-    n_checks++;                                                                           \
-    if (!same_or_nan(rsimd_reduce_value(&r[k], prec), rsimd_reduce_value(&want[k], prec))) { \
-      fail(what, n, 0, "sum differs");                                                    \
+    if (check && want[k].saw_na && !narm) {                                               \
+      check_stopped(what, n, &r[k]);                                                      \
+    } else {                                                                              \
+      check_flags(what, n, &r[k], &want[k]);                                              \
+      n_checks++;                                                                         \
+      if (!same_or_nan(rsimd_reduce_value(&r[k], prec), rsimd_reduce_value(&want[k], prec))) { \
+        fail(what, n, 0, "sum differs");                                                  \
+      }                                                                                   \
     }                                                                                     \
   }
           /* Pairwise chunks must start at a multiple of the leaf size. */
@@ -3645,7 +3673,7 @@ static void test_carith(ptrdiff_t n) {
       for (prec = 0; prec < 3; prec++) {
         for (check = 0; check < 2; check++) {
           for (narm = 0; narm < 2; narm++) {
-            rsimd_opts o = {narm, check, prec};
+            rsimd_opts o = {narm, check, prec, RSIMD_EXT_BOTH};
             rsimd_cprod_state got, want;
             ptrdiff_t k = n / 3;
             memset(&got, 0, sizeof got);
@@ -4372,7 +4400,7 @@ static void init_i64_inputs(void) {
 }
 
 static void test_int64(ptrdiff_t n) {
-  static const rsimd_opts oc = {0, 1, 0}, onc = {0, 0, 0}, orm = {1, 1, 0};
+  static const rsimd_opts oc = {0, 1, 0, RSIMD_EXT_BOTH}, onc = {0, 0, 0, RSIMD_EXT_BOTH}, orm = {1, 1, 0, RSIMD_EXT_BOTH};
   const rsimd_opts *opts[3] = {&onc, &oc, &orm};
   char what[96];
   ptrdiff_t j;
@@ -4397,10 +4425,14 @@ static void test_int64(ptrdiff_t n) {
       ref.count++;
     }
     snprintf(what, sizeof what, "sum_i64 variant %d", v);
-    check_int(what, n, 0, (long) (r.i64 >> 32), (long) (ref.i64 >> 32));
-    check_int(what, n, 1, (long) (r.i64 & 0xFFFFFFFF), (long) (ref.i64 & 0xFFFFFFFF));
-    check_int(what, n, 2, (long) r.carry, (long) ref.carry);
-    check_flags(what, n, &r, &ref);
+    if (ref.saw_na && !o->na_rm) {
+      check_stopped(what, n, &r);
+    } else {
+      check_int(what, n, 0, (long) (r.i64 >> 32), (long) (ref.i64 >> 32));
+      check_int(what, n, 1, (long) (r.i64 & 0xFFFFFFFF), (long) (ref.i64 & 0xFFFFFFFF));
+      check_int(what, n, 2, (long) r.carry, (long) ref.carry);
+      check_flags(what, n, &r, &ref);
+    }
 
     for (ab = 0; ab < 2; ab++) {
       reduce_init(&r, 0.0);
@@ -4418,9 +4450,13 @@ static void test_int64(ptrdiff_t n) {
         ref.count++;
       }
       snprintf(what, sizeof what, "minmax_i64 abs %d variant %d", ab, v);
-      check_int(what, n, 0, r.i64 == ref.i64, 1);
-      check_int(what, n, 1, r.i64_hi == ref.i64_hi, 1);
-      check_flags(what, n, &r, &ref);
+      if (ref.saw_na && !o->na_rm) {
+        check_stopped(what, n, &r);
+      } else {
+        check_int(what, n, 0, r.i64 == ref.i64, 1);
+        check_int(what, n, 1, r.i64_hi == ref.i64_hi, 1);
+        check_flags(what, n, &r, &ref);
+      }
     }
 
     for (stop = RSIMD_STOP_NONE; stop <= RSIMD_STOP_FALSE; stop++) {
@@ -4702,7 +4738,7 @@ static void check_hamming(const char *what, ptrdiff_t n, const rsimd_reduce_resu
 }
 
 static void test_hamming(ptrdiff_t n) {
-  static const rsimd_opts keep = {0, 1, 0}, rm = {1, 1, 0};
+  static const rsimd_opts keep = {0, 1, 0, RSIMD_EXT_BOTH}, rm = {1, 1, 0, RSIMD_EXT_BOTH};
   rsimd_reduce_result r;
   char what[96];
   ptrdiff_t j;
@@ -4845,7 +4881,7 @@ static void test_edge_cases(void) {
     UINT64_C(0x7ff0000000000001), UINT64_C(0xfff0000000000001), UINT64_C(0x7ff0000000000002),
     UINT64_C(0x7ff8000000000000), UINT64_C(0xfff8000000000000), UINT64_C(0x7ff00000000007a2),
     UINT64_C(0x7ff80000000007a2), UINT64_C(0x7fffffffffffffff), UINT64_C(0xffffffffffffffff)};
-  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST};
+  const rsimd_opts o = {0, 1, RSIMD_PREC_FAST, RSIMD_EXT_BOTH};
   const int nr = (int) (sizeof idiv_rows / sizeof idiv_rows[0]);
   const int nn = (int) (sizeof nan_bits / sizeof nan_bits[0]);
   ptrdiff_t n, k;

@@ -25,6 +25,7 @@ typedef struct rsimd_cpu_features {
   RSIMD_CPU_FEATURE_LIST(RSIMD_CPU_X)
 #undef RSIMD_CPU_X
   int sve_vector_length_bits;   /* 0 if unknown or no SVE */
+  int apple_core;               /* an Apple arm64 core (implementer 0x61) */
   const char *arch;             /* "x86_64", "i686", "aarch64", "armv7", "other" */
   const char *os;               /* "linux", "darwin", "windows", "freebsd", "other" */
   const char *detection_method; /* "cpuid", "getauxval", "sysctl", "win32", "elf_aux_info", "none" */

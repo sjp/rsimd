@@ -6,6 +6,7 @@
    with R's default compiler flags. */
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "cpu_features.h"
@@ -313,7 +314,33 @@ static unsigned long auxv(int which) {
 #endif
 #endif /* RSIMD_CPU_AUXV */
 
+int rsimd_apple_core = 0;
+
 #if defined(RSIMD_CPU_ARM64)
+
+/* An Apple core: every arm64 Mac; on Linux (a virtual machine on a Mac,
+   Asahi), CPU implementer 0x61 in /proc/cpuinfo. */
+static int apple_core(void) {
+#if defined(__APPLE__)
+  return 1;
+#elif defined(__linux__)
+  char line[256];
+  int found = 0;
+  FILE *fp = fopen("/proc/cpuinfo", "r");
+  if (fp == NULL) return 0;
+  while (fgets(line, (int) sizeof line, fp) != NULL) {
+    if (strncmp(line, "CPU implementer", 15) == 0) {
+      const char *v = strchr(line, ':');
+      found = v != NULL && strtol(v + 1, NULL, 0) == 0x61;
+      break;
+    }
+  }
+  fclose(fp);
+  return found;
+#else
+  return 0;
+#endif
+}
 
 static int sve_vector_length_bits(void) {
 #if defined(RSIMD_HAVE_SVE)
@@ -365,6 +392,7 @@ static void detect_arm64(rsimd_cpu_features *f) {
   f->detection_method = "none";
 #endif
   if (f->sve) f->sve_vector_length_bits = sve_vector_length_bits();
+  f->apple_core = apple_core();
 }
 
 #endif /* RSIMD_CPU_ARM64 */
@@ -407,6 +435,7 @@ void rsimd_cpu_init(void) {
   cpu_apply_mask(&f, getenv("RSIMD_CPU_FEATURES_MASK"));
   cpu_make_consistent(&f);
   cpu_final = f;
+  rsimd_apple_core = f.apple_core;
   cpu_done = 1;
 }
 

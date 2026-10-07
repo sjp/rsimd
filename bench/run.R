@@ -191,6 +191,28 @@ ops <- list(
   list(
     op = "pow_int", type = "complex", simd = quote(simd_pow(cs, 3)), base = quote(cs^3),
     bound = FALSE
+  ),
+  # In the 1% NA table these show the early exit (no na.rm) and the
+  # removal (na.rm).
+  list(
+    op = "sum_narm", type = "double", simd = quote(simd_sum(x, na.rm = TRUE)),
+    base = quote(sum(x, na.rm = TRUE)), bound = TRUE
+  ),
+  list(op = "min", type = "double", simd = quote(simd_min(x)), base = quote(min(x)), bound = TRUE),
+  list(
+    op = "min", type = "integer", simd = quote(simd_min(xi)), base = quote(min(xi)), bound = TRUE
+  ),
+  list(
+    op = "is_finite_all", type = "double", simd = quote(simd_is_finite_all(x)),
+    base = quote(all(is.finite(x))), bound = TRUE
+  ),
+  list(
+    op = "bit_and", type = "raw", simd = quote(simd_bit_and(rx, ry)), base = quote(rx & ry),
+    bound = FALSE
+  ),
+  list(
+    op = "popcount_total", type = "raw", simd = quote(simd_popcount_total(rx)),
+    base = quote(sum(as.integer(rawToBits(rx)))), bound = TRUE
   )
 )
 
@@ -266,9 +288,10 @@ sizes <- opts$sizes
 if (is.null(sizes)) sizes <- if (opts$quick) c(1e3, 1e5) else c(1e3, 1e5, 1e7)
 if (anyNA(sizes) || any(sizes < 1)) stop("--sizes must be positive numbers", call. = FALSE)
 
-# Tables beyond the main one: 1% NA inputs for sum and any_na, and the
+# Tables beyond the main one: 1% NA inputs for sum (with and without
+# na.rm), any_na and min, and the
 # precision modes for sum and dot at the largest size.
-na_ops <- c("sum", "any_na")
+na_ops <- c("sum", "any_na", "sum_narm", "min")
 precision_ops <- c("sum", "dot")
 precision_modes <- c("fast", "pairwise", "compensated")
 
@@ -309,6 +332,9 @@ make_inputs <- function(n) {
   env$xl <- env$x > 0
   # |x| in [1.01, 10] on the real axis (base R's branch cut of asin).
   env$ccut <- as.complex(sign(env$x) * (1.01 + abs(env$x) * 0.0899))
+  # Raw bytes, drawn last so that the inputs above stay the same.
+  env$rx <- as.raw(sample.int(256L, n, replace = TRUE) - 1L)
+  env$ry <- as.raw(sample.int(256L, n, replace = TRUE) - 1L)
   env
 }
 

@@ -836,11 +836,16 @@ RSIMD_ALWAYS_INLINE int rsimd_math1_run(int op, const void *x, R_xlen_t n, int f
    infinities, NaN, subnormals, |a| >= 2^1022 and, for rsqrt, negative
    numbers. */
 RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_recip_approx(rsimd_vf64 a) {
+#ifdef RSIMD_RECIP_APPROX_EXACT
+  /* The layer's recip_approx is the exact quotient in every lane. */
+  return rsimd_vf64_recip_approx(a);
+#else
   rsimd_vf64 ax = rsimd_vf64_abs(a), r = rsimd_vf64_recip_approx(a);
   rsimd_mf64 ok = rsimd_mf64_and(rsimd_vf64_cmp_ge(ax, rsimd_vf64_set1(0x1p-1022)),
                                  rsimd_vf64_cmp_lt(ax, rsimd_vf64_set1(0x1p1022)));
   if (!rsimd_mf64_all(ok)) r = rsimd_vf64_blend(rsimd_vf64_div(rsimd_vf64_set1(1.0), a), r, ok);
   return r;
+#endif
 }
 RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_rsqrt_approx(rsimd_vf64 a) {
   rsimd_vf64 r = rsimd_vf64_rsqrt_approx(a);
@@ -924,6 +929,14 @@ static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, doubl
     RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_recip_approx(a)));
     break;
   case RSIMD_MATH_RSQRT_APPROX:
+#if RSIMD_TIER_IS(neon)
+    /* On Apple cores 1 / sqrt(a) is faster than the estimate and its two
+       Newton steps (and exact). */
+    if (rsimd_apple_core) {
+      RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_vf64_div(one, rsimd_vf64_sqrt(a))));
+      break;
+    }
+#endif
     RSIMD_MATH_LOOP(1, RSIMD_MATH1_RESULT(rsimd_math_rsqrt_approx(a)));
     break;
   default: break;

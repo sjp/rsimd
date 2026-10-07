@@ -40,4 +40,8 @@ extern const char *const rsimd_tier_names[RSIMD_TIER_COUNT];
 /* Returns RSIMD_TIER_COUNT for an unknown name. "auto" is not a tier. */
 rsimd_tier rsimd_tier_from_name(const char *s);
 
+/* 1 on an Apple arm64 core (CPU implementer 0x61), set when the CPU is
+   detected; a kernel may take a path that is faster on those cores. */
+extern int rsimd_apple_core;
+
 #endif /* RSIMD_TIERS_H */

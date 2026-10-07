@@ -51,6 +51,11 @@ A list with elements:
   is absent or the length is unknown.}
 \item{masked}{The names of features that are supported but were switched off
   by \env{RSIMD_CPU_FEATURES_MASK}. Normally \code{character(0)}.}
+\item{apple_core}{\code{TRUE} on an Apple arm64 core (every arm64 Mac, and
+  Linux reporting CPU implementer \code{0x61}), where
+  \code{\link{simd_rsqrt_approx}()} computes the exact value because that is
+  faster there. Not a feature: \env{RSIMD_CPU_FEATURES_MASK} does not change
+  it.}
 }
 \examples{
 f <- simd_cpu_features()

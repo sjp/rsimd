@@ -165,10 +165,11 @@ integer64 to integer and logical, integer to integer64 \tab native \tab native \
 integer64 to and from raw \tab scalar \tab scalar \tab scalar \tab scalar \tab scalar
 }
 * \code{"checked"} and \code{"saturating"} modes; \code{"truncating"} is
-scalar. Checked multiplication takes the vector path while both operands of
-every lane are within \eqn{\pm 2^{31}} (and, on SVE, always); from the
-first vector with a larger operand, the rest of the block being processed
-(up to \eqn{2^{20}} elements) runs in scalar code. \emph{SIMDe NA test}:
+scalar. Checked multiplication takes the vector path for each vector whose
+operands are all within \eqn{\pm 2^{31}} (and, on SVE, always); the
+elements of a vector with a larger operand are multiplied in scalar
+code, and after eight such vectors in a row the rest of the block being
+processed (up to \eqn{2^{20}} elements) is. \emph{SIMDe NA test}:
 the sum's own additions are native SSE2, and only the test for \code{NA}
 (skipped with \code{na_check = FALSE}) uses SIMDe's 64-bit compare.
 \emph{SIMDe overflow test}: the additions and subtractions are native,

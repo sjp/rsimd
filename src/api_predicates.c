@@ -62,6 +62,11 @@ static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
     break;
   default: Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
   }
+  /* An input known to have no missing value (as for na_check) needs no
+     scan for one. */
+  if (code == RSIMD_PRED_NA && m != RSIMD_PRED_ELT && in.no_na_hint && in.type != RSIMD_C128) {
+    return Rf_ScalarLogical(m == RSIMD_PRED_ALL && in.n == 0);
+  }
   if (m == RSIMD_PRED_ELT) {
     out = PROTECT(rsimd_alloc_like(RSIMD_LGL, in.n));
     po = (int *) rsimd_out_ptr(out);
@@ -183,7 +188,6 @@ static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
   rsimd_opts o;
   SEXP sargs[2];
   rsimd_etype tx, ty;
-  int stop = 0;
 
   rsimd_opts_init(&o, na_rm, Rf_ScalarLogical(TRUE), 0);
   memset(&r, 0, sizeof r);
@@ -216,22 +220,20 @@ static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
       int flags = e.flags | (rsimd_is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
                   (rsimd_is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
-        if (!stop) rsimd_active->hamming_i64(p[0], p[1], len, flags, &r, &o);
-        stop = r.saw_na && !o.na_rm;
+        rsimd_active->hamming_i64(p[0], p[1], len, flags, &r, &o);
+        if (r.saw_na && !o.na_rm) break;
       });
     } else if (rsimd_is_int_like(tx) && rsimd_is_int_like(ty)) {
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
-        if (!stop) {
-          rsimd_active->hamming_i32((const int *) p[0], (const int *) p[1], len, e.flags, &r, &o);
-        }
-        stop = r.saw_na && !o.na_rm;
+        rsimd_active->hamming_i32((const int *) p[0], (const int *) p[1], len, e.flags, &r, &o);
+        if (r.saw_na && !o.na_rm) break;
       });
     } else if ((tx == RSIMD_F64 || rsimd_is_int_like(tx)) && (ty == RSIMD_F64 || rsimd_is_int_like(ty))) {
       int flags = e.flags | (rsimd_is_int_like(tx) ? RSIMD_EW_I32(0) : 0) |
                   (rsimd_is_int_like(ty) ? RSIMD_EW_I32(1) : 0);
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
-        if (!stop) rsimd_active->hamming_f64(p[0], p[1], len, flags, &r, &o);
-        stop = r.saw_na && !o.na_rm;
+        rsimd_active->hamming_f64(p[0], p[1], len, flags, &r, &o);
+        if (r.saw_na && !o.na_rm) break;
       });
     } else {
       Rf_error("Hamming distance of these types is not implemented");
