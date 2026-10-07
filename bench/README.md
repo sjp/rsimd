@@ -197,7 +197,7 @@ The benchmarks vignette does not run `bench`. It renders snapshots committed und
 1. Run the full suite (`Rscript bench/run.R`) on a quiet machine, or download a
    `benchmarks` workflow artifact.
 2. Copy the run's `.md` and `.csv` into `vignettes/benchmark-results/`, named after the
-   platform (for example `linux-x86_64.md` and `linux-x86_64.csv`), replacing that
+   platform (the csv's `machine` column, for example `linux-x86-64.md` and `linux-x86-64.csv`), replacing that
    platform's previous snapshot.
 3. Rebuild the vignettes and check the tables and the metadata (date, rsimd version, CPU).
 
