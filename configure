@@ -45,7 +45,8 @@
 # and the tiers round identically; SLEEF requires it too. With GCC the sve
 # and sve2 objects also get -fno-tree-vrp, as in SLEEF's own SVE build. On
 # Windows the avx2 and avx512 objects are assembled with
-# -Wa,-muse-unaligned-vector-move (see below).
+# -Wa,-muse-unaligned-vector-move (see below), and so is every object of an
+# x86-64 AddressSanitizer build.
 #
 # Environment variables
 # ---------------------
@@ -340,6 +341,27 @@ else
   show_log
 fi
 
+# Under AddressSanitizer, GCC lays out a stack frame holding 64-byte vectors
+# for 64-byte alignment and moves vectors into its locals with aligned
+# moves, but with stack-use-after-return detection (on by default) the frame
+# is a fake-stack frame only 32-byte aligned, so the avx512 kernels fault on
+# their first such store. The assembler then makes every aligned vector move
+# unaligned, as on Windows below. It goes on every object, not only the
+# tiers: with LTO, code is assembled at link time, and lto-wrapper drops -Wa
+# options that the objects do not all share.
+pkg_cflags=
+case "$arch| $CC $CFLAGS " in x86_64\|*" -fsanitize="*address*)
+  printf "checking whether %s accepts -Wa,-muse-unaligned-vector-move... " "$CC"
+  if try_compile "$probe_none" "-Wa,-muse-unaligned-vector-move"; then
+    pkg_cflags=-Wa,-muse-unaligned-vector-move
+    echo yes
+  else
+    echo no
+    show_log
+  fi
+  ;;
+esac
+
 # GCC (not clang, which also defines __GNUC__) gets -fno-tree-vrp for the
 # SVE tiers.
 cc_is_gcc=no
@@ -543,7 +565,8 @@ disabled_list=$(echo $disabled | tr ' ' ',')
 } > "$tmp/rules"
 
 # shellcheck disable=SC2086,SC2116 # joins the object names with single spaces
-sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@|$pkg_cppflags|" "$makevars.in" |
+sed -e "s|@RSIMD_OBJECTS@|$(echo $objects)|" -e "s|@RSIMD_CPPFLAGS@|$pkg_cppflags|" \
+  -e "s|@RSIMD_CFLAGS@|$pkg_cflags|" "$makevars.in" |
   awk -v rules="$tmp/rules" '
     $0 == "@RSIMD_TIER_RULES@" { while ((getline l < rules) > 0) print l; next }
     { print }' > "$makevars"
