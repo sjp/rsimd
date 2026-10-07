@@ -88,7 +88,12 @@ out <- list(
       c(w, ess = 1 / simd_sum_sq(w))
     },
     precision = c("fast", "pairwise"),
-    tolerance = c(fast = 1e-12, pairwise = 1e-13)
+    # Against base R, whose sum() adds in long double; on macOS arm64 that
+    # is double, and its sequential sum is itself off by about 1e-13 at 1e6.
+    tolerance = c(
+      fast = 1e-12,
+      pairwise = if (isTRUE(.Machine$longdouble.digits >= 64L)) 1e-13 else 1e-12
+    )
   ),
   scenario(
     id = "resample", family = "montecarlo",

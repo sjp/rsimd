@@ -24,6 +24,8 @@ invisible(scenario(
   refs = list(matrixStats = list(pkg = "matrixStats", fun = function(d) {
     matrixStats::logSumExp(d$z)
   })),
-  tolerance = 1e-13,
+  # Base R's sum() adds in long double; on macOS arm64 that is double, and
+  # its sequential sum is itself off by up to about 3e-13 at n = 1e6.
+  tolerance = if (isTRUE(.Machine$longdouble.digits >= 64L)) 1e-13 else 1e-12,
   gap = list(id = "G3", ideal = function(d) simd_sum(d$z))
 ))
