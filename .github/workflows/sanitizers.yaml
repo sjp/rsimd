@@ -50,20 +50,6 @@ jobs:
           R CMD INSTALL rsimd_*.tar.gz
           sh tools/ci/test_tiers.sh --out tiers.txt --logs logs
 
-      # Temporary: the gcc-asan job segfaults on AVX-512 runners in the
-      # first reduction (simd_sum, simd_dot, simd_popcount_total) with no
-      # sanitizer report. Catch the fault under gdb, once per tier.
-      - name: Debug the segfault under gdb
-        if: always() && matrix.container == 'gcc-asan'
-        run: |
-          grep -m1 'model name' /proc/cpuinfo || true
-          if ! grep -q -w avx512f /proc/cpuinfo; then
-            echo "This runner has no AVX-512, so there is nothing to catch; re-run the job."
-            exit 0
-          fi
-          dnf install -y gdb > /dev/null 2>&1 || echo "could not install gdb"
-          sh tools/ci/debug_crash.sh || true
-
       - name: Look for sanitizer reports
         if: always()
         run: |
