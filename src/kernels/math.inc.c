@@ -886,16 +886,20 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_expm1_base(rsimd_vf64 a, const int ten
 
 /* rsimd_log1p_base_f64() lane by lane, with SLEEF's log1p, log2 and
    log10 (exact at the powers of 2 and 10); the second is computed only
-   for vectors with a lane where 1 + x is exact. */
+   for vectors with a lane where 1 + x is exact. Zeros are blended back
+   rather than left to the fma, whose sign of zero valgrind's emulation
+   does not keep. */
 RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_math_log1p_base(rsimd_vf64 a, const int ten) {
   const rsimd_vf64 one = rsimd_vf64_set1(1.0);
   rsimd_vf64 u = rsimd_vf64_add(one, a), l, r;
+  rsimd_mf64 zero = rsimd_vf64_cmp_eq(a, rsimd_vf64_zero());
   rsimd_mf64 exact = rsimd_mf64_and(rsimd_vf64_cmp_eq(rsimd_vf64_sub(u, one), a),
                                     rsimd_vf64_cmp_ne(a, rsimd_vf64_zero()));
   if (rsimd_mf64_all(exact)) return ten ? rsimd_sleef_log10(u) : rsimd_sleef_log2(u);
   l = rsimd_math_tiny(rsimd_sleef_log1p(a), a);
   r = rsimd_vf64_fma(l, rsimd_vf64_set1(ten ? RSIMD_MATH_INV_LN10 : RSIMD_MATH_INV_LN2),
                      rsimd_vf64_mul(l, rsimd_vf64_set1(ten ? RSIMD_MATH_INV_LN10_LO : RSIMD_MATH_INV_LN2_LO)));
+  if (rsimd_mf64_any(zero)) r = rsimd_vf64_blend(r, a, zero);
   if (rsimd_mf64_any(exact)) {
     r = rsimd_vf64_blend(r, ten ? rsimd_sleef_log10(u) : rsimd_sleef_log2(u), exact);
   }

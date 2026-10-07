@@ -1,0 +1,12 @@
+# The thread a package such as cli starts on load is never joined, so its
+# TLS block from pthread_create is reported as possibly lost at exit.
+{
+   pthread-create-tls
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   ...
+   fun:_dl_allocate_tls
+   ...
+   fun:pthread_create*
+}

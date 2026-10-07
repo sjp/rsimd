@@ -57,7 +57,7 @@ jobs:
           R CMD INSTALL rsimd_*.tar.gz
           sh tools/ci/run_tests.sh --label "valgrind (quick, avx2)" --log valgrind.log \
             --impl avx2 --expect-impl avx2 \
-            --runner "valgrind --tool=memcheck --leak-check=full --track-origins=yes --error-exitcode=1"
+            --runner "valgrind --tool=memcheck --leak-check=full --track-origins=yes --error-exitcode=1 --suppressions=$GITHUB_WORKSPACE/tools/ci/valgrind.supp"
 
       - uses: actions/upload-artifact@v7
         if: always()

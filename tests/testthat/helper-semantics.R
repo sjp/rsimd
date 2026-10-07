@@ -23,9 +23,12 @@ fold <- function(x, y = NULL, term = "x", na_rm = FALSE, na_check = TRUE, precis
 prec_codes <- c(fast = 0L, pairwise = 1L, compensated = 2L)
 
 # Has base::sum() an accumulator wider than double? Not under a noLD build,
-# nor where long double is double (arm64 macOS).
+# nor where long double is double (arm64 macOS), nor under valgrind, which
+# computes x87 long double in double precision (R measures the digits at
+# startup, so they show 53 there although sizeof is 16).
 has_wide_long_double <- function() {
-  isTRUE(capabilities("long.double")) && .Machine$sizeof.longdouble > 8
+  isTRUE(capabilities("long.double")) && .Machine$sizeof.longdouble > 8 &&
+    isTRUE(.Machine$longdouble.digits >= 64)
 }
 
 # 257 doubles with 1e16, 1, -1e16 at positions 1, 129 and 257: in fast mode
