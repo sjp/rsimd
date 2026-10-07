@@ -552,15 +552,17 @@ int RSIMD_KERNEL(sincos_f64)(int op, const void *x, R_xlen_t n, int flags, doubl
                              double *c) {
   int st = 0, pi = (op & ~RSIMD_MATH_FAST) == RSIMD_MATH_SINPI;
   R_xlen_t i;
+  /* Separate loops: in one, GCC fuses sin(a) and cos(a) into sincos(),
+     which glibc does not always round as sin() (as base R calls). */
   for (i = 0; i < n; i++) {
     double a = rsimd_math_get(x, flags, 0, i);
-    if (isnan(a)) {
-      s[i] = c[i] = a;
-    } else {
-      s[i] = pi ? rsimd_sinpi_f64(a) : sin(a);
-      c[i] = pi ? rsimd_cospi_f64(a) : cos(a);
-      if (isnan(s[i]) || isnan(c[i])) st = RSIMD_EW_NAN_PRODUCED;
-    }
+    s[i] = isnan(a) ? a : pi ? rsimd_sinpi_f64(a) : sin(a);
+    if (!isnan(a) && isnan(s[i])) st = RSIMD_EW_NAN_PRODUCED;
+  }
+  for (i = 0; i < n; i++) {
+    double a = rsimd_math_get(x, flags, 0, i);
+    c[i] = isnan(a) ? a : pi ? rsimd_cospi_f64(a) : cos(a);
+    if (!isnan(a) && isnan(c[i])) st = RSIMD_EW_NAN_PRODUCED;
   }
   return st;
 }
