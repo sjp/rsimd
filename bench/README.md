@@ -5,6 +5,14 @@ here is part of the built package (`bench/` is in `.Rbuildignore`), nothing runs
 `R CMD check`, and no test asserts a timing. The numbers are for people: to see what
 each tier gains and to spot regressions and misconfiguration by eye.
 
+| Path | What |
+|---|---|
+| `run.R` | The suite: single primitives against base R, every tier, several sizes (below). |
+| `scenarios/` | Statistical calculations base R has no function for, as base R code and with rsimd primitives; also runnable samples. See [`scenarios/README.md`](scenarios/README.md). |
+| `meta.R` | Machine and build metadata shared by both runners. |
+| `math_paths.R` | The elementary functions whose implementation depends on the tier (below). |
+| `sum.R`, `arith.R`, ... | Smoke scripts (below). |
+
 ## Running the suite
 
 Install the package and `bench`, then from the package root:
@@ -175,9 +183,11 @@ status 0.
 
 The `benchmarks` workflow (`.github/workflows/benchmarks.yaml`) runs the suite every
 Saturday, and on demand from "Run workflow" with optional `quick`, `ops` and `sizes`
-inputs. It runs on `ubuntu-latest` (x86-64), `ubuntu-24.04-arm` and `macos-14`. Each job
-uploads `bench/results/` as an artifact kept for 90 days and appends `latest.md` to the job
-summary. The workflow never commits results.
+inputs and a `suite` input: `primitives` (the default, `run.R`), `scenarios`
+(`scenarios/run.R`) or `both`. The scenario jobs install matrixStats, moments, DescTools,
+energy and data.table for the reference columns. It runs on `ubuntu-latest` (x86-64), `ubuntu-24.04-arm` and `macos-14`. Each job
+uploads `bench/results/` as an artifact kept for 90 days and appends `latest.md` (and
+`scenarios-latest.md`) to the job summary. The workflow never commits results.
 
 ## Refreshing the benchmarks vignette
 

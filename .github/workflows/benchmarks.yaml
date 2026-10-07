@@ -1,5 +1,7 @@
 # Runs the benchmark suite (bench/run.R) on x86-64 and arm64 runners, on
-# demand and weekly, and uploads bench/results/ as an artifact. The markdown
+# demand and weekly, and on demand the statistical scenarios
+# (bench/scenarios/run.R, input suite), and uploads bench/results/ as an
+# artifact. The markdown
 # summary goes to the job summary. Informational only: no timing is checked
 # and nothing is committed; a maintainer copies a chosen run's latest.md and
 # csv into vignettes/benchmark-results/ to refresh the benchmarks vignette.
@@ -21,6 +23,11 @@ on:
         description: "Comma-separated sizes (empty for the default), e.g. 1e3,1e5"
         type: string
         default: ""
+      suite:
+        description: "primitives (bench/run.R), scenarios (bench/scenarios/run.R) or both"
+        type: choice
+        options: [primitives, scenarios, both]
+        default: primitives
 
 name: benchmarks
 
@@ -54,12 +61,16 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::bench
+          # The scenarios' reference columns (on demand only).
+          extra-packages: >-
+            any::bench
+            ${{ (inputs.suite == 'scenarios' || inputs.suite == 'both') && 'any::matrixStats any::moments any::DescTools any::energy any::data.table' || '' }}
 
       - name: Install rsimd
         run: R CMD INSTALL .
 
       - name: Run the benchmark suite
+        if: inputs.suite != 'scenarios'
         env:
           QUICK: ${{ inputs.quick }}
           OPS: ${{ inputs.ops }}
@@ -71,12 +82,23 @@ jobs:
           if [ -n "$SIZES" ]; then set -- "$@" --sizes "$SIZES"; fi
           Rscript "$@"
 
+      # The statistical scenarios (on demand only; the schedule leaves
+      # inputs.suite empty).
+      - name: Run the scenarios
+        if: inputs.suite == 'scenarios' || inputs.suite == 'both'
+        env:
+          QUICK: ${{ inputs.quick }}
+        run: |
+          set -- bench/scenarios/run.R
+          if [ "$QUICK" = "true" ]; then set -- "$@" --quick; fi
+          Rscript "$@"
+
       - name: Add the results to the job summary
         if: always()
         run: |
-          if [ -f bench/results/latest.md ]; then
-            cat bench/results/latest.md >> "$GITHUB_STEP_SUMMARY"
-          fi
+          for f in bench/results/latest.md bench/results/scenarios-latest.md; do
+            if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
 
       - uses: actions/upload-artifact@v7
         if: always()

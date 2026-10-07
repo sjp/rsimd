@@ -468,74 +468,14 @@ res$flag <- res$table == "main" & res$impl %in% setdiff(tiers, "none") & res$op 
 # ---------------------------------------------------------------------------
 # Metadata
 
-run_cmd <- function(cmd, args) {
-  out <- tryCatch(
-    suppressWarnings(system2(cmd, args, stdout = TRUE, stderr = FALSE)),
-    error = function(e) character()
-  )
-  if (!is.null(attr(out, "status")) && attr(out, "status") != 0L) {
-    return(character())
-  }
-  out
-}
-
-cpu_model <- function() {
-  sys <- Sys.info()[["sysname"]]
-  if (sys == "Linux" && file.exists("/proc/cpuinfo")) {
-    info <- readLines("/proc/cpuinfo", warn = FALSE)
-    field <- function(name) {
-      hit <- grep(paste0("^", name, "\\s*:"), info, value = TRUE)
-      if (length(hit) == 0L) NA_character_ else trimws(sub("^[^:]*:", "", hit[1L]))
-    }
-    model <- field("model name")
-    if (!is.na(model)) {
-      return(model)
-    }
-    # arm64 Linux has no model name; the implementer/part codes identify the core.
-    impl <- field("CPU implementer")
-    part <- field("CPU part")
-    if (!is.na(impl)) {
-      return(sprintf("implementer %s part %s", impl, part))
-    }
-  } else if (sys == "Darwin") {
-    model <- run_cmd("sysctl", c("-n", "machdep.cpu.brand_string"))
-    if (length(model) > 0L) {
-      return(model[1L])
-    }
-  } else if (sys == "Windows") {
-    model <- Sys.getenv("PROCESSOR_IDENTIFIER")
-    if (nzchar(model)) {
-      return(model)
-    }
-  }
-  NA_character_
-}
-
-git_sha <- function() {
-  sha <- run_cmd("git", c("-C", shQuote(script_dir()), "rev-parse", "HEAD"))
-  if (length(sha) == 0L) {
-    return(NA_character_)
-  }
-  dirty <- run_cmd(
-    "git", c("-C", shQuote(script_dir()), "status", "--porcelain", "--untracked-files=no")
-  )
-  if (length(dirty) > 0L) paste0(sha[1L], "-dirty") else sha[1L]
-}
-
-r_config <- function(var) {
-  out <- run_cmd(file.path(R.home("bin"), "R"), c("CMD", "config", var))
-  if (length(out) == 0L) NA_character_ else paste(out, collapse = " ")
-}
-
-cpu <- simd_cpu_features()
-sysinfo <- Sys.info()[c("sysname", "release", "machine")]
-features <- names(cpu$features)[cpu$features]
-if (cpu$sve_vector_length_bits > 0L) {
-  features <- c(features, paste0("sve", cpu$sve_vector_length_bits))
-}
-model <- cpu_model()
-sha <- git_sha()
-timestamp <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+source(file.path(script_dir(), "meta.R"))
+mi <- machine_info(script_dir())
+cpu <- mi$cpu
+sysinfo <- mi$sysinfo
+features <- mi$features
+model <- mi$model
+sha <- mi$sha
+timestamp <- mi$timestamp
 
 metadata <- list(
   timestamp = timestamp,
@@ -543,8 +483,8 @@ metadata <- list(
   bench_version = as.character(utils::packageVersion("bench")),
   git_sha = sha,
   r_version = R.version.string,
-  cc = r_config("CC"),
-  cflags = r_config("CFLAGS"),
+  cc = mi$cc,
+  cflags = mi$cflags,
   sysinfo = sysinfo,
   cpu_model = model,
   cores = parallel::detectCores(),
