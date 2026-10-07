@@ -29,9 +29,7 @@ in the integer range (\code{NA} allowed).}
 Exact operations on the representation of doubles, computed with SIMD
 instructions: the binary exponent of \code{x}, \code{x * 2^n}, the
 neighbouring doubles of \code{x}, and the remainder of \code{x / y} with
-the quotient rounded to the nearest integer. They correspond to
-\code{ILogB}, \code{ScaleB}, \code{BitIncrement}, \code{BitDecrement} and
-\code{Ieee754Remainder} of .NET's \code{TensorPrimitives}, and to C's
+the quotient rounded to the nearest integer. They correspond to C's
 \code{ilogb()}, \code{scalbn()}, \code{nextafter()}, \code{nextup()},
 \code{nextdown()} and \code{remainder()}.
 }

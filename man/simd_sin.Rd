@@ -32,10 +32,7 @@ simd_atan2(y, x)
 \description{
 \code{sin(x)}, \code{cos(x)}, \code{tan(x)}, both \code{sin(x)} and
 \code{cos(x)} in one pass, \code{asin(x)}, \code{acos(x)}, \code{atan(x)}
-and \code{atan2(y, x)} computed with SIMD instructions. They correspond to
-\code{Sin}, \code{Cos}, \code{Tan}, \code{SinCos}, \code{Asin},
-\code{Acos}, \code{Atan} and \code{Atan2} of .NET's
-\code{TensorPrimitives}.
+and \code{atan2(y, x)} computed with SIMD instructions.
 }
 \details{
 Large arguments are reduced exactly (SLEEF uses Payne-Hanek reduction), so

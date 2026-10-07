@@ -28,9 +28,7 @@ upper bounds.}
 \code{pmin(x, y)} and \code{pmax(x, y)} for two vectors, computed with SIMD
 instructions. \code{simd_pmin_num()} and \code{simd_pmax_num()} are the
 same with \code{na.rm = TRUE}. \code{simd_clamp(x, lo, hi)} is
-\code{pmin(pmax(x, lo), hi)}. They correspond to \code{Min}, \code{Max},
-\code{MinNumber}, \code{MaxNumber} and \code{Clamp} of .NET's
-\code{TensorPrimitives}.
+\code{pmin(pmax(x, lo), hi)}.
 }
 \details{
 \rsimdBroadcast
@@ -45,9 +43,7 @@ result is one of the operands: a tie returns \code{x}, so
 \code{simd_pmax(NaN, NA)} is \code{NA} and \code{simd_pmax(NA, NaN)} is
 \code{NaN}. With \code{na.rm = TRUE} (and in the \code{_num} functions) a
 missing operand is ignored, and the second one is returned when both are
-missing. \code{TensorPrimitives} has no \code{NA}: there \code{Max}
-propagates \code{NaN} and \code{MaxNumber} ignores it, which is what these
-do with \code{NaN}, and \code{NA} is treated the same way.
+missing.
 
 \code{simd_clamp()} errors if \code{lo > hi} at any position (missing bounds
 are not compared). A missing bound gives a missing result, following

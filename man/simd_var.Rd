@@ -17,9 +17,7 @@ and \code{NaN}) first?}
 \description{
 The sample variance and standard deviation of the elements of a vector, as
 \code{\link[stats]{var}()} and \code{\link[stats]{sd}()} compute them for a
-single vector (denominator \eqn{n - 1}), using SIMD instructions. They
-correspond to \code{StdDev} of .NET's \code{TensorPrimitives}, which leaves
-the denominator unspecified.
+single vector (denominator \eqn{n - 1}), using SIMD instructions.
 }
 \details{
 Like base R, these take two passes over the data: the mean (computed as

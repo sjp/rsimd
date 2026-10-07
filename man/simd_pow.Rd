@@ -25,9 +25,7 @@ in the integer range (\code{NA} allowed).}
 \description{
 \code{x^y}, the real cube root of \code{x}, \code{sqrt(x^2 + y^2)}, the
 real \code{n}-th root of \code{x} and \code{1 / sqrt(x)}, computed with
-SIMD instructions. They correspond to \code{Pow}, \code{Cbrt},
-\code{Hypot}, \code{RootN} and \code{ReciprocalSqrt} of .NET's
-\code{TensorPrimitives}.
+SIMD instructions.
 }
 \details{
 \code{simd_pow(x, y)} follows base R's \code{x^y} exactly: \code{x^2} is

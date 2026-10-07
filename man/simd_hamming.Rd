@@ -18,8 +18,7 @@ element be skipped?}
 \description{
 The number of positions where two vectors differ, and the number of bits in
 which they differ, computed with SIMD instructions and without creating a
-logical vector. They correspond to \code{HammingDistance} and
-\code{HammingBitDistance} of .NET's \code{TensorPrimitives}.
+logical vector.
 }
 \details{
 \code{simd_hamming(x, y)} is \code{sum(x != y)}, as a double. A pair in

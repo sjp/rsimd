@@ -48,10 +48,7 @@ simd_log10p1(x)
 \code{log(x, base)}, \code{log2(x)}, \code{log10(x)} and \code{log1p(x)}
 (\code{log(1 + x)}), and \code{2^x - 1}, \code{10^x - 1},
 \code{log2(1 + x)} and \code{log10(1 + x)} without their loss of accuracy
-near 0, computed with SIMD instructions. They correspond to
-\code{Exp}, \code{Exp2}, \code{Exp10}, \code{ExpM1}, \code{Log},
-\code{Log2}, \code{Log10}, \code{LogP1}, \code{Exp2M1}, \code{Exp10M1},
-\code{Log2P1} and \code{Log10P1} of .NET's \code{TensorPrimitives}.
+near 0, computed with SIMD instructions.
 }
 \details{
 \code{simd_exp2(x)} and \code{simd_exp10(x)} correspond to base R's

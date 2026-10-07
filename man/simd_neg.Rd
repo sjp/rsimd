@@ -39,9 +39,7 @@ see Details.}
 \description{
 \code{-x}, \code{abs(x)}, \code{sign(x)}, \code{1 / x} and \code{sqrt(x)}
 computed with SIMD instructions, and \code{simd_copysign(x, sign)}, which is
-\code{abs(x)} with the sign of \code{sign}. They correspond to
-\code{Negate}, \code{Abs}, \code{Sign}, \code{CopySign}, \code{Reciprocal}
-and \code{Sqrt} of .NET's \code{TensorPrimitives}.
+\code{abs(x)} with the sign of \code{sign}.
 }
 \details{
 \code{simd_neg()} and \code{simd_abs()} keep integer and logical input

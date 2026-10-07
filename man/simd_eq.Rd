@@ -25,9 +25,7 @@ vectors; complex vectors for \code{simd_eq()} and \code{simd_ne()}.}
 }
 \description{
 \code{x == y}, \code{x != y}, \code{x < y}, \code{x <= y}, \code{x > y} and
-\code{x >= y} computed with SIMD instructions. They correspond to
-\code{Equals}, \code{LessThan}, \code{GreaterThan} and their variants in
-.NET's \code{TensorPrimitives}, but return \code{NA} where base R does.
+\code{x >= y} computed with SIMD instructions.
 }
 \details{
 The result is the same as base R's operator: \code{NA} wherever either

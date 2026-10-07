@@ -20,9 +20,7 @@ simd_round(x, digits = 0)
 }
 \description{
 \code{floor(x)}, \code{ceiling(x)}, \code{trunc(x)} and
-\code{round(x, digits)} computed with SIMD instructions. They correspond to
-\code{Floor}, \code{Ceiling}, \code{Truncate} and \code{Round} of .NET's
-\code{TensorPrimitives}.
+\code{round(x, digits)} computed with SIMD instructions.
 }
 \details{
 The results are doubles for every input, and identical to base R's:

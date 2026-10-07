@@ -19,8 +19,7 @@ simd_sincospi(x)
 \description{
 \code{sin(pi * x)}, \code{cos(pi * x)} and \code{tan(pi * x)} computed with
 SIMD instructions, without the rounding error of \code{pi * x}, and the sine
-and cosine together. They correspond to \code{SinPi}, \code{CosPi},
-\code{TanPi} and \code{SinCosPi} of .NET's \code{TensorPrimitives}.
+and cosine together.
 }
 \details{
 \code{x} is first reduced exactly, as base R does (modulo 2 for

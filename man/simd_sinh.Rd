@@ -24,9 +24,7 @@ simd_atanh(x)
 }
 \description{
 \code{sinh(x)}, \code{cosh(x)}, \code{tanh(x)}, \code{asinh(x)},
-\code{acosh(x)} and \code{atanh(x)} computed with SIMD instructions. They
-correspond to \code{Sinh}, \code{Cosh}, \code{Tanh}, \code{Asinh},
-\code{Acosh} and \code{Atanh} of .NET's \code{TensorPrimitives}.
+\code{acosh(x)} and \code{atanh(x)} computed with SIMD instructions.
 }
 \details{
 \code{simd_sinh()} and \code{simd_cosh()} overflow to \code{Inf} where base

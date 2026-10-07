@@ -27,9 +27,7 @@ doubles converted to integer64 and conversions to raw.}
 \description{
 \code{as.integer(x)}, \code{as.double(x)}, \code{as.logical(x)},
 \code{as.raw(x)} and \pkg{bit64}'s \code{as.integer64(x)} computed with SIMD
-instructions, with the conversion modes
-of \code{ConvertChecked}, \code{ConvertSaturating} and
-\code{ConvertTruncating} of .NET's \code{TensorPrimitives}.
+instructions, with checked, saturating and truncating conversion modes.
 }
 \details{
 \strong{To integer.} Doubles are truncated toward zero, then

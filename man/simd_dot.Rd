@@ -25,8 +25,7 @@ Details.}
 \code{simd_dist(x, y)} the Euclidean distance \code{sqrt(sum((x - y)^2))}
 and \code{simd_cosine(x, y)} the cosine similarity
 \code{sum(x * y) / (sqrt(sum(x^2)) * sqrt(sum(y^2)))}, computed in one pass
-with SIMD instructions. They correspond to \code{Dot}, \code{Distance} and
-\code{CosineSimilarity} of .NET's \code{TensorPrimitives}.
+with SIMD instructions.
 }
 \details{
 \code{x} and \code{y} must have the same length: unlike the elementwise
@@ -38,8 +37,7 @@ either element is, and \code{na.rm = TRUE} drops the pair from both sums
 (base R has no equivalent; \code{sum(x * y, na.rm = TRUE)} does the same for
 \code{simd_dot()}). \code{simd_cosine()} has no \code{na.rm}.
 
-The distance of two empty vectors is 0, where \code{TensorPrimitives}
-throws an error. The cosine similarity is \code{NaN} for empty input, when
+The distance of two empty vectors is 0. The cosine similarity is \code{NaN} for empty input, when
 either vector is all zero, and when any element is infinite. It is not
 clamped to \eqn{[-1, 1]}, so rounding can take it just past either end.
 Like \code{\link{simd_norm}()}, these do not guard against overflow of the

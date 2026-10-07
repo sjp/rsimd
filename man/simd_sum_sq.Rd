@@ -21,9 +21,7 @@ and \code{NaN}) first?}
 \code{simd_sum_sq(x)} is \code{sum(x^2)}, \code{simd_sum_abs(x)} is
 \code{sum(abs(x))} and \code{simd_norm(x)} is the Euclidean (L2) norm
 \code{sqrt(sum(x^2))}, computed in one pass with SIMD instructions and
-without forming \code{x^2} or \code{abs(x)}. They correspond to
-\code{SumOfSquares}, \code{SumOfMagnitudes} and \code{Norm} of .NET's
-\code{TensorPrimitives}.
+without forming \code{x^2} or \code{abs(x)}.
 }
 \details{
 Integer and logical elements are converted to double as they are read,

@@ -40,10 +40,7 @@ Details.}
 \description{
 \code{x + y}, \code{x - y}, \code{x * y}, \code{x / y}, \code{x \%/\% y} and
 \code{x \%\% y} computed with SIMD instructions, and integer addition,
-subtraction and multiplication that wrap around on overflow. They
-correspond to \code{Add}, \code{Subtract}, \code{Multiply}, \code{Divide}
-and \code{Remainder} of .NET's \code{TensorPrimitives} (whose
-\code{Remainder} truncates; \code{simd_mod()} floors, as R's \code{\%\%}).
+subtraction and multiplication that wrap around on overflow.
 }
 \details{
 \rsimdBroadcast

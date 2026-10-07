@@ -19,9 +19,7 @@ operands have no missing values; see \code{\link{simd_mul_add}}.}
 }
 \description{
 Faster, less accurate versions of \code{1 / x}, \code{1 / sqrt(x)} and
-\code{x * y + z}, using whatever is fastest on each implementation. They
-correspond to \code{ReciprocalEstimate}, \code{ReciprocalSqrtEstimate} and
-\code{MultiplyAddEstimate} of .NET's \code{TensorPrimitives}. Results are
+\code{x * y + z}, using whatever is fastest on each implementation. Results are
 not reproducible across implementations: use \code{\link{simd_recip}},
 \code{\link{simd_rsqrt}} and \code{\link{simd_fma}} or
 \code{\link{simd_mul_add}} when they must be.

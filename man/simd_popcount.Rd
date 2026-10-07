@@ -25,9 +25,7 @@ looks for \code{NA}.}
 \description{
 The number of set bits (population count), of leading zero bits and of
 trailing zero bits of each element, and the total number of set bits of a
-vector, computed with SIMD instructions. They correspond to
-\code{PopCount}, \code{LeadingZeroCount} and \code{TrailingZeroCount} of
-.NET's \code{TensorPrimitives}; base R has no equivalent.
+vector, computed with SIMD instructions. Base R has no equivalent.
 }
 \details{
 Integers are counted as 32-bit two's complement patterns, so

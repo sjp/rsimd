@@ -16,8 +16,7 @@ simd_log_softmax(x)
 \description{
 The logistic sigmoid \eqn{1 / (1 + e^{-x})} of each element, and the
 softmax \eqn{e^{x_i} / \sum_j e^{x_j}} and its logarithm over the whole of
-\code{x}, computed with SIMD instructions. They correspond to
-\code{Sigmoid} and \code{SoftMax} of .NET's \code{TensorPrimitives}.
+\code{x}, computed with SIMD instructions.
 }
 \details{
 \strong{Sigmoid.} \code{simd_sigmoid(x)} is computed as

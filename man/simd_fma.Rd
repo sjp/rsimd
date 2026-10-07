@@ -26,9 +26,7 @@ operands have no missing values, so they are not looked for; see Details.}
 (a fused multiply-add), \code{simd_mul_add(x, y, z)} is \code{x * y + z} and
 \code{simd_add_mul(x, y, z)} is \code{(x + y) * z}, each step rounded, and
 \code{simd_lerp(x, y, t)} interpolates linearly from \code{x} (at
-\code{t = 0}) to \code{y} (at \code{t = 1}). They correspond to
-\code{FusedMultiplyAdd}, \code{MultiplyAdd}, \code{AddMultiply} and
-\code{Lerp} of .NET's \code{TensorPrimitives}.
+\code{t = 0}) to \code{y} (at \code{t = 1}).
 }
 \details{
 \rsimdBroadcast
@@ -41,9 +39,8 @@ implementations without a fused multiply-add instruction (\code{"none"} and
 exact but can be much slower. \code{simd_fma(0.1, 10, -1)} is
 \eqn{2^{-54}} where \code{0.1 * 10 - 1} is 0.
 
-\code{simd_lerp(x, y, t)} is \code{fma(t, y, (1 - t) * x)}, the formula
-\code{x * (1 - t) + y * t} of \code{TensorPrimitives} with the last step
-fused. It returns \code{x} exactly at \code{t = 0} and \code{y} exactly at
+\code{simd_lerp(x, y, t)} is \code{fma(t, y, (1 - t) * x)}, that is
+\code{x * (1 - t) + y * t} with the last step fused. It returns \code{x} exactly at \code{t = 0} and \code{y} exactly at
 \code{t = 1} (for finite operands), which \code{x + t * (y - x)} does not;
 it is not guaranteed to be monotonic in \code{t}.
 

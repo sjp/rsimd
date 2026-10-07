@@ -42,10 +42,7 @@ integer operands have no \code{NA}, so they are not looked for; an
 Bit-by-bit and, or, exclusive or and complement, shifts and rotates of
 integers (as 32-bit patterns) and of raw bytes, computed with SIMD
 instructions. They correspond to base R's \code{\link{bitwAnd}} family and
-\code{\link{rawShift}}, and to \code{BitwiseAnd}, \code{BitwiseOr},
-\code{Xor}, \code{OnesComplement}, \code{ShiftLeft},
-\code{ShiftRightLogical}, \code{ShiftRightArithmetic}, \code{RotateLeft}
-and \code{RotateRight} of .NET's \code{TensorPrimitives}.
+\code{\link{rawShift}}.
 }
 \details{
 \strong{Integers.} The operations act on the 32-bit two's complement

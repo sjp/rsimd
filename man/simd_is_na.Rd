@@ -97,11 +97,7 @@ vectors.}
 number classes (normal, subnormal, whole, even, odd, power of two),
 computed with SIMD instructions. Each test comes in three forms:
 elementwise, \code{_any} (is it true for any element?) and \code{_all}
-(is it true for every element?). They correspond to \code{IsNaN},
-\code{IsFinite}, \code{IsInfinity}, \code{IsNegative}, \code{IsZero},
-\code{IsNormal}, \code{IsSubnormal}, \code{IsInteger},
-\code{IsEvenInteger}, \code{IsOddInteger} and \code{IsPow2} and their
-\code{All}/\code{Any} forms in .NET's \code{TensorPrimitives}.
+(is it true for every element?).
 }
 \details{
 The tests never return \code{NA}. For doubles they follow base R:
@@ -111,7 +107,7 @@ payload or sign of the \code{NaN}), \code{simd_is_finite()} for numbers
 that are neither missing nor infinite. \code{simd_is_zero()} is
 \code{x == 0}, so it is \code{TRUE} for \code{-0} too.
 \code{simd_is_negative()} tests the sign bit of numbers, as
-\code{TensorPrimitives.IsNegative} and IEEE 754's \code{isSignMinus} do: it
+IEEE 754's \code{isSignMinus} does: it
 is \code{TRUE} for \code{-0} and \code{-Inf}, and \code{FALSE} for
 \code{NA} and \code{NaN}, so it differs from \code{x < 0} for \code{-0}.
 
@@ -148,8 +144,7 @@ elsewhere; they are never \code{NaN} or infinite. Raw bytes are never
 missing, and, as in base R's \code{is.finite()}, are not finite either.
 
 The \code{_any} forms are \code{FALSE} for empty input and the \code{_all}
-forms \code{TRUE}, as \code{any()} and \code{all()} are in R
-(\code{TensorPrimitives} returns \code{false} for both). They may stop
+forms \code{TRUE}, as \code{any()} and \code{all()} are in R. They may stop
 reading at the first element that decides the answer.
 \code{simd_is_na_any(x)} is the same as \code{\link{simd_any_na}(x)}.
 
