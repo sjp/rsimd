@@ -21,9 +21,14 @@ invisible(list(
     rsimd = function(d) simd_sum(d$x),
     reference = function(d) d$n,
     precision = c("fast", "pairwise", "compensated"),
-    # fast and pairwise are shown, not checked; base R (long double) and
-    # compensated are exact here.
-    tolerance = c(base = 0, fast = Inf, pairwise = Inf, compensated = 0)
+    # fast and pairwise are shown, not checked; compensated is exact here,
+    # and so is base R where its long double has the 64-bit mantissa (x87)
+    # or more (arm64 Linux) needed to hold 1e16 + n. On macOS arm64 long
+    # double is double, base R loses every 1 too, and base is not checked.
+    tolerance = c(
+      base = if (isTRUE(.Machine$longdouble.digits >= 64L)) 0 else Inf,
+      fast = Inf, pairwise = Inf, compensated = 0
+    )
   ),
   scenario(
     id = "var_offset", family = "accuracy", flagship = TRUE,
