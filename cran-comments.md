@@ -41,9 +41,8 @@ The installed size is reported as INFO on Linux where the shared library
 keeps its debugging information (30.5 MB on aarch64, of which libs 29.6 MB).
 Without debugging information the library is 2.0 MB on aarch64 and the
 installed package 3.0 MB. On x86-64, where four tiers (none, SSE2, AVX2,
-AVX-512) are built, the library without debugging information is 3.0 MB and
-the installed package 3.9 MB (measured with a GCC cross-compiler).
-TODO: confirm the x86-64 figures with the size-check workflow.
+AVX-512) are built, the library without debugging information is 3.1 MB and
+the installed package 3.9 MB.
 
 ## Downstream dependencies
 
