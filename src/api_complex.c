@@ -595,7 +595,7 @@ SEXP rsimd_c128_neg(const rsimd_in *in) {
   Rcomplex *po = (Rcomplex *) rsimd_out_ptr(out);
   rsimd_opts o;
 
-  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), 0);
+  rsimd_opts_init_fixed(&o, 0, 1, 0);
   RSIMD_FOREACH_CHUNK(in, Rcomplex, px, len, off, {
     rsimd_active->ew1_f64(RSIMD_EW_NEG, rsimd_c128_as_f64(px, len), 2 * len, 0,
                           (double *) (po + off), &o);

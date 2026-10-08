@@ -12,8 +12,9 @@
  * with the same strict comparison, so the earlier chunk wins ties.
  */
 
-/* Writes the 1-based index off + i + 1 to out[r->i64++] as an int or a
-   double, for the which modes of the missing-value kernels. */
+/* Writes the 1-based index idx + 1 to out[r->i64++] as an int or a
+   double, for the which modes of the missing-value kernels (here and in
+   complex.inc.c and int64.inc.c). */
 static inline void RSIMD_KERNEL(put_index_)(int mode, void *out, rsimd_reduce_result *r,
                                             R_xlen_t idx) {
   if (mode == RSIMD_NAMODE_WHICH_I32) ((int *) out)[r->i64] = (int) (idx + 1);

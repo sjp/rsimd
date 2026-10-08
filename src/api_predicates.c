@@ -189,7 +189,7 @@ static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
   SEXP sargs[2];
   rsimd_etype tx, ty;
 
-  rsimd_opts_init(&o, na_rm, Rf_ScalarLogical(TRUE), 0);
+  rsimd_opts_init_fixed(&o, rsimd_arg_na_rm(na_rm), 1, 0);
   memset(&r, 0, sizeof r);
   if (TYPEOF(x) == CPLXSXP || TYPEOF(y) == CPLXSXP) {
     rsimd_bin b;

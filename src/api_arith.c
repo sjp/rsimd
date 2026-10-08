@@ -236,7 +236,7 @@ static SEXP simd_ew1_impl(SEXP x, SEXP op) {
                     code == RSIMD_EW_NEG, code <= RSIMD_EW_SIGN)) {
     return rsimd_c128_neg(&e.in[0]);
   }
-  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), e.no_na_hint);
+  rsimd_opts_init_fixed(&o, 0, 1, e.no_na_hint);
   if (e.in[0].type == RSIMD_I64) {
     double *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_I64, e.n));

@@ -133,8 +133,7 @@ static SEXP run_pow_special(rsimd_ew *e, int flags, double b) {
   SEXP out = PROTECT(rsimd_alloc_like(RSIMD_F64, e->n));
   double *po = (double *) rsimd_out_ptr(out);
   rsimd_opts o;
-  rsimd_opts_init(&o, R_NilValue, R_NilValue, 0);
-  o.na_check = !e->no_na_hint;
+  rsimd_opts_init_fixed(&o, 0, 1, e->no_na_hint);
   RSIMD_FOREACH_CHUNK_EW(e, p, len, off, {
     double *q = po + off;
     if (b == 2) {

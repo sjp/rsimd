@@ -122,11 +122,15 @@ void rsimd_check_interrupt(void);
    into their rsimd_reduce_result; elementwise ops write the result at off.
    The body may `break` out of the loop (early exit) but must not use
    `continue`. Interrupts are checked after every rsimd_stride elements. */
-#define RSIMD_FOREACH_CHUNK(in, T, px, len, off, ...)                                  \
+#define RSIMD_FOREACH_CHUNK(in, T, px, len, off, ...) \
+  RSIMD_FOREACH_CHUNK_FROM(in, T, 0, px, len, off, __VA_ARGS__)
+
+/* As RSIMD_FOREACH_CHUNK over the elements from index `start` on. */
+#define RSIMD_FOREACH_CHUNK_FROM(in, T, start, px, len, off, ...)                      \
   do {                                                                                 \
     T rsimd_buf_[RSIMD_CHUNK];                                                         \
     R_xlen_t rsimd_tick_ = 0;                                                          \
-    for (R_xlen_t off = 0; off < (in)->n;) {                                           \
+    for (R_xlen_t off = (start); off < (in)->n;) {                                     \
       R_xlen_t len;                                                                    \
       const T *px = (const T *) rsimd_in_region((in), off, &len, rsimd_buf_);          \
       if (len > rsimd_stride) len = rsimd_stride;                                      \
@@ -457,12 +461,15 @@ SEXP rsimd_sv_result(SEXP out, int keeps_na_free);
 /* Fills o from the entry point's arguments, with precision fast (set
    o->precision from rsimd_arg_precision() for an op that takes it). Pass
    R_NilValue for na.rm when the op does not take it (FALSE), and for
-   na_check to read option rsimd.na_check (TRUE when unset); an op without
-   na_check passes Rf_ScalarLogical(TRUE) (R's shared TRUE, not an
-   allocation). na_check is cleared when no_na_hint is set:
-   an input known to be NA-free needs no check even when one was asked
-   for. */
+   na_check to read option rsimd.na_check (TRUE when unset); an op whose
+   na.rm or na_check is fixed calls rsimd_opts_init_fixed() instead.
+   na_check is cleared when no_na_hint is set: an input known to be NA-free
+   needs no check even when one was asked for. */
 void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, int no_na_hint);
+/* As rsimd_opts_init() with na.rm and na_check given as 0 or 1. */
+void rsimd_opts_init_fixed(rsimd_opts *o, int na_rm, int na_check, int no_na_hint);
+/* The na.rm flag from an argument holding one, FALSE for R_NilValue. */
+int rsimd_arg_na_rm(SEXP na_rm);
 /* The precision code RSIMD_PREC_* from an argument holding one, or from
    option rsimd.precision for R_NilValue (fast when unset). */
 int rsimd_arg_precision(SEXP precision);

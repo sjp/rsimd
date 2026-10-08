@@ -774,6 +774,8 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
     }
     if (type == RSIMD_F64) return Rf_ScalarReal(value);
     if (is_int) return Rf_ScalarInteger((int) r->i64);
+    /* No INT64_MIN check as for the sum: INT64_MIN is NA on input, so
+       an extremum is never it. */
     if (type == RSIMD_I64) return rsimd_scalar_i64(r->i64);
     break;
   case RSIMD_RED_WHICH_MIN:
@@ -827,11 +829,20 @@ void *rsimd_out_ptr(SEXP out) {
 /* ---- Options and arguments ---------------------------------------------- */
 
 void rsimd_opts_init(rsimd_opts *o, SEXP na_rm, SEXP na_check, int no_na_hint) {
-  o->na_rm = Rf_isNull(na_rm) ? 0 : rsimd_arg_lgl1(na_rm, "na.rm");
-  o->na_check = (Rf_isNull(na_check) ? na_check_option() : rsimd_arg_lgl1(na_check, "na_check")) &&
-                !no_na_hint;
+  rsimd_opts_init_fixed(
+      o, rsimd_arg_na_rm(na_rm),
+      Rf_isNull(na_check) ? na_check_option() : rsimd_arg_lgl1(na_check, "na_check"), no_na_hint);
+}
+
+void rsimd_opts_init_fixed(rsimd_opts *o, int na_rm, int na_check, int no_na_hint) {
+  o->na_rm = na_rm;
+  o->na_check = na_check && !no_na_hint;
   o->precision = RSIMD_PREC_FAST;
   o->extrema = RSIMD_EXT_BOTH;
+}
+
+int rsimd_arg_na_rm(SEXP na_rm) {
+  return Rf_isNull(na_rm) ? 0 : rsimd_arg_lgl1(na_rm, "na.rm");
 }
 
 int rsimd_arg_lgl1(SEXP x, const char *name) {

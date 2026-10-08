@@ -487,15 +487,6 @@ static inline int rsimd_scan_i64_1(int op, int64_t x, int64_t *out, rsimd_scan_s
   return 0;
 }
 
-/* Writes the 1-based index idx + 1 to out[r->i64++], for the which modes of
-   the missing-value kernel. */
-static inline void RSIMD_KERNEL(i64_put_index_)(int mode, void *out, rsimd_reduce_result *r,
-                                                R_xlen_t idx) {
-  if (mode == RSIMD_NAMODE_WHICH_I32) ((int *) out)[r->i64] = (int) (idx + 1);
-  else ((double *) out)[r->i64] = (double) (idx + 1);
-  r->i64++;
-}
-
 /* pmin, pmax and their _num forms read int32 NA as NA whatever na_check
    says, as the int32 kernels do. */
 static inline int rsimd_ew_i64_check(int op, const rsimd_opts *o) {
@@ -595,7 +586,7 @@ void RSIMD_KERNEL(na_i64)(const int64_t *x, R_xlen_t n, int mode, R_xlen_t off, 
       return;
     }
     if (mode == RSIMD_NAMODE_COUNT) r->i64++;
-    else RSIMD_KERNEL(i64_put_index_)(mode, out, r, off + i);
+    else RSIMD_KERNEL(put_index_)(mode, out, r, off + i);
   }
 }
 
@@ -1225,11 +1216,11 @@ void RSIMD_KERNEL(na_i64)(const int64_t *x, R_xlen_t n, int mode, R_xlen_t off, 
     for (; i + W <= n; i += W) {
       if (!rsimd_mi64_any(rsimd_vi64_is_na(rsimd_vi64_loadu(x + i)))) continue;
       for (j = i; j < i + W; j++) {
-        if (x[j] == RSIMD_NA_I64) RSIMD_KERNEL(i64_put_index_)(mode, out, r, off + j);
+        if (x[j] == RSIMD_NA_I64) RSIMD_KERNEL(put_index_)(mode, out, r, off + j);
       }
     }
     for (; i < n; i++) {
-      if (x[i] == RSIMD_NA_I64) RSIMD_KERNEL(i64_put_index_)(mode, out, r, off + i);
+      if (x[i] == RSIMD_NA_I64) RSIMD_KERNEL(put_index_)(mode, out, r, off + i);
     }
   }
 }

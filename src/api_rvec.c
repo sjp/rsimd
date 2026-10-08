@@ -222,7 +222,7 @@ static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP
   rsimd_opts o;
   R_xlen_t i;
 
-  rsimd_opts_init(&o, na_rm, Rf_ScalarLogical(TRUE), 0);
+  rsimd_opts_init_fixed(&o, rsimd_arg_na_rm(na_rm), 1, 0);
   o.precision = rsimd_arg_precision(precision);
   rsimd_reduce_result_init(&r, o_idx);
   out = PROTECT(Rf_mkNamed(VECSXP, names));

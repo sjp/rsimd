@@ -512,8 +512,7 @@ static SEXP simd_which_impl(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   int op = dir ? RSIMD_RED_WHICH_MAX : RSIMD_RED_WHICH_MIN;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
-  o.na_rm = 1;
+  rsimd_opts_init_fixed(&o, 1, 1, in.no_na_hint);
   o.extrema = dir ? RSIMD_EXT_MAX : RSIMD_EXT_MIN;
   rsimd_reduce_result_init(&r, op);
   switch (in.type) {
@@ -613,7 +612,7 @@ static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
   int stop = is_all ? RSIMD_STOP_FALSE : RSIMD_STOP_TRUE;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, na_rm, Rf_ScalarLogical(TRUE), in.no_na_hint);
+  rsimd_opts_init_fixed(&o, rsimd_arg_na_rm(na_rm), 1, in.no_na_hint);
   rsimd_reduce_result_init(&r, op);
 #define RSIMD_DONE_ (is_all ? r.any_false : r.any_true)
   switch (in.type) {
@@ -737,7 +736,7 @@ static SEXP simd_na_impl(SEXP x, SEXP mode) {
   int m = rsimd_arg_int1(mode, "mode");
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
+  rsimd_opts_init_fixed(&o, 0, 1, in.no_na_hint);
   rsimd_reduce_result_init(&r, m == 0 ? RSIMD_RED_ANY_NA : RSIMD_RED_COUNT_NA);
   if (!in.no_na_hint) na_scan(&in, m == 0 ? RSIMD_NAMODE_ANY : RSIMD_NAMODE_COUNT, NULL, &r);
   if (m == 0) return rsimd_reduce_finish(RSIMD_RED_ANY_NA, in.type, in.n, &r, &o);
@@ -963,11 +962,11 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
      n d^2 / (n - 1) to the result, as large as the variance itself when the
      spread is small next to the mean. */
   m = mean_value(&in, &o, &r, 1);
-  if (!R_FINITE(m)) {
+  if (in.type == RSIMD_F64 && !R_FINITE(m)) {
     /* Only for an infinite element (mean_value() rescales a sum of finite
        elements that overflowed), whose squared deviation is NaN; settle
        that here, because a vector tier's tail lanes (filled with m) would
-       add NaN. */
+       add NaN. The mean of integers is always finite. */
     int inf = 0;
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
       if (rsimd_active->pred_f64(RSIMD_PRED_INFINITE, px, len, RSIMD_PRED_ANY, NULL)) {
@@ -999,23 +998,13 @@ SEXP C_simd_var(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
 /* Fills out[i], out[i + 1] ... of a double scan whose input x has its
    first NaN at i: NaN up to the first NA, NA from there on, as base R. */
 static void fill_after_nan(const rsimd_in *in, R_xlen_t i, double *out) {
-  double buf[RSIMD_CHUNK];
-  R_xlen_t len, j, tick = 0;
   int na = 0;
-  while (i < in->n) {
-    const double *px = (const double *) rsimd_in_region(in, i, &len, buf);
-    if (len > rsimd_stride) len = rsimd_stride;
-    for (j = 0; j < len; j++) {
+  RSIMD_FOREACH_CHUNK_FROM(in, double, i, px, len, off, {
+    for (R_xlen_t j = 0; j < len; j++) {
       if (!na && rsimd_is_na_f64(px[j])) na = 1;
-      out[i + j] = na ? NA_REAL : R_NaN;
+      out[off + j] = na ? NA_REAL : R_NaN;
     }
-    i += len;
-    tick += len;
-    if (tick >= rsimd_stride) {
-      tick = 0;
-      rsimd_check_interrupt();
-    }
-  }
+  });
 }
 
 /* Scan `which` (as for simd_scan_impl) of raw x, as base R: on the values
@@ -1059,7 +1048,7 @@ static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
   SEXP out;
 
   rsimd_in_init(&in, x, "x");
-  rsimd_opts_init(&o, R_NilValue, Rf_ScalarLogical(TRUE), in.no_na_hint);
+  rsimd_opts_init_fixed(&o, 0, 1, in.no_na_hint);
   o.precision = rsimd_arg_precision(precision);
   s.f64 = which == 1 ? 1.0 : which == 2 ? R_PosInf : which == 3 ? R_NegInf : 0.0;
   s.comp = 0.0;
