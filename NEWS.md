@@ -8,10 +8,10 @@ First release.
   tier the compiler supports (`sse2`, `avx2` and `avx512` on x86; `neon`,
   `sve` and `sve2` on arm), each in its own file with its own flags, and
   always the scalar `none` tier. `simd_tiers()` lists every tier id,
-  `simd_available()` the tiers this machine can run, `simd_use()` selects
-  one by name or `"auto"`, `simd_with_impl()` selects one temporarily, and
-  the `rsimd.impl` option and `RSIMD_IMPL` environment variable set it too
-  (`?rsimd_options`). `simd_version()` reports the version of the native
+  `simd_available()` the tiers this machine can run, `simd_current()` the
+  one in use, `simd_use()` selects one by name or `"auto"`,
+  `simd_with_impl()` selects one temporarily, and the `rsimd.impl` option
+  and `RSIMD_IMPL` environment variable set it too (`?rsimd_options`). `simd_version()` reports the version of the native
   interface.
 * **Reductions:** `simd_sum()`, `simd_prod()`, `simd_mean()`, `simd_min()`,
   `simd_max()`, `simd_range()`, `simd_which_min()`, `simd_which_max()`,
@@ -81,7 +81,7 @@ First release.
   division, `cumsum()` and `cumprod()` are identical to base R's results,
   special values included: base R's rounding depends on the compiler that
   built R, so the variant is chosen when the package loads by comparing
-  with base R (`attr(simd_current(), "complex")`). The elementary functions
+  with base R (`simd_complex_variants()`). The elementary functions
   `simd_sqrt()`, `simd_exp()`, `simd_log()` (also with a base),
   `simd_log2()`, `simd_log10()`, `simd_pow()`, `simd_sin()` to
   `simd_atan()`, `simd_sinh()` to `simd_atanh()` and `simd_atan2()` take

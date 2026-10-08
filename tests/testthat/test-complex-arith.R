@@ -93,7 +93,7 @@ with_variants <- function(codes, code) {
 }
 
 test_that("the load-time probe picks a variant for each operation", {
-  v <- attr(simd_current(), "complex")
+  v <- simd_complex_variants()
   expect_identical(names(v), c("mul", "div", "cumprod"))
   expect_true(all(nzchar(v)))
   # GCC on aarch64 contracts by default, and libgcc 12+ divides.
@@ -186,7 +186,7 @@ test_that("every rounding variant's kernels compute its formula", {
   xw <- xw[keep]
   yw <- yw[keep]
   fused <- cdiv_ref(xw, yw, TRUE)
-  if (attr(simd_current(), "complex")[["div"]] == "libgcc, fused") {
+  if (simd_complex_variants()[["div"]] == "libgcc, fused") {
     expect_true(same_values(fused, xw / yw))
   }
   with_variants(c(1L, 1L, 1L, 1L, 1L), expect_tiers_give(fused, simd_div, xw, yw))

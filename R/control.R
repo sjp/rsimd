@@ -35,10 +35,11 @@ simd_available <- function() {
 
 simd_current <- function() {
   .sync_impl()
-  out <- .Call(C_simd_current)
-  attr(out, "requested") <- .impl_state$requested
-  attr(out, "complex") <- .Call(C_simd_c128_variants)
-  out
+  .Call(C_simd_current)
+}
+
+simd_complex_variants <- function() {
+  .Call(C_simd_c128_variants)
 }
 
 simd_use <- function(impl) {

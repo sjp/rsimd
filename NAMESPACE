@@ -3,6 +3,7 @@ useDynLib(rsimd, .registration = TRUE)
 # control
 export(simd_available)
 export(simd_cpu_features)
+export(simd_complex_variants)
 export(simd_current)
 export(simd_math_accuracy)
 export(simd_precision)

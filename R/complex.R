@@ -33,7 +33,7 @@ simd_arg <- function(z) {
 # Base R rounds complex products, quotients and cumprod as the compiler
 # that built R does. Base R computes them on a fixed set of inputs, and the
 # C side picks the kernel variants that reproduce every result (see
-# attr(simd_current(), "complex")).
+# simd_complex_variants()).
 init_complex <- function() {
   p <- .Call(C_simd_c128_probe_inputs)
   .Call(C_simd_c128_probe, p$z, p$w, p$z * p$w, p$z / p$w, p$x, cumprod(p$x))

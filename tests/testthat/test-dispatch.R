@@ -44,17 +44,24 @@ test_that("simd_available() matches the hardware on known machines", {
   expect_true(TRUE)
 })
 
+test_that("simd_current() returns a plain tier id", {
+  cur <- simd_current()
+  expect_identical(attributes(cur), NULL)
+  expect_true(cur %in% simd_available())
+  expect_identical(capture.output(print(cur)), paste0('[1] "', cur, '"'))
+})
+
 test_that("simd_use() selects none and auto", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   expect_silent(simd_use("none"))
   expect_identical(as.vector(simd_current()), "none")
-  expect_identical(attr(simd_current(), "requested"), "none")
+  expect_identical(.impl_state$requested, "none")
   expect_identical(getOption("rsimd.impl"), "none")
 
   expect_identical(simd_use("auto"), "none")
   expect_identical(as.vector(simd_current()), simd_available()[1])
-  expect_identical(attr(simd_current(), "requested"), "auto")
+  expect_identical(.impl_state$requested, "auto")
 
   for (tier in simd_available()) {
     simd_use(tier)
@@ -63,7 +70,7 @@ test_that("simd_use() selects none and auto", {
 })
 
 test_that("simd_use() returns the previous request invisibly", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   simd_use("auto")
   expect_invisible(simd_use("none"))
@@ -72,7 +79,7 @@ test_that("simd_use() returns the previous request invisibly", {
 })
 
 test_that("simd_use() rejects an unavailable tier and keeps the selection", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   simd_use("none")
   avail <- paste(simd_available(), collapse = ", ")
@@ -92,7 +99,7 @@ test_that("simd_use() rejects an unavailable tier and keeps the selection", {
 })
 
 test_that("simd_use() rejects unknown names, listing the tiers", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   simd_use("none")
   expect_error(
@@ -112,28 +119,28 @@ test_that("simd_use() rejects unknown names, listing the tiers", {
 })
 
 test_that("simd_with_impl() selects temporarily and restores", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   simd_use("auto")
   expect_identical(as.vector(simd_with_impl("none", simd_current())), "none")
-  expect_identical(attr(simd_current(), "requested"), "auto")
+  expect_identical(.impl_state$requested, "auto")
   expect_identical(getOption("rsimd.impl"), "auto")
 
   expect_error(simd_with_impl("none", stop("boom")), "boom")
-  expect_identical(attr(simd_current(), "requested"), "auto")
+  expect_identical(.impl_state$requested, "auto")
   expect_identical(as.vector(simd_current()), simd_available()[1])
 
   expect_error(simd_with_impl("bogus", 1), "unknown implementation")
-  expect_identical(attr(simd_current(), "requested"), "auto")
+  expect_identical(.impl_state$requested, "auto")
 
   simd_use("none")
   nested <- simd_with_impl("auto", simd_with_impl("none", simd_current()))
   expect_identical(as.vector(nested), "none")
-  expect_identical(attr(simd_current(), "requested"), "none")
+  expect_identical(.impl_state$requested, "none")
 })
 
 test_that("setting the rsimd.impl option directly is honoured", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   old <- options(rsimd.impl = "auto")
   on.exit(options(old), add = TRUE)
@@ -141,7 +148,7 @@ test_that("setting the rsimd.impl option directly is honoured", {
 
   options(rsimd.impl = "none")
   expect_identical(as.vector(simd_current()), "none")
-  expect_identical(attr(simd_current(), "requested"), "none")
+  expect_identical(.impl_state$requested, "none")
 
   options(rsimd.impl = "auto")
   expect_identical(as.vector(simd_current()), simd_available()[1])
@@ -161,7 +168,7 @@ test_that("setting the rsimd.impl option directly is honoured", {
 })
 
 test_that("compute functions honour rsimd.impl set directly, without simd_current()", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   old <- options(rsimd.impl = "auto")
   on.exit(options(old), add = TRUE)
@@ -209,7 +216,7 @@ test_that("compute functions honour rsimd.impl set directly, without simd_curren
 })
 
 test_that("simd_with_impl() restores the selection when a compute call errors", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   simd_use("auto")
   expect_error(simd_with_impl("none", simd_add(1:3, 1:2)), "lengths")
@@ -230,7 +237,7 @@ test_that("RSIMD_IMPL and rsimd.impl initialise a fresh session", {
       }
     )
     list(
-      current = as.vector(current), requested = attr(current, "requested"),
+      current = current, requested = getOption("rsimd.impl"),
       available = rsimd::simd_available(), warnings = warnings
     )
   }
@@ -304,7 +311,7 @@ test_that("a RSIMD_TEST_HOLE slot is filled from the next tier down", {
 })
 
 test_that("simd_kernel_tiers() defaults to the active tier and checks its argument", {
-  old_impl <- attr(simd_current(), "requested")
+  old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   simd_use("none")
   expect_identical(simd_kernel_tiers(), simd_kernel_tiers("none"))

@@ -69,12 +69,13 @@ available tiers, best first; \code{"none"} is always last. The default,
 \item arm64: \code{sve2}, \code{sve}, \code{neon}, \code{none}.
 \end{itemize}
 
-\noindent\code{simd\_current()} names the tier in use, with the request it
-came from as the attribute \code{"requested"}:
+\noindent\code{simd\_current()} names the tier in use, and the option
+\code{rsimd.impl} holds the request it came from:
 
 <<available>>=
 simd_available()
 simd_current()
+getOption("rsimd.impl")
 @
 
 \code{"none"} is plain C code with no SIMD instructions. It exists on every

@@ -63,7 +63,7 @@ following addition (a fused multiply-add), in which order, and which
 division algorithm its runtime library has. When \pkg{rsimd} loads, base R
 computes products, quotients and a \code{cumprod()} of a fixed set of
 inputs, and \pkg{rsimd} picks the variant of its kernels that reproduces
-all of them; \code{attr(\link{simd_current}(), "complex")} names the
+all of them; \code{\link{simd_complex_variants}()} names the
 choice. A product's parts are \eqn{ac - bd} and \eqn{ad + bc} with one
 product of each fused or not; division follows the scaled Smith's method of
 GCC's runtime (GCC 12 and later). Elements whose result has a missing part
@@ -135,5 +135,5 @@ simd_add(c(1, 2), 1i)
 z <- complex(real = c(1, 0, Inf), imaginary = c(2, 0, 0))
 identical(simd_mul(z, 1 - 1i), z * (1 - 1i))
 identical(simd_div(1, z), 1 / z)
-attr(simd_current(), "complex")
+simd_complex_variants()
 }

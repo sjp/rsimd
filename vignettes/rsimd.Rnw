@@ -348,7 +348,7 @@ a \code{cumprod()} of a fixed set of inputs, and \pkg{rsimd} picks the
 variant of its kernels that reproduces all of them:
 
 <<complex-variants>>=
-attr(simd_current(), "complex")
+simd_complex_variants()
 identical(simd_mul(z, z), z * z)
 identical(simd_div(1, z), 1 / z)
 simd_abs(z)

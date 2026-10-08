@@ -3,12 +3,14 @@
 \alias{simd_tiers}
 \alias{simd_available}
 \alias{simd_current}
+\alias{simd_complex_variants}
 \alias{simd_with_impl}
 \title{Select the SIMD Implementation}
 \usage{
 simd_tiers()
 simd_available()
 simd_current()
+simd_complex_variants()
 simd_use(impl)
 simd_with_impl(impl, expr)
 }
@@ -49,6 +51,14 @@ set, else from the environment variable \env{RSIMD_IMPL}, else it is
 \code{simd_with_impl()} is meant for tests and benchmarks: it selects
 \code{impl}, evaluates \code{expr} and then restores the previous selection,
 also when \code{expr} signals an error.
+
+The implementation asked for, \code{"auto"} or a tier id, is the value of
+the option \code{rsimd.impl}, which \code{simd_use()} keeps up to date.
+
+\code{simd_complex_variants()} reports how complex multiplication, division
+and \code{cumprod()} were matched to base R's rounding when the package was
+loaded (see \code{\link{simd_mul}()}); it does not depend on the selected
+tier.
 }
 \value{
 \code{simd_tiers()}: a character vector of every tier id, including reserved
@@ -57,13 +67,12 @@ ones.
 \code{simd_available()}: a character vector of the available tiers, best
 first, always ending with \code{"none"}.
 
-\code{simd_current()}: a character string, the selected tier, with attribute
-\code{"requested"}: \code{"auto"} or the tier that was asked for, and
-attribute \code{"complex"}: a named character vector (\code{mul},
+\code{simd_current()}: a character string, the selected tier.
+
+\code{simd_complex_variants()}: a named character vector (\code{mul},
 \code{div}, \code{cumprod}) describing how complex multiplication,
-division and \code{cumprod()} reproduce the rounding of this R build (see
-\code{\link{simd_mul}()}): the formula the kernels use, or
-\code{"scalar"} when no kernel variant matches and base R's operator is
+division and \code{cumprod()} reproduce the rounding of this R build: the
+formula the kernels use, or \code{"scalar"} when no kernel variant matches and base R's operator is
 used for every element, with \code{" (NA/NaN may differ)"} appended if
 only the choice between \code{NA} and \code{NaN} could not be
 reproduced.
@@ -80,6 +89,8 @@ available.
 \examples{
 simd_available()
 simd_current()
+getOption("rsimd.impl")
+simd_complex_variants()
 
 old <- simd_use("none")
 simd_current()
