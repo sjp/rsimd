@@ -53,7 +53,14 @@ void RSIMD_KERNEL(prod_f64)(const double *x, R_xlen_t n, rsimd_reduce_result *r,
   for (i = 0; i < n; i++) {
     if (check && isnan(x[i])) {
       r->saw_nan = 1;
-      if (rsimd_is_na_f64(x[i])) r->saw_na = 1;
+      if (rsimd_is_na_f64(x[i])) {
+        r->saw_na = 1;
+        /* Without na.rm the product is NA whatever follows. */
+        if (!o->na_rm) {
+          r->count += n;
+          return;
+        }
+      }
       if (o->na_rm) {
         removed++;
         continue;
@@ -73,10 +80,12 @@ void RSIMD_KERNEL(prod_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, co
   for (i = 0; i < n; i++) {
     if (check && x[i] == RSIMD_NA_I32) {
       r->saw_na = 1;
-      if (o->na_rm) {
-        removed++;
-        continue;
+      if (!o->na_rm) {
+        r->count += n;
+        return;
       }
+      removed++;
+      continue;
     }
     p *= (double) x[i];
   }
@@ -98,7 +107,13 @@ void RSIMD_KERNEL(prod2_f64)(int op, const void *x, const void *y, R_xlen_t n, i
     double v = op == RSIMD_EW_SUB ? a - b : a + b;
     if (check && isnan(v)) {
       r->saw_nan = 1;
-      if (rsimd_is_na_f64(a) || rsimd_is_na_f64(b)) r->saw_na = 1;
+      if (rsimd_is_na_f64(a) || rsimd_is_na_f64(b)) {
+        r->saw_na = 1;
+        if (!o->na_rm) {
+          r->count += n;
+          return;
+        }
+      }
       if (o->na_rm) {
         removed++;
         continue;
@@ -600,7 +615,9 @@ RSIMD_INLINE double RSIMD_KERNEL(prod_tree_)(rsimd_vf64 v) {
 
 /* Four vector accumulators of products, as the fast sum. With check, NaN
    lanes are recorded (and set to 1 and counted in the lanes of rcnt under
-   narm). */
+   narm). Without narm the kernels go in blocks of RSIMD_FOLD_BLOCK, as the
+   folds do, and stop after a block with an NA, as the product is then
+   NA. */
 #define RSIMD_PROD_STEP_(acc, v, m)                                                      \
   do {                                                                                   \
     rsimd_vf64 v_ = (v);                                                                 \
@@ -618,22 +635,33 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_f64_)(const double *x, R_xlen_t n, co
                                                 const int narm, rsimd_reduce_result *r) {
   const ptrdiff_t W = RSIMD_LANES_64;
   const rsimd_vf64 one = rsimd_vf64_set1(1.0);
+  const int stop = check && !narm;
   rsimd_vf64 a0 = one, a1 = one, a2 = one, a3 = one;
   rsimd_mf64 mnan = rsimd_mf64_none();
   rsimd_vi64 rcnt = rsimd_vi64_zero();
-  R_xlen_t i = 0;
-  for (; i + 4 * W <= n; i += 4 * W) {
-    rsimd_vf64 v0 = rsimd_vf64_loadu(x + i), v1 = rsimd_vf64_loadu(x + i + W);
-    rsimd_vf64 v2 = rsimd_vf64_loadu(x + i + 2 * W), v3 = rsimd_vf64_loadu(x + i + 3 * W);
-    RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_is_nan(v0));
-    RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_is_nan(v1));
-    RSIMD_PROD_STEP_(a2, v2, rsimd_vf64_is_nan(v2));
-    RSIMD_PROD_STEP_(a3, v3, rsimd_vf64_is_nan(v3));
+  R_xlen_t i = 0, from;
+  int nan = 0;
+  while (i + 4 * W <= n) {
+    const R_xlen_t end = stop && n - i > RSIMD_FOLD_BLOCK ? i + RSIMD_FOLD_BLOCK : n;
+    for (from = i; i + 4 * W <= end; i += 4 * W) {
+      rsimd_vf64 v0 = rsimd_vf64_loadu(x + i), v1 = rsimd_vf64_loadu(x + i + W);
+      rsimd_vf64 v2 = rsimd_vf64_loadu(x + i + 2 * W), v3 = rsimd_vf64_loadu(x + i + 3 * W);
+      RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_is_nan(v0));
+      RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_is_nan(v1));
+      RSIMD_PROD_STEP_(a2, v2, rsimd_vf64_is_nan(v2));
+      RSIMD_PROD_STEP_(a3, v3, rsimd_vf64_is_nan(v3));
+    }
+    if (stop && rsimd_mf64_any(mnan)) {
+      if (rsimd_vfold_block_na_(x, 0, x, 0, 0, from, i, n, r)) return;
+      mnan = rsimd_mf64_none();
+      nan = 1;
+    }
   }
   for (; i < n; i += W) {
     rsimd_vf64 v = rsimd_vf64_loadu_p(rsimd_p64_while(i, n), x + i, 1.0);
     RSIMD_PROD_STEP_(a0, v, rsimd_vf64_is_nan(v));
   }
+  if (nan) mnan = rsimd_vf64_cmp_eq(one, one); /* a NaN was seen */
   if (check) rsimd_vfold_done_(mnan, rsimd_vi64_reduce_add(rcnt), x, 0, x, 0, n, RSIMD_TERM_X, r);
   else r->count += n;
   r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(rsimd_vf64_mul(a0, a1),
@@ -655,14 +683,26 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_i32_)(const int *x, R_xlen_t n, const
                                                 const int narm, rsimd_reduce_result *r) {
   const ptrdiff_t W = RSIMD_LANES_64;
   const rsimd_vf64 one = rsimd_vf64_set1(1.0), na = rsimd_vf64_set1(RSIMD_NA_I32_AS_F64);
-  rsimd_vf64 a0 = one, a1 = one;
+  const int stop = check && !narm;
+  rsimd_vf64 a0 = one, a1 = one, a2 = one, a3 = one;
   rsimd_mf64 mnan = rsimd_mf64_none(); /* the NA lanes */
   rsimd_vi64 rcnt = rsimd_vi64_zero();
   R_xlen_t i = 0;
-  for (; i + 2 * W <= n; i += 2 * W) {
-    rsimd_vf64 v0 = rsimd_vf64_loadu_i32(x + i), v1 = rsimd_vf64_loadu_i32(x + i + W);
-    RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_cmp_eq(v0, na));
-    RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_cmp_eq(v1, na));
+  while (i + 4 * W <= n) {
+    const R_xlen_t end = stop && n - i > RSIMD_FOLD_BLOCK ? i + RSIMD_FOLD_BLOCK : n;
+    for (; i + 4 * W <= end; i += 4 * W) {
+      rsimd_vf64 v0 = rsimd_vf64_loadu_i32(x + i), v1 = rsimd_vf64_loadu_i32(x + i + W);
+      rsimd_vf64 v2 = rsimd_vf64_loadu_i32(x + i + 2 * W), v3 = rsimd_vf64_loadu_i32(x + i + 3 * W);
+      RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_cmp_eq(v0, na));
+      RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_cmp_eq(v1, na));
+      RSIMD_PROD_STEP_(a2, v2, rsimd_vf64_cmp_eq(v2, na));
+      RSIMD_PROD_STEP_(a3, v3, rsimd_vf64_cmp_eq(v3, na));
+    }
+    if (stop && rsimd_mf64_any(mnan)) {
+      r->saw_na = 1;
+      r->count += n;
+      return;
+    }
   }
   for (; i < n; i += W) {
     rsimd_vf64 v = rsimd_vf64_loadu_i32_p(rsimd_p64_while(i, n), x + i, 1);
@@ -670,7 +710,8 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_i32_)(const int *x, R_xlen_t n, const
   }
   if (check && rsimd_mf64_any(mnan)) r->saw_na = 1;
   r->count += n - rsimd_vi64_reduce_add(rcnt);
-  r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(a0, a1));
+  r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(rsimd_vf64_mul(a0, a1),
+                                                    rsimd_vf64_mul(a2, a3)));
 }
 
 void RSIMD_KERNEL(prod_i32)(const int *x, R_xlen_t n, rsimd_reduce_result *r, const rsimd_opts *o);
@@ -689,6 +730,23 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 RSIMD_KERNEL(prod2_ld_)(const void *p, int flags,
   return rsimd_vf64_load_elt_(p, (flags & RSIMD_EW_I32(k)) != 0, i);
 }
 
+/* As rsimd_vfold_block_na_() for the pairs [from, to) of prod2, a
+   broadcast operand being its one element. */
+static RSIMD_NOINLINE int RSIMD_KERNEL(prod2_block_na_)(const void *x, const void *y, int flags,
+                                                       R_xlen_t from, R_xlen_t to, R_xlen_t n,
+                                                       rsimd_reduce_result *r) {
+  const int xi = (flags & RSIMD_EW_I32(0)) != 0, yi = (flags & RSIMD_EW_I32(1)) != 0;
+  const int xb = (flags & RSIMD_EW_SCALAR(0)) != 0, yb = (flags & RSIMD_EW_SCALAR(1)) != 0;
+  if (rsimd_any_na_elt_(xb ? x : rsimd_elt_ptr_(x, xi, from), xi, xb ? 1 : to - from) ||
+      rsimd_any_na_elt_(yb ? y : rsimd_elt_ptr_(y, yi, from), yi, yb ? 1 : to - from)) {
+    r->saw_na = 1;
+    r->saw_nan = 1;
+    r->count += n;
+    return 1;
+  }
+  return 0;
+}
+
 /* The product of x[i] + y[i] in four vector accumulators as prod_f64_,
    y being negated (exactly) for x - y; the last n % W pairs are
    multiplied in a scalar loop. A pair is missing when its sum is NaN;
@@ -703,22 +761,31 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod2_f64_)(int op, const void *x, const v
   const rsimd_vf64 one = rsimd_vf64_set1(1.0), sign = rsimd_vf64_set1(op == RSIMD_EW_SUB ? -0.0 : 0.0);
   const rsimd_vf64 bx = rsimd_vf64_set1(rsimd_elt_f64(x, xi, 0));
   const rsimd_vf64 by = rsimd_vf64_set1(rsimd_elt_f64(y, yi, 0));
+  const int stop = check && !narm;
   rsimd_vf64 a0 = one, a1 = one, a2 = one, a3 = one;
   rsimd_mf64 mnan = rsimd_mf64_none();
   rsimd_vi64 rcnt = rsimd_vi64_zero();
-  R_xlen_t i = 0, removed = 0;
+  R_xlen_t i = 0, from, removed = 0;
   double p = 1.0;
-  int tail_nan = 0;
+  int tail_nan = 0, nan = 0;
 #define RSIMD_PROD2_LD_(j)                                                               \
   rsimd_vf64_add(RSIMD_KERNEL(prod2_ld_)(x, flags, 0, bx, i + (j) * W),                  \
                  rsimd_vf64_xor(RSIMD_KERNEL(prod2_ld_)(y, flags, 1, by, i + (j) * W), sign))
-  for (; i + 4 * W <= n; i += 4 * W) {
-    rsimd_vf64 v0 = RSIMD_PROD2_LD_(0), v1 = RSIMD_PROD2_LD_(1);
-    rsimd_vf64 v2 = RSIMD_PROD2_LD_(2), v3 = RSIMD_PROD2_LD_(3);
-    RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_is_nan(v0));
-    RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_is_nan(v1));
-    RSIMD_PROD_STEP_(a2, v2, rsimd_vf64_is_nan(v2));
-    RSIMD_PROD_STEP_(a3, v3, rsimd_vf64_is_nan(v3));
+  while (i + 4 * W <= n) {
+    const R_xlen_t end = stop && n - i > RSIMD_FOLD_BLOCK ? i + RSIMD_FOLD_BLOCK : n;
+    for (from = i; i + 4 * W <= end; i += 4 * W) {
+      rsimd_vf64 v0 = RSIMD_PROD2_LD_(0), v1 = RSIMD_PROD2_LD_(1);
+      rsimd_vf64 v2 = RSIMD_PROD2_LD_(2), v3 = RSIMD_PROD2_LD_(3);
+      RSIMD_PROD_STEP_(a0, v0, rsimd_vf64_is_nan(v0));
+      RSIMD_PROD_STEP_(a1, v1, rsimd_vf64_is_nan(v1));
+      RSIMD_PROD_STEP_(a2, v2, rsimd_vf64_is_nan(v2));
+      RSIMD_PROD_STEP_(a3, v3, rsimd_vf64_is_nan(v3));
+    }
+    if (stop && rsimd_mf64_any(mnan)) {
+      if (RSIMD_KERNEL(prod2_block_na_)(x, y, flags, from, i, n, r)) return;
+      mnan = rsimd_mf64_none();
+      nan = 1;
+    }
   }
   for (; i + W <= n; i += W) {
     rsimd_vf64 v = RSIMD_PROD2_LD_(0);
@@ -737,7 +804,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod2_f64_)(int op, const void *x, const v
     }
     p *= v;
   }
-  if (check && (tail_nan || rsimd_mf64_any(mnan))) {
+  if (check && (nan || tail_nan || rsimd_mf64_any(mnan))) {
     r->saw_nan = 1;
     if (rsimd_any_na_elt_(x, xi, xs ? n : 1) || rsimd_any_na_elt_(y, yi, ys ? n : 1)) {
       r->saw_na = 1;
@@ -1102,6 +1169,8 @@ static inline void RSIMD_KERNEL(cosine_)(const void *x, const int xi32, const vo
     RSIMD_FOLD_(xp, xi32, yp, yi32, len, RSIMD_TERM_XY, 0.0, &r[0], o);
     RSIMD_FOLD_(xp, xi32, xp, xi32, len, RSIMD_TERM_SQ, 0.0, &r[1], o);
     RSIMD_FOLD_(yp, yi32, yp, yi32, len, RSIMD_TERM_SQ, 0.0, &r[2], o);
+    /* A missing pair makes the result NA. */
+    if (r[0].saw_na && !o->na_rm) break;
   }
 }
 

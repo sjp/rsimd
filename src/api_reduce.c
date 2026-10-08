@@ -242,7 +242,10 @@ static SEXP simd_prod2_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, 
     if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(int, double, __VA_ARGS__);              \
     else RSIMD_PROD2_LOOP_(int, int, __VA_ARGS__);                                       \
   }
-  RSIMD_PROD2_TYPES_({ rsimd_active->prod2_f64(ew, px, py, len, flags, &r, &o); })
+  RSIMD_PROD2_TYPES_({
+    rsimd_active->prod2_f64(ew, px, py, len, flags, &r, &o);
+    RSIMD_STOP_AT_NA(r);
+  })
   if (cprod_needed(&r, &o)) {
     /* The pairs as the kernels form them: x - y as x + (-y), and an NA
        operand (double or integer) giving a NaN sum. */
@@ -872,17 +875,24 @@ static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SE
                                   : RSIMD_PAIR_F64_F64;
   for (k = 0; k < 3; k++) rsimd_reduce_result_init(&r[k], RSIMD_RED_SUM);
 
+  /* cosine stops on the x*y sum's flags: a missing pair makes it NA. */
 #define RSIMD_PAIR_LOOP_(TX, TY)                                                         \
   do {                                                                                   \
     if (which == 0) {                                                                    \
-      RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off,                                \
-                            { rsimd_active->dot_f64(px, py, len, types, r, &o); });      \
+      RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off, {                              \
+        rsimd_active->dot_f64(px, py, len, types, r, &o);                                \
+        RSIMD_STOP_AT_NA(r[0]);                                                          \
+      });                                                                                \
     } else if (which == 1) {                                                             \
-      RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off,                                \
-                            { rsimd_active->dist_f64(px, py, len, types, r, &o); });     \
+      RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off, {                              \
+        rsimd_active->dist_f64(px, py, len, types, r, &o);                               \
+        RSIMD_STOP_AT_NA(r[0]);                                                          \
+      });                                                                                \
     } else {                                                                             \
-      RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off,                                \
-                            { rsimd_active->cosine_f64(px, py, len, types, r, &o); });   \
+      RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off, {                              \
+        rsimd_active->cosine_f64(px, py, len, types, r, &o);                             \
+        RSIMD_STOP_AT_NA(r[0]);                                                          \
+      });                                                                                \
     }                                                                                    \
   } while (0)
   switch (types) {

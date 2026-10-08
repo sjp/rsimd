@@ -675,8 +675,47 @@ test_that("reductions without na.rm stop at an NA and still give NA on every tie
     expect_tiers_give(NA_integer_, simd_sum, yi)
     expect_tiers_give(NA_integer_, simd_min, yi)
     expect_tiers_give(NA_real_, simd_mean, yi)
+    expect_tiers_give(NA_real_, simd_prod, yi)
+    for (f in list(simd_prod_sums, simd_prod_diffs, simd_dot, simd_dist, simd_cosine)) {
+      expect_tiers_give(NA_real_, f, y, x)
+      expect_tiers_give(NA_real_, f, x, y)
+      expect_tiers_give(NA_real_, f, yi, x)
+    }
+    expect_tiers_give(NA_real_, simd_prod_sums, y, 0.5)
+    expect_tiers_give(NA_real_, simd_prod_diffs, 0.5, yi)
     # NA wins over a NaN before it.
     y[1] <- NaN
-    if (pos > 1) expect_tiers_give(NA_real_, simd_sum, y)
+    if (pos > 1) {
+      for (f in list(simd_sum, simd_prod)) expect_tiers_give(NA_real_, f, y)
+      for (f in list(simd_prod_sums, simd_dot, simd_dist, simd_cosine)) {
+        expect_tiers_give(NA_real_, f, y, x)
+      }
+    }
+  }
+  # A broadcast NA, and a NaN alone, read to the end.
+  expect_tiers_give(NA_real_, simd_prod_sums, x, NA_real_)
+  expect_tiers_give(NA_real_, simd_prod_diffs, NA_integer_, x)
+  y <- x
+  y[5000] <- NaN
+  for (f in list(simd_prod, simd_sum)) expect_tiers_give(NaN, f, y)
+  for (f in list(simd_prod_sums, simd_dot, simd_dist)) expect_tiers_give(NaN, f, y, x)
+})
+
+test_that("an NA past the first chunk, or before it, gives NA on every tier", {
+  skip_unless_extended()
+  n <- 2^21 + 37
+  x <- runif(n, 0.9999, 1.0001)
+  xi <- sample(c(-1L, 1L), n, TRUE)
+  for (pos in c(1, 2^20 + 1, n)) {
+    y <- x
+    y[pos] <- NA
+    yi <- xi
+    yi[pos] <- NA
+    expect_tiers_give(NA_real_, simd_prod, y)
+    expect_tiers_give(NA_real_, simd_prod, yi)
+    for (f in list(simd_prod_sums, simd_prod_diffs, simd_dot, simd_dist, simd_cosine)) {
+      expect_tiers_give(NA_real_, f, y, x)
+      expect_tiers_give(NA_real_, f, x, yi)
+    }
   }
 })
