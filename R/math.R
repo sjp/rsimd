@@ -31,7 +31,7 @@
   for (a in list(x, y)) {
     if (!(is.numeric(a) || is.logical(a) || is.complex(a))) {
       msg <- if (op == "pow") "binary operator" else "mathematical function"
-      stop("non-numeric argument to ", msg, call. = FALSE)
+      .stop("non-numeric argument to ", msg)
     }
   }
   p <- .promote_pair(x, y, call)
@@ -47,7 +47,7 @@
 .whole_arg <- function(n) {
   if (is.double(n)) {
     bad <- !is.na(n) & (abs(n) > .Machine$integer.max | n != trunc(n))
-    if (any(bad)) stop("'n' must be whole numbers in the integer range", call. = FALSE)
+    if (any(bad)) .stop("'n' must be whole numbers in the integer range")
   }
   if (!is.integer(n)) storage.mode(n) <- "integer"
   n
@@ -58,7 +58,7 @@
 .n_arg <- function(fun, x, n) {
   .math_check(fun, list(x = x, n = n))
   if (!(is.numeric(n) || is.logical(n))) {
-    stop("non-numeric argument to mathematical function", call. = FALSE)
+    .stop("non-numeric argument to mathematical function")
   }
   .whole_arg(n)
 }

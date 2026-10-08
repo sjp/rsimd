@@ -28,7 +28,7 @@
     integer = as.integer(x),
     complex = as.complex(x),
     integer64 = .Call(C_simd_convert, x, "integer64", 0L, FALSE),
-    stop("internal error: cannot convert to ", to, call. = FALSE)
+    .stop("internal error: cannot convert to ", to)
   )
   .sv_like(out, x)
 }
@@ -61,9 +61,7 @@
   if (is.object(x)) .check_data(x, arg)
   type <- if (inherits(x, "integer64")) "integer64" else typeof(x)
   if (type %in% unsupported) {
-    stop(fun, "() does not support '", arg, "' of type ", type, if (type %in% later) " yet",
-      call. = FALSE
-    )
+    .stop(fun, "() does not support '", arg, "' of type ", type, if (type %in% later) " yet")
   }
   invisible()
 }
@@ -77,10 +75,8 @@
     (is.atomic(x) && !is.object(x) && typeof(x) %in% types)
   if (!ok) {
     what <- if (is.object(x)) class(x)[[1L]] else if (is.list(x)) "list" else typeof(x)
-    stop("'", arg, "' must be an atomic vector (double, integer, logical, raw, complex or ",
-      "integer64), not ", what,
-      call. = FALSE
-    )
+    .stop("'", arg, "' must be an atomic vector (double, integer, logical, raw, complex or ",
+      "integer64), not ", what)
   }
   invisible()
 }
@@ -91,9 +87,7 @@
 # the same for the integer64 results of the simd_* functions.
 .need_bit64 <- function() {
   if (!isNamespaceLoaded("bit64") && !requireNamespace("bit64", quietly = TRUE)) {
-    stop("integer64 results need package 'bit64'; install it with install.packages(\"bit64\")",
-      call. = FALSE
-    )
+    .stop("integer64 results need package 'bit64'; install it with install.packages(\"bit64\")")
   }
   invisible()
 }
@@ -103,6 +97,27 @@
 # would otherwise read y as na.rm. Names the user's call.
 .dots_error <- function(fun, what = "one vector; combine several with c()",
                         named = "na.rm and na_check") {
-  msg <- paste0(fun, "() takes ", what, ", and ", named, " must be named")
-  stop(simpleError(msg, sys.call(-1L)))
+  .stop(fun, "() takes ", what, ", and ", named, " must be named")
+}
+
+# An error made of the pasted arguments, as stop() makes it, that names the
+# user's call (.user_call()) rather than the rsimd helper raising it.
+.stop <- function(...) {
+  stop(simpleError(.makeMessage(...), .user_call()))
+}
+
+# The call the user made into rsimd: the innermost call of an rsimd
+# function from outside the package (an exported function, or the simd_vec
+# method a base generic dispatched to). Walks the stack, so only for errors.
+.user_call <- function() {
+  ns <- topenv()
+  calls <- sys.calls()
+  parents <- sys.parents()
+  frames <- sys.frames()
+  for (i in rev(seq_along(calls))) {
+    if (!identical(topenv(environment(sys.function(i))), ns)) next
+    p <- parents[[i]]
+    if (!identical(topenv(if (p == 0L) globalenv() else frames[[p]]), ns)) return(calls[[i]])
+  }
+  NULL
 }

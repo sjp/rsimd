@@ -149,7 +149,7 @@ simd_is_pow2_all <- function(x) {
 # user's call.
 .cmp_args <- function(x, y, op, call = sys.call(-1L)) {
   if ((is.complex(x) || is.complex(y)) && !(op %in% c("eq", "ne"))) {
-    stop("invalid comparison with complex values", call. = FALSE)
+    .stop("invalid comparison with complex values")
   }
   .cmp_operands(x, y, call)
 }

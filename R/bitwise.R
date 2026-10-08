@@ -45,7 +45,7 @@ simd_not <- function(x) {
 # n as a single number truncated toward zero, or an error.
 .count_arg <- function(n) {
   if (!(is.numeric(n) || is.logical(n)) || length(n) != 1L || inherits(n, "integer64")) {
-    stop("'n' must be a single number", call. = FALSE)
+    .stop("'n' must be a single number")
   }
   trunc(as.double(n))
 }
@@ -57,7 +57,7 @@ simd_not <- function(x) {
   n <- .count_arg(n)
   if (is.raw(x)) {
     if (is.na(n) || n < 0 || n > 8) {
-      stop("argument 'n' must be a small integer", call. = FALSE)
+      .stop("argument 'n' must be a small integer")
     }
     return(as.integer(n))
   }
@@ -69,7 +69,7 @@ simd_not <- function(x) {
 # for raw); a negative count rotates the other way.
 .rotate_count <- function(n, x) {
   n <- .count_arg(n)
-  if (!is.finite(n)) stop("'n' must be a finite number", call. = FALSE)
+  if (!is.finite(n)) .stop("'n' must be a finite number")
   w <- if (is.raw(x)) 8 else if (inherits(x, "integer64")) 64 else 32
   as.integer(n - w * floor(n / w))
 }

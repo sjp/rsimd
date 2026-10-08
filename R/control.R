@@ -44,13 +44,13 @@ simd_current <- function() {
 simd_use <- function(impl) {
   problem <- .impl_problem(impl)
   if (!is.null(problem)) {
-    stop(problem, call. = FALSE)
+    .stop(problem)
   }
   previous <- .previous_impl()
   status <- .Call(C_simd_select, impl)
   if (status != 0L) {
     # Only reachable if the R and C views of availability disagree.
-    stop("could not select implementation '", impl, "'", call. = FALSE)
+    .stop("could not select implementation '", impl, "'")
   }
   .impl_state$requested <- impl
   options(rsimd.impl = impl)
@@ -64,7 +64,7 @@ simd_precision <- function(mode) {
   }
   problem <- .precision_problem(mode)
   if (!is.null(problem)) {
-    stop(problem, call. = FALSE)
+    .stop(problem)
   }
   options(rsimd.precision = mode)
   invisible(old)
@@ -90,7 +90,7 @@ simd_precision <- function(mode) {
   mode <- getOption("rsimd.precision", "fast")
   problem <- .precision_problem(mode)
   if (!is.null(problem)) {
-    stop("invalid option rsimd.precision: ", problem, call. = FALSE)
+    .stop("invalid option rsimd.precision: ", problem)
   }
   mode
 }
@@ -110,7 +110,7 @@ simd_math_accuracy <- function(mode) {
   }
   problem <- .math_accuracy_problem(mode)
   if (!is.null(problem)) {
-    stop(problem, call. = FALSE)
+    .stop(problem)
   }
   options(rsimd.math_accuracy = mode)
   invisible(old)
@@ -137,7 +137,7 @@ simd_math_accuracy <- function(mode) {
   mode <- getOption("rsimd.math_accuracy", "accurate")
   problem <- .math_accuracy_problem(mode)
   if (!is.null(problem)) {
-    stop("invalid option rsimd.math_accuracy: ", problem, call. = FALSE)
+    .stop("invalid option rsimd.math_accuracy: ", problem)
   }
   mode
 }
@@ -190,7 +190,7 @@ simd_with_impl <- function(impl, expr) {
   if (!identical(impl, .impl_state$requested)) {
     problem <- .impl_problem(impl)
     if (!is.null(problem)) {
-      stop("invalid option rsimd.impl: ", problem, call. = FALSE)
+      .stop("invalid option rsimd.impl: ", problem)
     }
     simd_use(impl)
   }

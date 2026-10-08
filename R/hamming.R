@@ -25,7 +25,7 @@ simd_hamming <- function(x, y, ..., na.rm = FALSE) {
     integer = ,
     logical = "integer",
     raw = "raw",
-    stop("simd_hamming_bits() does not support '", arg, "' of type ", typeof(x), call. = FALSE)
+    .stop("simd_hamming_bits() does not support '", arg, "' of type ", typeof(x))
   )
 }
 
@@ -33,9 +33,7 @@ simd_hamming_bits <- function(x, y) {
   cx <- .bits_class(x, "x")
   cy <- .bits_class(y, "y")
   if (cx != cy) {
-    stop("simd_hamming_bits() needs 'x' and 'y' of the same width: ", cx, " and ", cy,
-      call. = FALSE
-    )
+    .stop("simd_hamming_bits() needs 'x' and 'y' of the same width: ", cx, " and ", cy)
   }
   .Call(C_simd_hamming_bits, x, y)
 }

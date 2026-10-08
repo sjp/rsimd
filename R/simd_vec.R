@@ -21,7 +21,7 @@
 
 simd_vec <- function(x, impl = NULL, check_na = FALSE) {
   if (!is.logical(check_na) || length(check_na) != 1L || is.na(check_na)) {
-    stop("'check_na' must be TRUE or FALSE", call. = FALSE)
+    .stop("'check_na' must be TRUE or FALSE")
   }
   if (is_simd_vec(x)) {
     if (missing(impl) && !check_na) {
@@ -74,7 +74,7 @@ simd_na_free <- function(x) {
 .sv_release <- function(x) invisible(.Call(C_simd_sv_release, x))
 
 .sv_assert <- function(x, arg = "x") {
-  if (!is_simd_vec(x)) stop("'", arg, "' must be a simd_vec", call. = FALSE)
+  if (!is_simd_vec(x)) .stop("'", arg, "' must be a simd_vec")
   invisible()
 }
 
@@ -84,13 +84,11 @@ simd_na_free <- function(x) {
     return(NULL)
   }
   if (identical(impl, "auto")) {
-    stop("'impl' must name an implementation, not \"auto\"; use NULL to follow the ",
-      "global setting",
-      call. = FALSE
-    )
+    .stop("'impl' must name an implementation, not \"auto\"; use NULL to follow the ",
+      "global setting")
   }
   problem <- .impl_problem(impl)
-  if (!is.null(problem)) stop(problem, call. = FALSE)
+  if (!is.null(problem)) .stop(problem)
   impl
 }
 
@@ -162,16 +160,12 @@ simd_na_free <- function(x) {
     p <- attr(a, "rsimd_impl", exact = TRUE)
     if (is.null(p)) next
     if (!is.null(pin) && !identical(pin, p)) {
-      stop("operands pinned to different implementations ('", pin, "' vs '", p,
-        "'); unpin one with simd_impl(x) <- NULL",
-        call. = FALSE
-      )
+      .stop("operands pinned to different implementations ('", pin, "' vs '", p,
+        "'); unpin one with simd_impl(x) <- NULL")
     }
     if (!p %in% simd_available()) {
-      stop("'x' is pinned to implementation '", p,
-        "', which is not available on this machine; unpin it with simd_impl(x) <- NULL",
-        call. = FALSE
-      )
+      .stop("'x' is pinned to implementation '", p,
+        "', which is not available on this machine; unpin it with simd_impl(x) <- NULL")
     }
     pin <- p
   }
@@ -199,10 +193,8 @@ simd_na_free <- function(x) {
   n1 <- length(e1)
   n2 <- length(e2)
   if (n1 != n2 && n1 != 1L && n2 != 1L) {
-    stop("lengths of 'x' (", n1, ") and 'y' (", n2,
-      ") must be equal or one of them must be 1",
-      call. = FALSE
-    )
+    .stop("lengths of 'x' (", n1, ") and 'y' (", n2,
+      ") must be equal or one of them must be 1")
   }
   invisible()
 }
@@ -225,7 +217,7 @@ Ops.simd_vec <- function(e1, e2) {
       "+" = .sv_uplus(e1),
       "-" = simd_neg(e1),
       "!" = if (is.raw(e1)) simd_bit_not(e1) else simd_not(e1),
-      stop("invalid unary operator", call. = FALSE)
+      .stop("invalid unary operator")
     ))
   }
   if (!(.sv_operand_ok(e1) && .sv_operand_ok(e2))) {
@@ -252,7 +244,7 @@ Ops.simd_vec <- function(e1, e2) {
     ">=" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_ge(e1, e2),
     "&" = if (is.raw(e1) || is.raw(e2)) simd_bit_and(e1, e2) else simd_and(e1, e2),
     "|" = if (is.raw(e1) || is.raw(e2)) simd_bit_or(e1, e2) else simd_or(e1, e2),
-    stop("operator '", gen, "' is not supported for simd_vec", call. = FALSE)
+    .stop("operator '", gen, "' is not supported for simd_vec")
   )
 }
 
@@ -270,7 +262,7 @@ Ops.simd_vec <- function(e1, e2) {
 
 # Unary +: base R makes a logical integer and rejects raw.
 .sv_uplus <- function(x) {
-  if (is.raw(x)) stop("invalid argument to unary operator", call. = FALSE)
+  if (is.raw(x)) .stop("invalid argument to unary operator")
   if (is.logical(x)) simd_as_integer(x) else x
 }
 
@@ -409,7 +401,7 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
   if (missing(i)) {
     return(x)
   }
-  if (...length() > 0L) stop("incorrect number of dimensions", call. = FALSE)
+  if (...length() > 0L) .stop("incorrect number of dimensions")
   impl <- attr(x, "rsimd_impl", exact = TRUE)
   # The result of an NA-free x has an NA only where the index is NA or past
   # the end; one pass over the (fresh) result says which, so the index is
@@ -453,7 +445,7 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
     }
     class(data) <- "integer64"
   } else if (inherits(value, "integer64")) {
-    stop("cannot assign integer64 values into a ", typeof(data), " simd_vec", call. = FALSE)
+    .stop("cannot assign integer64 values into a ", typeof(data), " simd_vec")
   } else if (missing(i)) {
     data[] <- value
   } else {
@@ -470,11 +462,11 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
   if (length(i) != 1L) {
     what <- if (length(i)) "more" else "less"
     where <- if (length(i)) "vectorIndex" else "OneIndex"
-    stop("attempt to select ", what, " than one element in ", where, call. = FALSE)
+    .stop("attempt to select ", what, " than one element in ", where)
   }
   if (length(value) != 1L) {
-    if (length(value)) stop("more elements supplied than there are to replace", call. = FALSE)
-    stop("replacement has length zero", call. = FALSE)
+    if (length(value)) .stop("more elements supplied than there are to replace")
+    .stop("replacement has length zero")
   }
   `[<-.simd_vec`(x, i, value)
 }

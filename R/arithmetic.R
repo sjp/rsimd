@@ -44,7 +44,7 @@
 .check_complex_i64 <- function(fun, x, y) {
   i64 <- inherits(x, "integer64") || inherits(y, "integer64")
   if (i64 && (is.complex(x) || is.complex(y))) {
-    stop(fun, "() cannot combine complex and integer64 operands", call. = FALSE)
+    .stop(fun, "() cannot combine complex and integer64 operands")
   }
   invisible()
 }
@@ -99,7 +99,7 @@
 # na.rm of pmin/pmax: TRUE or FALSE.
 .arg_flag <- function(x, name) {
   if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-    stop("'", name, "' must be TRUE or FALSE", call. = FALSE)
+    .stop("'", name, "' must be TRUE or FALSE")
   }
   x
 }
@@ -363,7 +363,7 @@ simd_trunc <- function(x) {
 
 simd_round <- function(x, digits = 0) {
   if (!(is.numeric(digits) || is.logical(digits)) || length(digits) != 1L) {
-    stop("'digits' must be a single number", call. = FALSE)
+    .stop("'digits' must be a single number")
   }
   if (is.object(x) || is.complex(x)) .ew_check("simd_round", list(x = x))
   if (!is.na(digits) && digits == 0) {
