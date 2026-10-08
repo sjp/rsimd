@@ -38,7 +38,10 @@ data without it.
 \code{\link{simd_mul_add}} and \code{\link{simd_add_mul}};
 \code{\link{simd_div}} returns a double: it converts both operands to double
 and then divides, so a quotient can differ by 1 ULP from \pkg{bit64}'s
-\code{/}, which divides in \code{long double} and rounds once.}
+\code{/}, which divides in \code{long double} and rounds once, and a zero
+divisor gives \code{Inf}, \code{-Inf} or \code{NaN} without a warning, as
+\code{/} does for doubles (\pkg{bit64}'s \code{/} gives \code{NA} with a
+warning).}
 \item{Predicates and comparisons}{\code{\link{simd_is_na}},
 \code{\link{simd_is_nan}} (always \code{FALSE}), \code{\link{simd_is_finite}}
 (not \code{NA}), \code{\link{simd_is_infinite}} (always \code{FALSE}),
@@ -112,8 +115,13 @@ double"} once when any value has a magnitude of \eqn{2^{53}} or more.
 \code{simd_as_integer} gives \code{NA} with the warning \code{"NAs produced
 by integer overflow"} for values outside the integer range in
 \code{"checked"} mode, clamps in \code{"saturating"} mode and keeps the low
-32 bits in \code{"truncating"} mode. \code{simd_as_integer64} truncates
-doubles toward zero; see \code{\link{simd_as_integer64}} for its modes.
+32 bits in \code{"truncating"} mode. \code{simd_as_raw} in
+\code{"checked"} mode gives 0 with the single warning
+\code{"out-of-range values treated as 0 in coercion to raw"}, as
+\code{as.raw()} of an integer does; \pkg{bit64}'s \code{as.raw()} converts
+to integer first, so it also warns \code{"NAs produced by integer
+overflow"} for values outside the integer range.
+\code{simd_as_integer64} truncates doubles toward zero; see \code{\link{simd_as_integer64}} for its modes.
 
 \strong{Bit operations} act on the 64-bit patterns. Shift counts must be in
 0 to 63 (any other count gives \code{NA} everywhere); rotate counts are taken

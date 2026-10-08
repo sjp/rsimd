@@ -430,6 +430,9 @@ test_that("integer64 mixed with double converts to double with a warning", {
   expect_identical(simd_div(i64(7), 2L), 3.5)
   expect_warning(r <- simd_div(i64(7), 2), co, fixed = TRUE)
   expect_identical(r, 3.5)
+  # A zero divisor follows double division, without a warning.
+  expect_identical(warnings_of(r <- simd_div(i64(c(5, NA, -7, 0)), 0L)), character(0))
+  expect_identical(r, c(Inf, NA, -Inf, NaN))
 })
 
 test_that("other integer64 combinations and functions are rejected", {
@@ -668,6 +671,10 @@ test_that("integer64 converts to integer, logical and raw", {
   expect_tiers_give(c(TRUE, FALSE, NA, TRUE), simd_as_logical, i64(c(-3, 0, NA, 2^60)))
   rw <- i64(c(0, 255, 256, -1, NA))
   expect_tier_warnings("out-of-range values treated as 0 in coercion to raw", simd_as_raw, rw)
+  # Outside the integer range too, only the raw warning (bit64 adds an overflow one).
+  expect_tier_warnings(
+    "out-of-range values treated as 0 in coercion to raw", simd_as_raw, i64(c(2^31, 255))
+  )
   expect_tiers_give(as.raw(c(0, 255, 0, 0, 0)), function(x) suppressWarnings(simd_as_raw(x)), rw)
   expect_tiers_give(as.raw(c(0, 255, 255, 0, 0)), simd_as_raw, rw, mode = "saturating")
   expect_tiers_give(as.raw(c(0, 255, 0, 255, 0)), simd_as_raw, rw, mode = "truncating")

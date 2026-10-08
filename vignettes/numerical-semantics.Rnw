@@ -388,6 +388,15 @@ Complex \code{prod}, \code{mean} &
   \code{NA} only if the exact total is out of range; \pkg{bit64} checks
   every running total. &
   Order-independent, like every \pkg{rsimd} sum. \\
+\code{integer64} \code{simd\_div()} by zero &
+  \code{Inf}, \code{-Inf} or \code{NaN} without a warning, as for doubles;
+  \pkg{bit64}'s \code{/} gives \code{NA} with a warning. &
+  \code{simd\_div()} divides the operands converted to double. \\
+\code{integer64} \code{simd\_as\_raw()} &
+  One warning for out-of-range values, as \code{as.raw()} of an integer
+  gives; \pkg{bit64} also warns about integer overflow beyond the integer
+  range. &
+  It converts directly, not through \code{as.integer()}. \\
 \code{na\_check = FALSE} &
   No base R equivalent; results are unspecified if there are missing
   values. &
