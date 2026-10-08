@@ -247,6 +247,41 @@ test_that("a zero extremum has the sign of the first zero, wherever the zeros ar
   })
 })
 
+test_that("prod is exact about zeros, infinities and out-of-range partial products", {
+  # Partial products in different lanes overflow and underflow; a zero in
+  # one lane met an Inf in another and gave NaN (issue 015).
+  x <- with_seed(42L, round(stats::rnorm(2^20 + 1) * 100))
+  big <- c(rep(1e300, 40), -2, rep(1e-300, 40))
+  for (tier in tiers_to_test()) {
+    simd_with_impl(tier, {
+      expect_identical(simd_prod(x), 0, info = tier)
+      expect_identical(simd_prod(as.integer(x)), 0, info = tier)
+      expect_identical(simd_prod_diffs(x, 0L), 0, info = tier)
+      expect_identical(simd_prod_sums(as.integer(x), x), 0, info = tier)
+      expect_equal(simd_prod(c(1e300, 1e300, 1e-300, 1e-300)), 1, tolerance = 4 * 2^-52,
+                   info = tier)
+      expect_equal(simd_prod(big), -2, tolerance = prod_tol(81), info = tier)
+      expect_equal(simd_prod_sums(big, 0), -2, tolerance = prod_tol(81), info = tier)
+      # A zero beats a product that leaves the range of base R's long double too.
+      expect_identical(1 / simd_prod(c(rep(1e300, 40), -0, 3)), -Inf, info = tier)
+      expect_identical(1 / simd_prod(c(rep(-1e300, 41), 0)), -Inf, info = tier)
+      expect_identical(simd_prod(c(rep(1e300, 40), 0, Inf)), NaN, info = tier)
+      expect_identical(simd_prod(c(rep(1e300, 40), -Inf)), -Inf, info = tier)
+      expect_identical(simd_prod(rep(-1e300, 41)), -Inf, info = tier)
+      expect_identical(simd_prod(c(rep(1e-300, 40), 1e300)), 0, info = tier)
+      # Missing values decide the result as before, or are removed.
+      expect_identical(simd_prod(c(rep(1e300, 40), NaN, 0)), NaN, info = tier)
+      expect_identical(simd_prod(c(rep(1e300, 40), NA, 0, NaN)), NA_real_, info = tier)
+      expect_identical(simd_prod(c(rep(1e300, 40), NA, 0, NaN), na.rm = TRUE), 0, info = tier)
+      expect_identical(simd_prod(c(NA, 0L, -3L), na.rm = TRUE), -0, info = tier)
+      expect_identical(simd_prod_diffs(c(rep(1e300, 40), NA, 1), 1, na.rm = TRUE), 0,
+                       info = tier)
+      # Compact sequences go through the chunked (ALTREP) path.
+      expect_identical(simd_prod(-5:100000), -0, info = tier)
+    })
+  }
+})
+
 test_that("which_*: first of ties, NA and NaN ignored, empty gives integer(0)", {
   batch_expectations({
     cases <- list(

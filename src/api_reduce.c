@@ -3,6 +3,7 @@
    result types (rvec.h). Empty inputs run no kernel: the identity of the
    reduction is finished directly. */
 
+#include <math.h>
 #include <string.h>
 #include "rsimd.h"
 #include "dispatch.h"
@@ -78,6 +79,82 @@ SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return rsimd_exit(simd_sum_impl(x, na_rm, na_check, precision));
 }
 
+/* ---- The careful product ----------------------------------------------
+   The kernels keep several partial products in double, so a partial
+   product can overflow to Inf or underflow to 0 although the whole product
+   is finite, and Inf times a zero factor in another lane is NaN: the
+   result then depends on the tier and on where each element lands. When
+   the fast product is 0, +-Inf or NaN with no missing value seen, the
+   entry points redo it here in order, the same on every tier: zeros and
+   infinities are counted apart (a zero gives a zero and an infinity an
+   infinity, with the sign of the product, both NaN), and the other
+   factors are multiplied with their binary exponents kept apart in e, so
+   no partial product leaves the double range. The magnitudes multiplied
+   stay in [2^-511, 2^511], so every product is a normal double and rounds
+   as the unbounded product would. */
+
+/* The range of the magnitudes multiplied. */
+#define CPROD_HI 0x1p511
+#define CPROD_LO 0x1p-511
+
+typedef struct {
+  double m;     /* the magnitude is m * 2^e */
+  int64_t e;
+  int neg;      /* the sign bits of the factors, xored */
+  int zero, inf, nan;
+} cprod_state;
+
+static void cprod_init(cprod_state *s) {
+  s->m = 1.0;
+  s->e = 0;
+  s->neg = s->zero = s->inf = s->nan = 0;
+}
+
+/* Multiplies s by v; NaN is skipped under narm. */
+static inline void cprod_add(cprod_state *s, double v, int narm) {
+  double a;
+  int k;
+  if (isnan(v)) {
+    if (!narm) s->nan = 1;
+    return;
+  }
+  s->neg ^= signbit(v) != 0;
+  a = fabs(v);
+  if (a == 0.0) s->zero = 1;
+  else if (isinf(a)) s->inf = 1;
+  else {
+    if (a > CPROD_HI || a < CPROD_LO) {
+      a = frexp(a, &k);
+      s->e += k;
+    }
+    s->m *= a;
+    if (s->m > CPROD_HI || s->m < CPROD_LO) {
+      s->m = frexp(s->m, &k);
+      s->e += k;
+    }
+  }
+}
+
+/* The product of s, or `fast` when s met a NaN (with na_check = FALSE and
+   no na.rm, where the fast product stands). */
+static double cprod_value(const cprod_state *s, double fast) {
+  double v;
+  if (s->nan) return fast;
+  if (s->zero && s->inf) return R_NaN;
+  if (s->zero) v = 0.0;
+  else if (s->inf || s->e > 4096) v = R_PosInf;
+  else if (s->e < -4096) v = 0.0;
+  else v = ldexp(s->m, (int) s->e);
+  return s->neg ? -v : v;
+}
+
+/* Whether the fast product in r must be redone: 0, +-Inf or NaN, with no
+   missing value that decides the result. */
+static int cprod_needed(const rsimd_reduce_result *r, const rsimd_opts *o) {
+  if (!o->na_rm && (r->saw_na || r->saw_nan)) return 0;
+  return r->f64 == 0.0 || !R_FINITE(r->f64);
+}
+
 /* prod(x, na.rm): double, or complex for complex x. The precision mode
    applies to complex x only. */
 static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
@@ -105,6 +182,24 @@ static SEXP simd_prod_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
     });
     break;
   default: bad_type(in.type);
+  }
+  if (cprod_needed(&r, &o)) {
+    cprod_state s;
+    cprod_init(&s);
+    if (in.type == RSIMD_F64) {
+      RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
+        for (R_xlen_t i = 0; i < len; i++) cprod_add(&s, px[i], o.na_rm);
+      });
+    } else {
+      /* Without na.rm an NA here was promised away (na_check = FALSE), and
+         the kernels multiplied it as RSIMD_NA_I32_AS_F64. */
+      RSIMD_FOREACH_CHUNK(&in, int, px, len, off, {
+        for (R_xlen_t i = 0; i < len; i++) {
+          if (px[i] != NA_INTEGER || !o.na_rm) cprod_add(&s, (double) px[i], 0);
+        }
+      });
+    }
+    r.f64 = cprod_value(&s, r.f64);
   }
   return rsimd_reduce_finish(RSIMD_RED_PROD, in.type, in.n, &r, &o);
 }
@@ -137,16 +232,33 @@ static SEXP simd_prod2_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, 
           (b.x.type != RSIMD_F64 ? RSIMD_EW_I32(0) : 0) |
           (b.y.type != RSIMD_F64 ? RSIMD_EW_I32(1) : 0);
   rsimd_reduce_result_init(&r, RSIMD_RED_PROD);
-#define RSIMD_PROD2_LOOP_(TX, TY)                                                        \
-  RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off,                                    \
-                        { rsimd_active->prod2_f64(ew, px, py, len, flags, &r, &o); })
-  if (b.x.type == RSIMD_F64) {
-    if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(double, double);
-    else RSIMD_PROD2_LOOP_(double, int);
-  } else {
-    if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(int, double);
-    else RSIMD_PROD2_LOOP_(int, int);
+#define RSIMD_PROD2_LOOP_(TX, TY, ...)                                                   \
+  RSIMD_FOREACH_CHUNK2T(&b, TX, TY, px, py, len, off, __VA_ARGS__)
+#define RSIMD_PROD2_TYPES_(...)                                                          \
+  if (b.x.type == RSIMD_F64) {                                                           \
+    if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(double, double, __VA_ARGS__);           \
+    else RSIMD_PROD2_LOOP_(double, int, __VA_ARGS__);                                    \
+  } else {                                                                               \
+    if (b.y.type == RSIMD_F64) RSIMD_PROD2_LOOP_(int, double, __VA_ARGS__);              \
+    else RSIMD_PROD2_LOOP_(int, int, __VA_ARGS__);                                       \
   }
+  RSIMD_PROD2_TYPES_({ rsimd_active->prod2_f64(ew, px, py, len, flags, &r, &o); })
+  if (cprod_needed(&r, &o)) {
+    /* The pairs as the kernels form them: x - y as x + (-y), and an NA
+       operand (double or integer) giving a NaN sum. */
+    const int xi = b.x.type != RSIMD_F64, yi = b.y.type != RSIMD_F64;
+    const ptrdiff_t xs = !b.x_scalar, ys = !b.y_scalar;
+    cprod_state s;
+    cprod_init(&s);
+    RSIMD_PROD2_TYPES_({
+      for (R_xlen_t i = 0; i < len; i++) {
+        double u = rsimd_elt_f64(px, xi, i * xs), v = rsimd_elt_f64(py, yi, i * ys);
+        cprod_add(&s, ew == RSIMD_EW_SUB ? u - v : u + v, o.na_rm);
+      }
+    })
+    r.f64 = cprod_value(&s, r.f64);
+  }
+#undef RSIMD_PROD2_TYPES_
 #undef RSIMD_PROD2_LOOP_
   return rsimd_reduce_finish(RSIMD_RED_PROD, RSIMD_F64, b.n, &r, &o);
 }

@@ -293,10 +293,13 @@ Double sums &
   uses \code{long double} where available. &
   Speed. Use \code{"compensated"} for accurate, reproducible sums. \\
 \code{simd\_prod} &
-  Multiplies in double; an intermediate product can overflow where base
-  R's \code{long double} would not. &
-  Speed. Use \code{prod()} when partial products may leave the double
-  range. \\
+  Multiplies in double. A product that overflows or underflows is redone
+  with the exponent kept apart, so zeros, infinities and out-of-range
+  partial products give the IEEE result on every implementation, but a
+  partial product in the subnormal range loses precision that base R's
+  \code{long double} keeps. &
+  Speed. Use \code{prod()} when partial products may fall below
+  $10^{-308}$. \\
 \code{simd\_prod\_sums}, \code{simd\_prod\_diffs} &
   Integer operands are added in double, so \code{simd\_prod\_sums(x, y)} is
   finite where \code{prod(x + y)} gives \code{NA} with an integer overflow

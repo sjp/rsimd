@@ -52,11 +52,21 @@ part of 2, as in base R. With \code{na.rm = TRUE} an element is removed
 when either part is missing, as \code{is.na()} says.
 
 \code{simd_prod()} of a double vector multiplies in double precision in
-every mode, keeping several partial products. Base R multiplies in \code{long double} where the
-platform has it, whose wider exponent range can avoid an intermediate
-overflow or underflow: \code{prod(c(1e300, 1e300, 1e-300, 1e-300))} is 1
-in base R, while \code{simd_prod()} gives \code{Inf} or 1 depending on the
-implementation in use, which forms its partial products in its own order.
+every mode, keeping several partial products, so the last bits depend on
+the implementation in use. When that product comes out 0, infinite or
+\code{NaN} with no missing value to explain it, a partial product may have
+overflowed or underflowed, and the product is redone in order with the
+exponent kept apart, the same on every implementation. So a zero gives a
+zero and an infinity an infinity, with the sign of the product (a zero and
+an infinity together give \code{NaN}), and an intermediate overflow or
+underflow does not change the result:
+\code{simd_prod(c(1e300, 1e300, 1e-300, 1e-300))} is 1 up to the last bit,
+as in base R, which multiplies in \code{long double} where the platform
+has it. Base
+R gives \code{NaN} where its own \code{long double} overflows before a
+zero, and \code{simd_prod()} 0. A partial product that falls below the
+normal double range (about 2.2e-308) without reaching 0 loses precision
+that base R's \code{long double} keeps.
 
 \code{simd_prod()} of a complex vector multiplies with base R's complex
 multiplication \code{x * y} (see \code{\link{simd_mul}()}), in an order set
