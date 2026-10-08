@@ -3,7 +3,8 @@
 # (simd_hamming_bits).
 
 # The operands are converted as for the comparisons (.cmp_operands()).
-simd_hamming <- function(x, y, na.rm = FALSE) {
+simd_hamming <- function(x, y, ..., na.rm = FALSE) {
+  if (...length()) .dots_error("simd_hamming", "two vectors", named = "na.rm")
   na.rm <- .arg_flag(na.rm, "na.rm")
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
     p <- .cmp_operands(x, y, sys.call())

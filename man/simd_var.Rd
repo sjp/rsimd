@@ -3,12 +3,16 @@
 \alias{simd_sd}
 \title{Variance and Standard Deviation}
 \usage{
-simd_var(x, na.rm = FALSE, na_check = NULL)
+simd_var(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_sd(x, na.rm = FALSE, na_check = NULL)
+simd_sd(x, ..., na.rm = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x}{A double, integer or logical vector.}
+\item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm}
+and \code{na_check} must be named, so that an extra vector is not read as
+\code{na.rm}. Unlike \code{sd(x, TRUE)}, \code{simd_sd(x, TRUE)} is an
+error.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that

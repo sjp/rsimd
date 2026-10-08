@@ -502,6 +502,42 @@ test_that("arguments and types are validated", {
   }
 })
 
+# Expects every function with na.rm to error on an extra positional
+# argument, naming the user's call, rather than read it as na.rm:
+# simd_any(FALSE, TRUE) is not any(FALSE, TRUE).
+test_that("na.rm and na_check must be named", {
+  one <- c(
+    "simd_sum", "simd_prod", "simd_mean", "simd_min", "simd_max", "simd_range",
+    "simd_max_abs", "simd_min_abs", "simd_sum_sq", "simd_norm", "simd_sum_abs",
+    "simd_var", "simd_sd", "simd_popcount_total", "simd_any", "simd_all", "simd_count"
+  )
+  two <- c(
+    "simd_prod_sums", "simd_prod_diffs", "simd_dot", "simd_dist", "simd_hamming",
+    "simd_pmin", "simd_pmax"
+  )
+  for (f in c(one, two)) {
+    fn <- get(f)
+    named <- if ("na_check" %in% names(formals(fn))) "na.rm and na_check" else "na.rm"
+    what <- if (f %in% one) {
+      "one vector; combine several with c()"
+    } else if (f %in% c("simd_pmin", "simd_pmax")) {
+      "two vectors; nest calls for more"
+    } else {
+      "two vectors"
+    }
+    args <- if (f %in% one) list(TRUE, TRUE) else list(TRUE, TRUE, TRUE)
+    call <- as.call(c(as.name(f), args))
+    cnd <- tryCatch(eval(call), error = identity)
+    expect_identical(
+      conditionMessage(cnd), paste0(f, "() takes ", what, ", and ", named, " must be named"),
+      info = f
+    )
+    expect_identical(conditionCall(cnd), call, info = f)
+    expect_error(do.call(fn, c(args[-1L], na = TRUE)), "must be named", info = f)
+    expect_no_error(do.call(fn, c(args[-1L], na.rm = TRUE)))
+  }
+})
+
 test_that("attributes of x do not matter", {
   m <- matrix(c(3, NA, 1, 2), 2, dimnames = list(c("a", "b"), NULL))
   expect_identical(simd_min(m, na.rm = TRUE), 1)

@@ -14,12 +14,15 @@ simd_which_na(x)
 
 simd_which(x)
 
-simd_count(x, na.rm = FALSE)
+simd_count(x, ..., na.rm = FALSE)
 }
 \arguments{
 \item{x}{A double, integer, logical, complex, raw or \pkg{bit64}
 \code{integer64} vector; a logical vector for \code{simd_which()} and
 \code{simd_count()}.}
+\item{\dots}{Must be empty. \code{simd_count()} takes one vector, and
+\code{na.rm} must be named, so that an extra vector is not read as
+\code{na.rm}.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: ignore \code{NA} elements?}
 }
 \description{

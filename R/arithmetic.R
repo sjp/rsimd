@@ -295,7 +295,8 @@ simd_lerp <- function(x, y, t, na_check = NULL) {
 }
 
 # pmin, pmax and clamp have no NA check to skip: na_check is TRUE.
-simd_pmin <- function(x, y, na.rm = FALSE) {
+simd_pmin <- function(x, y, ..., na.rm = FALSE) {
+  if (...length()) .dots_error("simd_pmin", "two vectors; nest calls for more", named = "na.rm")
   op <- if (.arg_flag(na.rm, "na.rm")) "pmin_num" else "pmin"
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
     p <- .ew_args("simd_pmin", list(x = x, y = y))
@@ -305,7 +306,8 @@ simd_pmin <- function(x, y, na.rm = FALSE) {
   .Call(C_simd_ew2, x, y, op, TRUE)
 }
 
-simd_pmax <- function(x, y, na.rm = FALSE) {
+simd_pmax <- function(x, y, ..., na.rm = FALSE) {
+  if (...length()) .dots_error("simd_pmax", "two vectors; nest calls for more", named = "na.rm")
   op <- if (.arg_flag(na.rm, "na.rm")) "pmax_num" else "pmax"
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
     p <- .ew_args("simd_pmax", list(x = x, y = y))

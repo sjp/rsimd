@@ -3,13 +3,17 @@
 \alias{simd_all}
 \title{Are Some or All Values True?}
 \usage{
-simd_any(x, na.rm = FALSE)
+simd_any(x, ..., na.rm = FALSE)
 
-simd_all(x, na.rm = FALSE)
+simd_all(x, ..., na.rm = FALSE)
 }
 \arguments{
 \item{x}{A logical, integer, double, raw or \pkg{bit64} \code{integer64}
 vector.}
+\item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm}
+must be named, so that an extra vector is not read as \code{na.rm}. Combine
+several vectors with \code{c()}: unlike \code{any(x, y)},
+\code{simd_any(x, y)} is an error.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: ignore missing values?}
 }
 \description{

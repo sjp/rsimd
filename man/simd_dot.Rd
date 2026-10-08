@@ -4,15 +4,18 @@
 \alias{simd_cosine}
 \title{Dot Products, Euclidean Distances and Cosine Similarity}
 \usage{
-simd_dot(x, y, na.rm = FALSE, na_check = NULL)
+simd_dot(x, y, ..., na.rm = FALSE, na_check = NULL)
 
-simd_dist(x, y, na.rm = FALSE, na_check = NULL)
+simd_dist(x, y, ..., na.rm = FALSE, na_check = NULL)
 
 simd_cosine(x, y, na_check = NULL)
 }
 \arguments{
 \item{x, y}{Double, integer or logical vectors of the same length. The
 types may differ.}
+\item{\dots}{Must be empty. Each function takes two vectors, and
+\code{na.rm} and \code{na_check} must be named, so that an extra vector is
+not read as \code{na.rm}.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove the pairs
 \code{(x[i], y[i])} in which either element is missing (\code{NA} or
 \code{NaN}) first?}

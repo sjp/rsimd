@@ -307,6 +307,16 @@ Double sums &
   Logical input only; \code{sum()} also adds numbers. &
   They count and find \code{TRUE} values. Use \code{simd\_sum()} for
   numbers. \\
+Several vectors in a reduction &
+  The reductions take one vector (\code{simd\_dot()} and kin, and
+  \code{simd\_pmin()} and \code{simd\_pmax()}, two) and have no
+  \code{...} to combine more: \code{simd\_any(a, b)} and
+  \code{simd\_sum(x, y)} are errors, where \code{any(a, b)} and
+  \code{sum(x, y)} are not. \code{na.rm} and \code{na\_check} must be
+  named, so \code{simd\_sd(x, TRUE)} is an error too. &
+  A positional \code{TRUE} would otherwise be read as \code{na.rm} and
+  the vector dropped. Combine vectors with \code{c()}, nest
+  \code{simd\_pmin()}, and write \code{na.rm = TRUE}. \\
 \code{simd\_cumsum} &
   In \code{"fast"} and \code{"pairwise"} modes, can differ from base R in
   the last bits. &

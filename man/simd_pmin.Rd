@@ -6,9 +6,9 @@
 \alias{simd_clamp}
 \title{Parallel Minimum and Maximum, Clamping}
 \usage{
-simd_pmin(x, y, na.rm = FALSE)
+simd_pmin(x, y, ..., na.rm = FALSE)
 
-simd_pmax(x, y, na.rm = FALSE)
+simd_pmax(x, y, ..., na.rm = FALSE)
 
 simd_pmin_num(x, y)
 
@@ -19,6 +19,10 @@ simd_clamp(x, lo, hi)
 \arguments{
 \item{x, y}{Double, integer, logical or \pkg{bit64} \code{integer64}
 vectors.}
+\item{\dots}{Must be empty. \code{simd_pmin()} and \code{simd_pmax()} take
+two vectors, and \code{na.rm} must be named, so that an extra vector is not
+read as \code{na.rm}. Nest calls for more: unlike \code{pmin(x, y, z)},
+\code{simd_pmin(x, y, z)} is an error.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: ignore a missing operand?}
 \item{lo, hi}{Double, integer, logical or integer64 vectors of lower and
 upper bounds.}

@@ -7,7 +7,7 @@
 \usage{
 simd_popcount(x, na_check = NULL)
 
-simd_popcount_total(x, na.rm = FALSE, na_check = NULL)
+simd_popcount_total(x, ..., na.rm = FALSE, na_check = NULL)
 
 simd_lzcnt(x, na_check = NULL)
 
@@ -15,6 +15,9 @@ simd_tzcnt(x, na_check = NULL)
 }
 \arguments{
 \item{x}{An integer, logical, raw or \pkg{bit64} \code{integer64} vector.}
+\item{\dots}{Must be empty. \code{simd_popcount_total()} takes one vector,
+and \code{na.rm} and \code{na_check} must be named, so that an extra vector
+is not read as \code{na.rm}.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: should \code{NA} elements be
 skipped?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that

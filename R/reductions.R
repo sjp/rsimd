@@ -4,11 +4,13 @@
 # rsimd.precision. Types the C side cannot name the function for are
 # checked here first, for operands with a class or of a rejected type.
 
-simd_sum <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_sum <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_sum")
   .Call(C_simd_sum, x, na.rm, na_check, NULL)
 }
 
-simd_prod <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_prod <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_prod")
   if (is.object(x)) .check_supported(x, "simd_prod", "integer64")
   .Call(C_simd_prod, x, na.rm, na_check, NULL)
 }
@@ -26,7 +28,8 @@ simd_prod <- function(x, na.rm = FALSE, na_check = NULL) {
 }
 
 # prod(x + y) (op 0) and prod(x - y) (op 1) without the vector of sums.
-simd_prod_sums <- function(x, y, na.rm = FALSE, na_check = NULL) {
+simd_prod_sums <- function(x, y, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_prod_sums", "two vectors")
   if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
     p <- .prod2_args("simd_prod_sums", x, y)
     x <- p[[1L]]
@@ -35,7 +38,8 @@ simd_prod_sums <- function(x, y, na.rm = FALSE, na_check = NULL) {
   .Call(C_simd_prod2, x, y, 0L, na.rm, na_check, NULL)
 }
 
-simd_prod_diffs <- function(x, y, na.rm = FALSE, na_check = NULL) {
+simd_prod_diffs <- function(x, y, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_prod_diffs", "two vectors")
   if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
     p <- .prod2_args("simd_prod_diffs", x, y)
     x <- p[[1L]]
@@ -44,7 +48,8 @@ simd_prod_diffs <- function(x, y, na.rm = FALSE, na_check = NULL) {
   .Call(C_simd_prod2, x, y, 1L, na.rm, na_check, NULL)
 }
 
-simd_mean <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_mean <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_mean")
   if (is.object(x)) .check_supported(x, "simd_mean", "integer64")
   .Call(C_simd_mean, x, na.rm, na_check, NULL)
 }
@@ -53,24 +58,29 @@ simd_mean <- function(x, na.rm = FALSE, na_check = NULL) {
 # left to the C side, which rejects it with base R's message. With absval
 # (max_abs and min_abs) the kernel reads abs(x), Mod(x) for complex x (in
 # the math accuracy mode), and raw input is rejected here.
-simd_min <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_min <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_min")
   .Call(C_simd_minmax, x, 0L, na.rm, na_check, FALSE, 0L)
 }
 
-simd_max <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_max <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_max")
   .Call(C_simd_minmax, x, 1L, na.rm, na_check, FALSE, 0L)
 }
 
-simd_range <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_range <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_range")
   .Call(C_simd_minmax, x, 2L, na.rm, na_check, FALSE, 0L)
 }
 
-simd_max_abs <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_max_abs <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_max_abs")
   if (is.object(x) || is.raw(x)) .check_supported(x, "simd_max_abs", "raw", character())
   .Call(C_simd_minmax, x, 1L, na.rm, na_check, TRUE, NULL)
 }
 
-simd_min_abs <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_min_abs <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_min_abs")
   if (is.object(x) || is.raw(x)) .check_supported(x, "simd_min_abs", "raw", character())
   .Call(C_simd_minmax, x, 0L, na.rm, na_check, TRUE, NULL)
 }
@@ -99,12 +109,14 @@ simd_which_max_abs <- function(x) {
   .Call(C_simd_which, x, TRUE, TRUE, NULL)
 }
 
-simd_any <- function(x, na.rm = FALSE) {
+simd_any <- function(x, ..., na.rm = FALSE) {
+  if (...length()) .dots_error("simd_any", named = "na.rm")
   if (is.object(x) || is.complex(x)) .check_supported(x, "simd_any", "complex", character())
   .Call(C_simd_anyall, x, FALSE, na.rm)
 }
 
-simd_all <- function(x, na.rm = FALSE) {
+simd_all <- function(x, ..., na.rm = FALSE) {
+  if (...length()) .dots_error("simd_all", named = "na.rm")
   if (is.object(x) || is.complex(x)) .check_supported(x, "simd_all", "complex", character())
   .Call(C_simd_anyall, x, TRUE, na.rm)
 }
@@ -123,24 +135,28 @@ simd_which <- function(x) {
   .Call(C_simd_true, x, 1L, FALSE)
 }
 
-simd_count <- function(x, na.rm = FALSE) {
+simd_count <- function(x, ..., na.rm = FALSE) {
+  if (...length()) .dots_error("simd_count", named = "na.rm")
   if (is.object(x) || !is.logical(x)) .check_supported(x, "simd_count", .not_logical, character())
   .Call(C_simd_true, x, 0L, na.rm)
 }
 
 # sum_sq, norm and sum_abs share one entry point; op is 0, 1 or 2. They
 # take neither integer64 nor complex input.
-simd_sum_sq <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_sum_sq <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_sum_sq")
   if (is.object(x) || is.complex(x)) .check_real(x, "simd_sum_sq")
   .Call(C_simd_sum_sq, x, 0L, na.rm, na_check, NULL)
 }
 
-simd_norm <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_norm <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_norm")
   if (is.object(x) || is.complex(x)) .check_real(x, "simd_norm")
   .Call(C_simd_sum_sq, x, 1L, na.rm, na_check, NULL)
 }
 
-simd_sum_abs <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_sum_abs <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_sum_abs")
   if (is.object(x) || is.complex(x)) .check_real(x, "simd_sum_abs")
   .Call(C_simd_sum_sq, x, 2L, na.rm, na_check, NULL)
 }
@@ -151,7 +167,8 @@ simd_sum_abs <- function(x, na.rm = FALSE, na_check = NULL) {
 }
 
 # dot, dist and cosine share one entry point; op is 0, 1 or 2.
-simd_dot <- function(x, y, na.rm = FALSE, na_check = NULL) {
+simd_dot <- function(x, y, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_dot", "two vectors")
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
     .check_real(x, "simd_dot")
     .check_real(y, "simd_dot", "y")
@@ -159,7 +176,8 @@ simd_dot <- function(x, y, na.rm = FALSE, na_check = NULL) {
   .Call(C_simd_dot, x, y, 0L, na.rm, na_check, NULL)
 }
 
-simd_dist <- function(x, y, na.rm = FALSE, na_check = NULL) {
+simd_dist <- function(x, y, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_dist", "two vectors")
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
     .check_real(x, "simd_dist")
     .check_real(y, "simd_dist", "y")
@@ -175,12 +193,14 @@ simd_cosine <- function(x, y, na_check = NULL) {
   .Call(C_simd_dot, x, y, 2L, FALSE, na_check, NULL)
 }
 
-simd_var <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_var <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_var")
   if (is.object(x) || is.complex(x)) .check_real(x, "simd_var")
   .Call(C_simd_var, x, FALSE, na.rm, na_check, NULL)
 }
 
-simd_sd <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_sd <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_sd")
   if (is.object(x) || is.complex(x)) .check_real(x, "simd_sd")
   .Call(C_simd_var, x, TRUE, na.rm, na_check, NULL)
 }

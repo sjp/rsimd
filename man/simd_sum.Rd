@@ -6,21 +6,26 @@
 \alias{simd_prod_diffs}
 \title{Sums, Products and Means of Vector Elements}
 \usage{
-simd_sum(x, na.rm = FALSE, na_check = NULL)
+simd_sum(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_prod(x, na.rm = FALSE, na_check = NULL)
+simd_prod(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_mean(x, na.rm = FALSE, na_check = NULL)
+simd_mean(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_prod_sums(x, y, na.rm = FALSE, na_check = NULL)
+simd_prod_sums(x, y, ..., na.rm = FALSE, na_check = NULL)
 
-simd_prod_diffs(x, y, na.rm = FALSE, na_check = NULL)
+simd_prod_diffs(x, y, ..., na.rm = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x, y}{A double, integer, logical or complex vector, or for
 \code{simd_sum()} a \pkg{bit64} \code{integer64} vector. \code{y} (for
 \code{simd_prod_sums()} and \code{simd_prod_diffs()}) must have the length
 of \code{x}, or either may have length 1.}
+\item{\dots}{Must be empty. Each function takes one vector (two for
+\code{simd_prod_sums()} and \code{simd_prod_diffs()}), and \code{na.rm} and
+\code{na_check} must be named, so that an extra vector is not read as
+\code{na.rm}. Combine several vectors with \code{c()}: unlike
+\code{sum(x, y)}, \code{simd_sum(x, y)} is an error.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that

@@ -3,7 +3,7 @@
 \alias{simd_hamming_bits}
 \title{Hamming Distances}
 \usage{
-simd_hamming(x, y, na.rm = FALSE)
+simd_hamming(x, y, ..., na.rm = FALSE)
 
 simd_hamming_bits(x, y)
 }
@@ -12,6 +12,9 @@ simd_hamming_bits(x, y)
 complex or \pkg{bit64} \code{integer64} vectors. For
 \code{simd_hamming_bits()}, two integer or logical vectors, two raw vectors
 or two \code{integer64} vectors.}
+\item{\dots}{Must be empty. \code{simd_hamming()} takes two vectors, and
+\code{na.rm} must be named, so that an extra vector is not read as
+\code{na.rm}.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: should pairs with a missing
 element be skipped?}
 }

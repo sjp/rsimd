@@ -4,14 +4,17 @@
 \alias{simd_norm}
 \title{Sums of Squares, Sums of Absolute Values and Euclidean Norms}
 \usage{
-simd_sum_sq(x, na.rm = FALSE, na_check = NULL)
+simd_sum_sq(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_sum_abs(x, na.rm = FALSE, na_check = NULL)
+simd_sum_abs(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_norm(x, na.rm = FALSE, na_check = NULL)
+simd_norm(x, ..., na.rm = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x}{A double, integer or logical vector.}
+\item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm}
+and \code{na_check} must be named, so that an extra vector is not read as
+\code{na.rm}.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that

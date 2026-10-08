@@ -97,3 +97,12 @@
   }
   invisible()
 }
+
+# The error for arguments that fall into the `...` of a function taking
+# `what` operands, whose na.rm (and na_check) must be named: simd_sum(x, y)
+# would otherwise read y as na.rm. Names the user's call.
+.dots_error <- function(fun, what = "one vector; combine several with c()",
+                        named = "na.rm and na_check") {
+  msg <- paste0(fun, "() takes ", what, ", and ", named, " must be named")
+  stop(simpleError(msg, sys.call(-1L)))
+}

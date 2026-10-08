@@ -134,7 +134,8 @@ simd_tzcnt <- function(x, na_check = NULL) {
   .Call(C_simd_bit, x, NULL, "tzcnt", NULL, na_check)
 }
 
-simd_popcount_total <- function(x, na.rm = FALSE, na_check = NULL) {
+simd_popcount_total <- function(x, ..., na.rm = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_popcount_total")
   if (.bit_odd(x)) {
     .check_supported(x, "simd_popcount_total", c("complex", "double"), character(0))
   }

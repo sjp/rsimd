@@ -6,19 +6,23 @@
 \alias{simd_min_abs}
 \title{Minimum, Maximum and Range of Vector Elements and Magnitudes}
 \usage{
-simd_min(x, na.rm = FALSE, na_check = NULL)
+simd_min(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_max(x, na.rm = FALSE, na_check = NULL)
+simd_max(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_range(x, na.rm = FALSE, na_check = NULL)
+simd_range(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_max_abs(x, na.rm = FALSE, na_check = NULL)
+simd_max_abs(x, ..., na.rm = FALSE, na_check = NULL)
 
-simd_min_abs(x, na.rm = FALSE, na_check = NULL)
+simd_min_abs(x, ..., na.rm = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x}{A double, integer, logical or \pkg{bit64} \code{integer64} vector;
 also complex for \code{simd_max_abs()} and \code{simd_min_abs()}.}
+\item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm}
+and \code{na_check} must be named, so that an extra vector is not read as
+\code{na.rm}. Combine several vectors with \code{c()}: unlike
+\code{max(x, y)}, \code{simd_max(x, y)} is an error.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
