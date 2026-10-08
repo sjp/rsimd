@@ -281,8 +281,7 @@ SEXP C_simd_ew1(SEXP x, SEXP op) {
    element at a time (not vectorised), with base R's missing-value rule
    for two-argument math functions: NA if x or digits is NA, else NaN if
    either is NaN. */
-static SEXP simd_round_digits_impl(SEXP x, SEXP digits) {
-  double d = rsimd_arg_num1(digits, "digits");
+static SEXP simd_round_digits_impl(SEXP x, double d) {
   SEXP out;
   double *po;
   rsimd_ew e;
@@ -311,6 +310,10 @@ static SEXP simd_round_digits_impl(SEXP x, SEXP digits) {
 }
 
 SEXP C_simd_round_digits(SEXP x, SEXP digits) {
+  double d;
   rsimd_entry();
-  return rsimd_exit(rsimd_sv_result(simd_round_digits_impl(x, digits), 1));
+  d = rsimd_arg_num1(digits, "digits");
+  /* A missing digits makes every element missing, so the NA-free flag is
+     kept only for a non-missing digits. */
+  return rsimd_exit(rsimd_sv_result(simd_round_digits_impl(x, d), !ISNAN(d)));
 }

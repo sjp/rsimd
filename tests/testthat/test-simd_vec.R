@@ -575,6 +575,33 @@ test_that("the flag is dropped by ops that can make a missing value", {
   expect_identical(bare(simd_sub_wrap(big, 1L)), NA_integer_)
 })
 
+test_that("round with a missing digits drops the flag", {
+  # digits is not an operand, yet NA or NaN digits make every element
+  # missing, so the result must not be stamped NA-free.
+  d <- c(1, 2.5, 3, -7.25, 1e300)
+  for (t in simd_available()) {
+    x <- simd_vec(d, check_na = TRUE, impl = t)
+    i <- simd_vec(c(1L, -2L, 3L), check_na = TRUE, impl = t)
+    cases <- list(
+      list(r = simd_round(x, NA), n = 5),
+      list(r = simd_round(x, NaN), n = 5),
+      list(r = round(x, NA_real_), n = 5),
+      list(r = simd_round(i, NA_integer_), n = 3)
+    )
+    for (cs in cases) {
+      r <- cs$r
+      expect_identical(simd_na_free(r), NULL, info = t)
+      expect_true(anyNA(r), info = t)
+      expect_true(simd_any_na(r), info = t)
+      expect_identical(simd_count_na(r), cs$n, info = t)
+      expect_true(is.na(simd_min(r)), info = t)
+      expect_true(is.na(simd_sum(r)), info = t)
+    }
+    expect_identical(bare(simd_round(x, NA)), round(d, NA))
+    expect_identical(simd_na_free(simd_round(x, 2)), TRUE, info = t)
+  }
+})
+
 test_that("conversions keep the flag only when they cannot overflow", {
   d <- simd_vec(c(1.5, -3e9), check_na = TRUE)
   i <- simd_vec(c(1L, -5L), check_na = TRUE)
