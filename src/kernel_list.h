@@ -170,6 +170,12 @@ RSIMD_OP(ew2_i32, int,
 RSIMD_OP(ew3_i32, int,
          (int op, const int *x, const int *y, const int *z, R_xlen_t n, int flags, int *out,
           const rsimd_opts *o))
+/* round(x, digits) for an integer d = floor(digits + 0.5) in [-308, 308],
+   with p10 = 10^d and big the pass-through threshold (see
+   rsimd_round_digits_f64() in na.h); x and flags as for ew1_f64. */
+RSIMD_OP(round_digits_f64, void,
+         (const void *x, R_xlen_t n, int flags, double p10, double big, double *out,
+          const rsimd_opts *o))
 
 /* Elementary functions, out[i] = f(x[i]) (math1_f64, op codes
    RSIMD_MATH_EXP .. RSQRT_APPROX, p used by LOGB only), out[i] = f(x[i], y[i])

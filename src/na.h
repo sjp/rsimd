@@ -368,6 +368,26 @@ static inline double rsimd_sign_f64(double x) {
   if (x < 0) return -1.0;
   return x == 0 ? 0.0 : x;
 }
+/* Base R's round(x, digits) (fround() in R's nmath) for an integer
+   d = floor(digits + 0.5) in [-308, 308], given p10 = R_pow_di(10, d) and
+   big, the smallest power of 2 at which fround() returns x as it is
+   (|x| * 10^d has more than 15 significant digits). x is rounded down
+   and up to d places, xd = floor(|x| * p10) / p10 and
+   xu = ceil(|x| * p10) / p10, and the closer one wins, xu on a tie when
+   floor(|x| * p10) is odd. Zero, infinities and NaN are returned as they
+   are. */
+static inline double rsimd_round_digits_f64(double x, double p10, double big) {
+  double a = fabs(x), x10, i10, xd, xu, du, dd, r;
+  if (!(a > 0 && a < big)) return x;
+  x10 = a * p10;
+  i10 = floor(x10);
+  xd = i10 / p10;
+  xu = ceil(x10) / p10;
+  du = xu - a;
+  dd = a - xd;
+  r = du < dd || (fmod(i10, 2.0) == 1 && du == dd) ? xu : xd;
+  return x < 0 ? -r : r;
+}
 
 /* Floating-point accumulation. */
 

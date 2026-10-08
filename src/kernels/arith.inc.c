@@ -69,6 +69,15 @@ int RSIMD_KERNEL(ew1_f64)(int op, const void *x, R_xlen_t n, int flags, double *
   return st;
 }
 
+void RSIMD_KERNEL(round_digits_f64)(const void *x, R_xlen_t n, int flags, double p10, double big,
+                                    double *out, const rsimd_opts *o);
+void RSIMD_KERNEL(round_digits_f64)(const void *x, R_xlen_t n, int flags, double p10, double big,
+                                    double *out, const rsimd_opts *o) {
+  const void *y = NULL, *z = NULL;
+  const int check = o->na_check;
+  R_xlen_t i;
+  RSIMD_EW_NONE_LOOP(1, r = rsimd_round_digits_f64(a, p10, big))
+}
 int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
                           double *out, const rsimd_opts *o);
 int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
@@ -627,6 +636,37 @@ int RSIMD_KERNEL(ew1_f64)(int op, const void *x, R_xlen_t n, int flags, double *
   return st;
 }
 
+/* rsimd_round_digits_f64() lane by lane. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_ew_round_digits(rsimd_vf64 x, rsimd_vf64 p10, rsimd_vf64 big) {
+  const rsimd_vf64 zero = rsimd_vf64_zero();
+  rsimd_vf64 a = rsimd_vf64_abs(x), x10 = rsimd_vf64_mul(a, p10), i10 = rsimd_vf64_floor(x10),
+             h = rsimd_vf64_mul(i10, rsimd_vf64_set1(0.5)), xd = rsimd_vf64_div(i10, p10),
+             xu = rsimd_vf64_div(rsimd_vf64_ceil(x10), p10), du = rsimd_vf64_sub(xu, a),
+             dd = rsimd_vf64_sub(a, xd), r;
+  /* i10 is odd when i10 / 2 is not an integer. */
+  rsimd_mf64 odd = rsimd_vf64_cmp_lt(rsimd_vf64_floor(h), h),
+             up = rsimd_mf64_or(rsimd_vf64_cmp_lt(du, dd),
+                                rsimd_mf64_and(odd, rsimd_vf64_cmp_eq(du, dd))),
+             live = rsimd_mf64_and(rsimd_vf64_cmp_gt(a, zero), rsimd_vf64_cmp_lt(a, big));
+  r = rsimd_vf64_blend(xd, xu, up);
+  r = rsimd_vf64_blend(r, rsimd_vf64_neg(r), rsimd_vf64_cmp_lt(x, zero));
+  return rsimd_vf64_blend(x, r, live);
+}
+
+void RSIMD_KERNEL(round_digits_f64)(const void *x, R_xlen_t n, int flags, double p10, double big,
+                                    double *out, const rsimd_opts *o);
+void RSIMD_KERNEL(round_digits_f64)(const void *x, R_xlen_t n, int flags, double p10, double big,
+                                    double *out, const rsimd_opts *o) {
+  const void *y = NULL, *z = NULL;
+  const int check = o->na_check;
+  /* b and c of the loop are the broadcasts bc1 = p10 and bc2 = big. */
+  const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, check), bc1 = rsimd_vf64_set1(p10),
+                   bc2 = rsimd_vf64_set1(big);
+  (void) y;
+  (void) z;
+  RSIMD_EW_F64_LOOP(1, r = rsimd_ew_round_digits(a, b, c));
+}
+
 int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
                           double *out, const rsimd_opts *o);
 int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int flags,
@@ -734,6 +774,7 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
 #define RSIMD_SKIP_ew1_f64 1
 #define RSIMD_SKIP_ew2_f64 1
 #define RSIMD_SKIP_ew3_f64 1
+#define RSIMD_SKIP_round_digits_f64 1
 #endif
 
 #undef RSIMD_EW_I32_LOOP

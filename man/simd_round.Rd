@@ -32,7 +32,12 @@ as base R does: \code{simd_round(c(0.5, 1.5, 2.5))} is \code{0 2 2}.
 
 \code{simd_round(x, digits)} with \code{digits} other than 0 uses base R's
 own algorithm for \code{round(x, digits)}, which is more careful than
-scaling by a power of ten, one element at a time: it is not vectorised.
+scaling by a power of ten: of the two numbers with \code{digits} decimal
+places either side of \code{x}, the closer one, with ties to the one
+whose last digit is even. It is vectorised, with the same results as base
+R bit for bit, when \code{digits} rounds to a whole number from -308 to
+308; other values of \code{digits} go through base R's own code one
+element at a time.
 Unlike base R's \code{round()}, \code{digits} must be a single number
 (\code{NA} gives \code{NA}).
 

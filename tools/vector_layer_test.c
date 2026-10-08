@@ -2781,6 +2781,25 @@ static void init_mod_inputs(void) {
   }
 }
 
+/* 10^d as R_pow_di(10, d) computes it, and the pass-through threshold of
+   rsimd_round_digits_f64() as src/api_arith.c computes it. */
+static double pow_di10(int d) {
+  double x = 10.0, xn = 1.0;
+  int m = d < 0 ? -d : d;
+  for (;;) {
+    if (m & 1) xn *= x;
+    if (m >>= 1) x *= x; else break;
+  }
+  return d < 0 ? 1.0 / xn : xn;
+}
+static double round_digits_big(int d) {
+  int e;
+  for (e = DBL_MIN_EXP - DBL_MANT_DIG; e < DBL_MAX_EXP; e++) {
+    if (0.301029995663981195213738894724 * (0.5 + e) + d > DBL_DIG) return ldexp(1.0, e);
+  }
+  return HUGE_VAL;
+}
+
 static double ref_ew1(int op, double a) {
   switch (op) {
   case RSIMD_EW_NEG: return -a;
@@ -2953,6 +2972,29 @@ static void test_arith(ptrdiff_t n) {
       snprintf(what, sizeof what, "ew1_f64 op %d i32 %d", op, f);
       check_f64_kind(what, n, fout, fref);
       check_int(what, n, 0, st, nan_made ? RSIMD_EW_NAN_PRODUCED : 0);
+    }
+  }
+  /* round(x, digits), against the scalar form, on fa scaled to put
+     elements either side of 10^-d (some on the pass-through threshold),
+     ties at multiples of 1/8 and int32 input. */
+  {
+    static const int digs[] = {-308, -5, -1, 0, 1, 2, 3, 15, 16, 300, 308};
+    static double xr[N + 1];
+    size_t k;
+    for (k = 0; k < sizeof digs / sizeof digs[0]; k++) {
+      double p10 = pow_di10(digs[k]), big = round_digits_big(digs[k]);
+      for (j = 0; j < n; j++) {
+        xr[j] = j % 3 == 0 ? (j - 40) / 8.0 : fa[j] * pow_di10(-digs[k] + (int) (j % 21) - 4);
+      }
+      if (n > 0) xr[n - 1] = n % 2 ? big : -big;
+      for (f = 0; f < 2; f++) {
+        const void *x = f ? (const void *) ia : (const void *) xr;
+        reset_out();
+        RSIMD_KERNEL(round_digits_f64)(x, n, f ? RSIMD_EW_I32(0) : 0, p10, big, fout, &o);
+        for (j = 0; j < n; j++) fref[j] = rsimd_round_digits_f64(ew_get(x, f, 0, j), p10, big);
+        snprintf(what, sizeof what, "round_digits_f64 digits %d i32 %d", digs[k], f);
+        check_f64_kind(what, n, fout, fref);
+      }
     }
   }
   for (op = RSIMD_EW_ADD; op <= RSIMD_EW_COPYSIGN; op++) {

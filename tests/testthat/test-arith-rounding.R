@@ -53,6 +53,32 @@ test_that("round with digits uses base R's algorithm", {
   expect_identical(simd_round(1.2345, 2.6), round(1.2345, 2.6))
 })
 
+test_that("round with digits matches base R bit for bit on every tier", {
+  x <- c(
+    edge_round(), 0.15, 0.25, 0.35, -0.125, 1e15 + 0.5, 1e-300, -1e-300, 1.5e-308,
+    .Machine$double.xmax, -.Machine$double.xmax, (1:40) / 8, -(1:40) / 8,
+    with_seed(82L, stats::rnorm(40) * 10^stats::runif(40, -310, 308))
+  )
+  xi <- c(-123456L, -5L, 0L, NA, 15L, 25L, 987654321L)
+  for (d in c(-309, -308.6, -308.4, -308, -20, -3, -1, -0.4, 0.4, 1, 1.5, 2, 3, 6, 15, 16,
+              17, 100, 308, 308.4, 308.6, 315, 323, 324)) {
+    expect_tiers_give(round(x, d), simd_round, x, d)
+    expect_tiers_give(round(xi, d), simd_round, xi, d)
+  }
+  expect_identical(1 / simd_round(c(-0.001, -0, -1e-300), 2), c(-Inf, -Inf, -Inf))
+  # A missing x is returned as it is, NaN payload included.
+  expect_identical(writeBin(simd_round(c(NA, NaN), 2), raw()), writeBin(c(NA, NaN), raw()))
+})
+
+test_that("round with every digits value matches base R on random doubles", {
+  skip_unless_extended()
+  x <- with_seed(83L, c(stats::rnorm(500), stats::rnorm(500) * 10^stats::runif(500, -320, 308),
+                        round(stats::runif(500, -1e4, 1e4), 3) + 5e-4))
+  for (d in seq(-310, 325)) {
+    if (d != 0) expect_tiers_give(round(x, d), simd_round, x, d)
+  }
+})
+
 test_that("digits must be a single number", {
   expect_error(simd_round(1, 1:2), "'digits' must be a single number")
   expect_error(simd_round(1, "2"), "'digits' must be a single number")

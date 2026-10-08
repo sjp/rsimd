@@ -5,6 +5,7 @@
    chunk through the active implementation, and turn its status bits into
    base R's warnings. Results are bare vectors. */
 
+#include <float.h>
 #include <Rmath.h>
 #include "rsimd.h"
 #include "dispatch.h"
@@ -277,10 +278,25 @@ SEXP C_simd_ew1(SEXP x, SEXP op) {
   return rsimd_exit(rsimd_sv_result(simd_ew1_impl(x, op), rsimd_str_in(op, keeps)));
 }
 
-/* round(x, digits) for digits other than 0, through R's own fround() one
-   element at a time (not vectorised), with base R's missing-value rule
-   for two-argument math functions: NA if x or digits is NA, else NaN if
-   either is NaN. */
+/* The smallest power of 2 at which R's fround() returns x as it is when
+   rounding to d places: where its estimate of log10(x), from the exponent
+   of x, plus d exceeds DBL_DIG. Inf if there is none. */
+static double round_digits_big(int d) {
+  int e;
+  for (e = DBL_MIN_EXP - DBL_MANT_DIG; e < DBL_MAX_EXP; e++) {
+    if (M_LOG10_2 * (0.5 + e) + d > DBL_DIG) return ldexp(1.0, e);
+  }
+  return R_PosInf;
+}
+
+/* round(x, digits) for digits other than 0 with R's own algorithm, so
+   that the result is base R's bit for bit. Digits that round to an
+   integer in [-308, 308] go to the round_digits_f64 kernel; the others
+   (from 308.5 to 323, where fround() scales x twice; beyond, where it
+   returns x or 0; NA and NaN) go through fround() one element at a time,
+   with base R's missing-value rule for two-argument math functions: NA
+   if x or digits is NA, else NaN if either is NaN. The kernel returns a
+   missing x as it is, as fround() does. */
 static SEXP simd_round_digits_impl(SEXP x, double d) {
   SEXP out;
   double *po;
@@ -290,6 +306,17 @@ static SEXP simd_round_digits_impl(SEXP x, double d) {
   check_numeric(&e, "non-numeric argument to mathematical function", 0, 0);
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, e.n));
   po = (double *) rsimd_out_ptr(out);
+  if (d >= -308 && d < 308.5) {
+    int dig = (int) floor(d + 0.5), flags = i32_flags(&e);
+    double p10 = R_pow_di(10., dig), big = round_digits_big(dig);
+    rsimd_opts o;
+    rsimd_opts_init_fixed(&o, 0, 1, e.no_na_hint);
+    RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+      rsimd_active->round_digits_f64(p[0], len, flags, p10, big, po + off, &o);
+    });
+    UNPROTECT(1);
+    return out;
+  }
   RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
     R_xlen_t i;
     for (i = 0; i < len; i++) {
