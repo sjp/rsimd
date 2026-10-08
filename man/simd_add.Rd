@@ -107,6 +107,13 @@ falls back to scalar code for that element. On \code{"sse2"}, double
 remainder, which is slow on CPUs without a fused multiply-add, and so are
 complex products where R's compiler fuses them. On 32-bit ARM the double and
 complex operations use the scalar \code{"none"} code.
+
+A length-one double operand is fastest as \code{y}: \code{simd_sub(x, 1)}
+keeps it in a register, while \code{simd_sub(1, x)} reads it from memory
+for every vector and can take somewhat longer (about as long as
+\code{1 - x}). An integer or logical vector combined with a double operand
+is converted to double element by element, which is slower than a double
+vector.
 }
 \value{
 A vector of the length of the longer operand: complex when an operand is

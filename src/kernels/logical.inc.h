@@ -97,11 +97,40 @@ RSIMD_INLINE rsimd_vi64 rsimd_lgl_vi64(rsimd_mf64 t, rsimd_mf64 na) {
       rsimd_vi64_storeu_i32_p(pg, (int32_t *) out + i, r);                                 \
     }                                                                                      \
   } while (0)
-/* The loop with all-vector double operands as a constant case. */
+/* As RSIMD_LANE64_LOOP, reading the operands through rsimd_ew_dptr(). */
+#define RSIMD_LANE64_LOOP_D(...)                                                           \
+  do {                                                                                     \
+    ptrdiff_t i = 0;                                                                       \
+    const rsimd_vf64 bc2 = bc1;                                                            \
+    RSIMD_EW_DPTRS(x, y, NULL);                                                            \
+    (void) p1_;                                                                            \
+    (void) p2_;                                                                            \
+    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                                 \
+      rsimd_vf64 a = RSIMD_EW_DLD(0), b = RSIMD_EW_DLD(1);                                 \
+      rsimd_vi64 r;                                                                        \
+      (void) b;                                                                            \
+      __VA_ARGS__;                                                                          \
+      rsimd_vi64_storeu_i32((int32_t *) out + i, r);                                       \
+      RSIMD_EW_DNEXT();                                                                    \
+    }                                                                                      \
+    if (i < n) {                                                                           \
+      rsimd_p64 pg = rsimd_p64_while(i, n);                                                \
+      rsimd_vf64 a = RSIMD_EW_DLD_P(0), b = RSIMD_EW_DLD_P(1);                             \
+      rsimd_vi64 r;                                                                        \
+      (void) b;                                                                            \
+      __VA_ARGS__;                                                                          \
+      rsimd_vi64_storeu_i32_p(pg, (int32_t *) out + i, r);                                 \
+    }                                                                                      \
+  } while (0)
+/* The loop with all-vector double operands as a constant case, the loop
+   over double operands, vectors or scalars, without per-operand tests
+   otherwise, and the general one for int32 vectors. */
 #define RSIMD_LANE64_LOOP_FLAGS(...)                                                       \
   do {                                                                                     \
     if (flags == 0) {                                                                      \
       RSIMD_LANE64_LOOP(0, __VA_ARGS__);                                                      \
+    } else if (RSIMD_EW_NO_I32_VECTOR(flags)) {                                            \
+      RSIMD_LANE64_LOOP_D(__VA_ARGS__);                                                    \
     } else {                                                                               \
       RSIMD_LANE64_LOOP(flags, __VA_ARGS__);                                                  \
     }                                                                                      \

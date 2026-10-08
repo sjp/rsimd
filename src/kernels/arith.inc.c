@@ -460,6 +460,43 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_ew_ld_p(const void *p, int flags, int k, rs
   return rsimd_vf64_loadu_p(pg, (const double *) p + i, ((const double *) p)[i]);
 }
 
+/* 1 if every int32 operand is a scalar (whose broadcast value
+   rsimd_ew_bcast() has converted), so that all operands can be read as
+   doubles through rsimd_ew_dptr(). */
+#define RSIMD_EW_NO_I32_VECTOR(f) ((((f) >> 3) & ~(f) & 7) == 0)
+/* Operand k as doubles read at a pointer that the loop advances by
+   *step after each vector: a double vector's data (step RSIMD_LANES_64),
+   or buf holding the broadcast value bc (step 0) for a scalar or an absent
+   operand, so that the loop reads every operand the same way, without a
+   per-vector test of its flags. */
+static inline const double *rsimd_ew_dptr(const void *p, int flags, int k, rsimd_vf64 bc,
+                                          double *buf, ptrdiff_t *step) {
+  if (p != NULL && !RSIMD_EW_IS_SCALAR(flags, k)) {
+    *step = (ptrdiff_t) RSIMD_LANES_64;
+    return (const double *) p;
+  }
+  rsimd_vf64_storeu(buf, bc);
+  *step = 0;
+  return buf;
+}
+#define RSIMD_EW_DLD(k) rsimd_vf64_loadu(p##k##_)
+#define RSIMD_EW_DLD_P(k) rsimd_vf64_loadu_p(pg, p##k##_, p##k##_[0])
+/* Declares the pointers and steps of rsimd_ew_dptr() for operands x, y
+   and z (NULL when absent), with broadcast values bc0, bc1 and bc2, and
+   RSIMD_EW_DNEXT() advances them. */
+#define RSIMD_EW_DPTRS(x, y, z)                                                  \
+  double b0_[RSIMD_MAX_LANES_64], b1_[RSIMD_MAX_LANES_64], b2_[RSIMD_MAX_LANES_64]; \
+  ptrdiff_t s0_, s1_, s2_;                                                       \
+  const double *p0_ = rsimd_ew_dptr(x, flags, 0, bc0, b0_, &s0_);               \
+  const double *p1_ = rsimd_ew_dptr(y, flags, 1, bc1, b1_, &s1_);               \
+  const double *p2_ = rsimd_ew_dptr(z, flags, 2, bc2, b2_, &s2_)
+#define RSIMD_EW_DNEXT()                                                         \
+  do {                                                                           \
+    p0_ += s0_;                                                                  \
+    p1_ += s1_;                                                                  \
+    p2_ += s2_;                                                                  \
+  } while (0)
+
 /* Runs `expr`, which sets the rsimd_vf64 r from a, b (and c), over the
    chunk with operand flags fl; `lanes` is the number of active lanes. */
 #define RSIMD_EW_F64_LOOP_(fl, nargs, expr)                                      \
@@ -489,15 +526,51 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_ew_ld_p(const void *p, int flags, int k, rs
       rsimd_vf64_storeu_p(pg, out + i, r);                                       \
     }                                                                            \
   } while (0)
+/* As RSIMD_EW_F64_LOOP_, reading the operands through rsimd_ew_dptr(). */
+#define RSIMD_EW_F64_LOOP_D_(nargs, expr)                                        \
+  do {                                                                           \
+    ptrdiff_t i = 0;                                                             \
+    RSIMD_EW_DPTRS(x, y, z);                                                     \
+    (void) p1_;                                                                  \
+    (void) p2_;                                                                  \
+    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                       \
+      const int lanes = (int) RSIMD_LANES_64;                                    \
+      rsimd_vf64 a = RSIMD_EW_DLD(0), b = bc1, c = bc2, r;                       \
+      if ((nargs) > 1) b = RSIMD_EW_DLD(1);                                      \
+      if ((nargs) > 2) c = RSIMD_EW_DLD(2);                                      \
+      (void) b;                                                                  \
+      (void) c;                                                                  \
+      (void) lanes;                                                              \
+      expr;                                                                      \
+      rsimd_vf64_storeu(out + i, r);                                             \
+      RSIMD_EW_DNEXT();                                                          \
+    }                                                                            \
+    if (i < n) {                                                                 \
+      rsimd_p64 pg = rsimd_p64_while(i, n);                                      \
+      const int lanes = rsimd_p64_count(pg);                                     \
+      rsimd_vf64 a = RSIMD_EW_DLD_P(0), b = bc1, c = bc2, r;                     \
+      if ((nargs) > 1) b = RSIMD_EW_DLD_P(1);                                    \
+      if ((nargs) > 2) c = RSIMD_EW_DLD_P(2);                                    \
+      (void) b;                                                                  \
+      (void) c;                                                                  \
+      (void) lanes;                                                              \
+      expr;                                                                      \
+      rsimd_vf64_storeu_p(pg, out + i, r);                                       \
+    }                                                                            \
+  } while (0)
 /* The loop with the flags as constants in the two common cases (all
-   operands double vectors; a double scalar y), so that the per-operand
-   tests of rsimd_ew_ld() compile away, and in general otherwise. */
+   operands double vectors; a double scalar y), the loop over double
+   operands, vectors or scalars, without per-operand tests otherwise, and
+   the general one for int32 vectors. The first two are faster still, as
+   they keep a scalar in a register and index all vectors with i. */
 #define RSIMD_EW_F64_LOOP(nargs, expr)                                           \
   do {                                                                           \
     if (flags == 0) {                                                            \
       RSIMD_EW_F64_LOOP_(0, nargs, expr);                                        \
     } else if (flags == RSIMD_EW_SCALAR(1)) {                                    \
       RSIMD_EW_F64_LOOP_(RSIMD_EW_SCALAR(1), nargs, expr);                       \
+    } else if (RSIMD_EW_NO_I32_VECTOR(flags)) {                                  \
+      RSIMD_EW_F64_LOOP_D_(nargs, expr);                                         \
     } else {                                                                     \
       RSIMD_EW_F64_LOOP_(flags, nargs, expr);                                    \
     }                                                                            \
@@ -655,6 +728,7 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
 
 #undef RSIMD_EW_F64_LOOP
 #undef RSIMD_EW_F64_LOOP_
+#undef RSIMD_EW_F64_LOOP_D_
 
 #else /* RSIMD_NO_F64_SIMD: 32-bit ARM, the none tier does doubles */
 #define RSIMD_SKIP_ew1_f64 1

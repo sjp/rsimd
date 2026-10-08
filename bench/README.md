@@ -27,7 +27,7 @@ Rscript bench/run.R --ops sum,exp --sizes 1e4,1e6 --out /tmp/bench
 | Option | Meaning |
 |--------|---------|
 | `--quick` | Sizes 1e3 and 1e5 and half the timing budget (at least 10, at most 100 iterations). |
-| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), `sum_narm`, `min`, `is_finite_all`, `bit_and` and `popcount_total` (raw), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`, and the overhead-table op `eq` (the overhead table also has `sum`, `add`, `exp`, `as_integer`, `dot` and complex `mul`). |
+| `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `scalar_sub`, `fma_scalar`, `lt_scalar`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), `sum_narm`, `min`, `is_finite_all`, `bit_and` and `popcount_total` (raw), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`, and the overhead-table op `eq` (the overhead table also has `sum`, `add`, `exp`, `as_integer`, `dot` and complex `mul`). |
 | `--sizes a,b` | Input lengths (default `1e3,1e5,1e7`: L1-resident, cache-resident, DRAM-bound). |
 | `--out dir` | Output directory (default `bench/results/`, which git ignores). |
 
@@ -41,6 +41,9 @@ and once as the base R equivalent:
 | dot | `simd_dot(x, y)` | `sum(x * y)`, plus `crossprod(x, y)[1]` as a BLAS reference | double |
 | add | `simd_add(x, y)` | `x + y` | double, integer |
 | fma | `simd_fma(x, y, z)` | `x * y + z` | double |
+| scalar_sub | `simd_sub(1, x)` | `1 - x` | double |
+| fma_scalar | `simd_fma(x, 2, 1)` | `x * 2 + 1` | double |
+| lt_scalar | `simd_lt(x, 0)` | `x < 0` | double |
 | pmax | `simd_pmax(x, y)` | `pmax(x, y)` | double |
 | exp | `simd_exp(x)` | `exp(x)` | double |
 | any_na | `simd_any_na(x)` | `anyNA(x)` | double, integer |

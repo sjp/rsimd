@@ -102,6 +102,19 @@ ops <- list(
     op = "fma", type = "double", simd = quote(simd_fma(x, y, z)), base = quote(x * y + z),
     bound = FALSE
   ),
+  # Length-1 operands as people write them: 1 - p, w * x + b, x < 0.
+  list(
+    op = "scalar_sub", type = "double", simd = quote(simd_sub(1, x)), base = quote(1 - x),
+    bound = FALSE
+  ),
+  list(
+    op = "fma_scalar", type = "double", simd = quote(simd_fma(x, 2, 1)), base = quote(x * 2 + 1),
+    bound = FALSE
+  ),
+  list(
+    op = "lt_scalar", type = "double", simd = quote(simd_lt(x, 0)), base = quote(x < 0),
+    bound = FALSE
+  ),
   list(
     op = "pmax", type = "double", simd = quote(simd_pmax(x, y)), base = quote(pmax(x, y)),
     bound = TRUE
