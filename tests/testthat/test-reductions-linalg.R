@@ -305,24 +305,46 @@ test_that("edge values: empty, zero vectors, Inf, overflow and short input", {
   }
 })
 
-test_that("var and sd are Inf when finite data overflow the mean, on every tier and length", {
-  batch_expectations({
-    # Every squared deviation from an infinite mean is Inf. Vector tiers used
-    # to add NaN from the tail lanes, depending on the length. Base R gives 0
-    # here through its long double mean; that difference is accepted.
-    for (n in 1:65) {
-      want <- if (n == 1L) NA_real_ else Inf
-      x <- rep(1e308, n)
-      expect_tiers_give(c(want, want), function(x) c(simd_var(x), simd_sd(x)), x)
-      expect_tiers_give(want, simd_var, -x)
-      expect_tiers_give(want, simd_var, c(x, NA), na.rm = TRUE)
-    }
-    # An infinite element makes its deviation Inf - Inf, so the result is NaN.
-    for (n in 2:17) {
-      expect_tiers_give(NaN, simd_var, c(rep(1e308, n), Inf))
-      expect_tiers_give(NaN, simd_sd, c(Inf, rep(1, n), -Inf))
-    }
-  })
+test_that("mean, var and sd rescale a sum of finite data that overflows, on every tier and length", {
+  old <- simd_precision()
+  on.exit(simd_precision(old))
+  M <- .Machine$double.xmax
+  for (mode in c("fast", "pairwise", "compensated")) {
+    simd_precision(mode)
+    batch_expectations({
+      # The double sum overflows, so the mean is recomputed from x scaled by a
+      # power of 2, as base R's long double mean gives it.
+      for (n in 1:65) {
+        x <- rep(1e308, n)
+        expect_tiers_give(1e308, simd_mean, x)
+        expect_tiers_give(-1e308, simd_mean, -x)
+        expect_tiers_give(1e308, simd_mean, c(x, NA, NaN), na.rm = TRUE)
+        expect_tiers_give(M, simd_mean, rep(M, n))
+        if (n >= 2L) {
+          want <- c(0, 0)
+          expect_tiers_give(want, function(x) c(simd_var(x), simd_sd(x)), x)
+          expect_tiers_give(0, simd_var, -x)
+          expect_tiers_give(0, simd_var, c(x, NA), na.rm = TRUE)
+        }
+      }
+      expect_tiers_give(NA_real_, simd_mean, c(1e308, 1e308, NA))
+      expect_tiers_give(1.5 * 2^1023, simd_mean, 2^1023 * c(1.5, 1.75, 1.25, 1.5))
+      # Partial sums that overflow both ways (in every lane, on every tier)
+      # cancel once scaled.
+      expect_tiers_give(2^1000 / 129, simd_mean, c(rep(2^1023, 64), rep(-2^1023, 64), 2^1000))
+      # A deviation from the mean can still overflow: (M + M) - mean.
+      expect_tiers_give(Inf, simd_var, c(M, -M, M, -M))
+      # An infinite element decides the mean, whatever the finite ones give;
+      # its deviation is Inf - Inf, so var and sd are NaN.
+      expect_tiers_give(Inf, simd_mean, c(Inf, -1e308, -1e308, -1e308))
+      expect_tiers_give(-Inf, simd_mean, c(1e308, 1e308, -Inf, 1e308))
+      expect_tiers_give(NaN, simd_mean, c(Inf, 1e308, 1e308, -Inf))
+      for (n in 2:17) {
+        expect_tiers_give(NaN, simd_var, c(rep(1e308, n), Inf))
+        expect_tiers_give(NaN, simd_sd, c(Inf, rep(1, n), -Inf))
+      }
+    })
+  }
 })
 
 test_that("the base R table rows for var and sd are reproduced", {

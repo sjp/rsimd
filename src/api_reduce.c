@@ -268,11 +268,42 @@ SEXP C_simd_prod2(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP preci
   return rsimd_exit(simd_prod2_impl(x, y, op, na_rm, na_check, precision));
 }
 
+/* The mean of the double x (r->count elements left) when its sum overflowed
+   to +-Inf or NaN: that of its infinite elements when it has some (Inf,
+   -Inf, or NaN for both), else the compensated sum (s, c) of x scaled by
+   2^-k, with 2^k >= 2 r->count so that no partial sum can overflow,
+   divided by the count as a pair (so rep(y, n) gives y) and scaled back.
+   Rare, so scalar. */
+static double mean_unscaled_f64(const rsimd_in *in, const rsimd_opts *o,
+                                const rsimd_reduce_result *r) {
+  double s = 0.0, c = 0.0, n = (double) r->count, q;
+  int k = 1, pinf = 0, ninf = 0;
+  while (k < 62 && ldexp(1.0, k - 1) < n) k++;
+  RSIMD_FOREACH_CHUNK(in, double, px, len, off, {
+    for (R_xlen_t i = 0; i < len; i++) {
+      double x = px[i];
+      if (isnan(x)) {
+        if (o->na_rm) continue;
+        return x;
+      }
+      if (isinf(x)) {
+        if (x > 0) pinf = 1;
+        else ninf = 1;
+      } else {
+        rsimd_neumaier_add(&s, &c, ldexp(x, -k));
+      }
+    }
+  });
+  if (pinf || ninf) return pinf && ninf ? R_NaN : pinf ? R_PosInf : R_NegInf;
+  q = s / n;
+  return ldexp(q + (fma(-q, n, s) + c) / n, k);
+}
+
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
    with r->count > 0 elements left): the exact integer sum divided in long
-   double, or the double sum divided by the count, refined by the mean of
-   the deviations from it when finite, in pairwise and compensated modes or
-   in every mode when refine is set. */
+   double, or the double sum divided by the count refined by the mean of
+   the deviations from it, in pairwise and compensated modes or in every
+   mode when refine is set; mean_unscaled_f64() when the sum overflowed. */
 static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_reduce_result *r,
                          int refine) {
   double m;
@@ -282,7 +313,10 @@ static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_re
     return (double) (s / (long double) r->count);
   }
   m = rsimd_reduce_value(r, o->precision) / (double) r->count;
-  if ((refine || o->precision != RSIMD_PREC_FAST) && R_FINITE(m)) {
+  /* Rescaled, the mean needs no refinement, whose deviations from m near
+     the edge of the range would lose m's low bits or overflow. */
+  if (!R_FINITE(m)) return mean_unscaled_f64(in, o, r);
+  if (refine || o->precision != RSIMD_PREC_FAST) {
     rsimd_reduce_result d;
     rsimd_reduce_result_init(&d, RSIMD_RED_SUM);
     RSIMD_FOREACH_CHUNK(in, double, px, len, off,
@@ -895,9 +929,10 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
      spread is small next to the mean. */
   m = mean_value(&in, &o, &r, 1);
   if (!R_FINITE(m)) {
-    /* The squared deviations are then all Inf, or NaN for an infinite
-       element; settle that here, because a vector tier's tail lanes
-       (filled with m) would add NaN. */
+    /* Only for an infinite element (mean_value() rescales a sum of finite
+       elements that overflowed), whose squared deviation is NaN; settle
+       that here, because a vector tier's tail lanes (filled with m) would
+       add NaN. */
     int inf = 0;
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
       if (rsimd_active->pred_f64(RSIMD_PRED_INFINITE, px, len, RSIMD_PRED_ANY, NULL)) {

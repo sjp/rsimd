@@ -102,8 +102,13 @@ one of them length 1 (see \code{\link{simd_add}}).
 \code{simd_mean()} of a double vector is the sum divided by the number of
 elements; in \code{"pairwise"} and \code{"compensated"} modes it then adds
 the mean of the deviations from that first estimate (a second pass over the
-data), as base R does. The mean of an integer or logical vector is its exact
-sum divided once, in \code{long double} where available, as in base R.
+data), as base R does. When the double sum overflows, the mean is
+recomputed (compensated) from the elements scaled down by a power of 2, so
+\code{simd_mean(c(1e308, 1e308))} is \code{1e308} as in base R, which sums
+in \code{long double}; infinite elements make it \code{Inf}, \code{-Inf}
+or (with both signs) \code{NaN}. The mean of an integer or logical vector
+is its exact sum divided once, in \code{long double} where available, as
+in base R.
 The mean of a complex vector is \code{simd_sum()}'s result divided by the
 number of elements, part by part (without base R's second pass in
 \code{long double}), so a missing part makes that part of the mean
