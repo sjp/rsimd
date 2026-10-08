@@ -132,7 +132,22 @@ test_that("conversions match base R on random vectors of edge lengths", {
 })
 
 test_that("argument and type errors", {
-  expect_error(simd_as_integer(1, mode = "wrap"), "'arg' should be one of")
+  expect_error(simd_as_integer(1, mode = "wrap"),
+    "'mode' must be one of \"checked\", \"saturating\" or \"truncating\"",
+    fixed = TRUE
+  )
+  expect_error(simd_as_integer(1, mode = ""), "'mode' must be one of")
+  expect_error(simd_as_integer(1, mode = NA_character_), "'mode' must be one of")
+  expect_error(simd_as_integer(2.5, c("checked", "saturating")), "'mode' must be a single string")
+  expect_error(simd_as_integer64(1, mode = 1), "'mode' must be a single string")
+  expect_error(simd_as_raw(1, mode = character(0)), "'mode' must be a single string")
+  e <- tryCatch(simd_as_integer(1, mode = "wrap"), error = identity)
+  expect_identical(conditionCall(e), quote(simd_as_integer(1, mode = "wrap")))
+  expect_identical(simd_as_integer(1e10, "sat"), .Machine$integer.max)
+  expect_identical(
+    simd_as_integer(2.5, c("checked", "saturating", "truncating")),
+    simd_as_integer(2.5)
+  )
   expect_error(simd_as_integer(1i), "simd_as_integer() does not support 'x' of type complex",
     fixed = TRUE
   )

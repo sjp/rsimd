@@ -362,9 +362,11 @@ simd_trunc <- function(x) {
 }
 
 simd_round <- function(x, digits = 0) {
-  if (!(is.numeric(digits) || is.logical(digits)) || length(digits) != 1L) {
+  if (!(is.numeric(digits) || is.logical(digits)) || length(digits) != 1L ||
+    inherits(digits, "integer64")) {
     .stop("'digits' must be a single number")
   }
+  digits <- as.double(unclass(digits))
   if (is.object(x) || is.complex(x)) .ew_check("simd_round", list(x = x))
   if (!is.na(digits) && digits == 0) {
     return(.Call(C_simd_ew1, x, "round"))

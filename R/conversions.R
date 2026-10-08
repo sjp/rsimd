@@ -1,17 +1,23 @@
 # Type conversions between double, integer, logical, raw and integer64
 # vectors. mode is passed to the C side as a code (0 "checked", 1
-# "saturating", 2 "truncating"); match.arg() only runs, for its partial
-# matching and error, when mode is not a single exact name.
+# "saturating", 2 "truncating"), partially matched as match.arg() does but
+# with errors that name 'mode'.
 
 .cvt_modes <- c("checked", "saturating", "truncating")
 
-# The code of mode (missing: the default, "checked").
+# The code of mode (missing, or the whole choice vector as match.arg()
+# allows: the default, "checked").
 .cvt_code <- function(mode, missing) {
-  if (missing) {
+  if (missing || identical(mode, .cvt_modes)) {
     return(0L)
   }
-  code <- if (is.character(mode) && length(mode) == 1L) match(mode, .cvt_modes) else NA
-  if (is.na(code)) code <- match(match.arg(mode, .cvt_modes), .cvt_modes)
+  if (!is.character(mode) || length(mode) != 1L) {
+    .stop("'mode' must be a single string")
+  }
+  code <- pmatch(mode, .cvt_modes)
+  if (is.na(code)) {
+    .stop("'mode' must be one of \"checked\", \"saturating\" or \"truncating\"")
+  }
   code - 1L
 }
 

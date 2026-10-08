@@ -16,7 +16,8 @@ simd_round(x, digits = 0)
 \arguments{
 \item{x}{A double, integer or logical vector.}
 \item{digits}{A single number: the number of decimal places to round to
-(negative to round to tens, hundreds ...).}
+(negative to round to tens, hundreds ...). A logical counts as a number
+(\code{TRUE} is 1), as in base R; an integer64 is not accepted.}
 }
 \description{
 \code{floor(x)}, \code{ceiling(x)}, \code{trunc(x)} and
