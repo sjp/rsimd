@@ -314,6 +314,22 @@ test_that("var is two-pass: no cancellation for a large mean", {
   expect_simd_matches_base(simd_var, base_var, xi, tolerance = 1e-12)
 })
 
+test_that("var refines the mean in every mode, as base R does", {
+  # The fast-mode sum of 1e15 + {0, 1} gives a mean 0.5 off, which without
+  # base R's refinement pass made the variance twice its true value.
+  for (mean in c(1e15, 1e12)) {
+    x <- mean + with_seed(2, sample(c(0, 1), 1e5, replace = TRUE))
+    xna <- replace(x, c(1, 500, 7777), c(NA, NaN, NA))
+    for (mode in modes) {
+      for (f in list(c(simd_var, stats::var), c(simd_sd, stats::sd))) {
+        expect_simd_matches_base(f[[1]], f[[2]], x, tolerance = 1e-12, precision = mode)
+        expect_simd_matches_base(f[[1]], f[[2]], xna, na.rm = TRUE,
+                                 tolerance = 1e-12, precision = mode)
+      }
+    }
+  }
+})
+
 test_that("na_check = FALSE gives the same results on NA-free input", {
   d <- rand_vec("double", 5000, na_frac = 0, nan_frac = 0, seed = 3)
   i <- rand_vec("integer", 5000, na_frac = 0, seed = 3)

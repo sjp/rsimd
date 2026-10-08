@@ -158,9 +158,11 @@ SEXP C_simd_prod2(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP preci
 
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
    with r->count > 0 elements left): the exact integer sum divided in long
-   double, or the double sum divided by the count, refined in pairwise and
-   compensated modes by the mean of the deviations from it when finite. */
-static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_reduce_result *r) {
+   double, or the double sum divided by the count, refined by the mean of
+   the deviations from it when finite, in pairwise and compensated modes or
+   in every mode when refine is set. */
+static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_reduce_result *r,
+                         int refine) {
   double m;
   if (in->type != RSIMD_F64) {
     long double s = (long double) r->i64;
@@ -168,7 +170,7 @@ static double mean_value(const rsimd_in *in, const rsimd_opts *o, const rsimd_re
     return (double) (s / (long double) r->count);
   }
   m = rsimd_reduce_value(r, o->precision) / (double) r->count;
-  if (o->precision != RSIMD_PREC_FAST && R_FINITE(m)) {
+  if ((refine || o->precision != RSIMD_PREC_FAST) && R_FINITE(m)) {
     rsimd_reduce_result d;
     rsimd_reduce_result_init(&d, RSIMD_RED_SUM);
     RSIMD_FOREACH_CHUNK(in, double, px, len, off,
@@ -214,7 +216,7 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   if (r.count == 0 || (!o.na_rm && (r.saw_na || r.saw_nan))) {
     return rsimd_reduce_finish(RSIMD_RED_MEAN, in.type, in.n, &r, &o);
   }
-  m = mean_value(&in, &o, &r);
+  m = mean_value(&in, &o, &r, 0);
   return Rf_ScalarReal(m);
 }
 
@@ -739,8 +741,9 @@ SEXP C_simd_dot(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precisi
   return rsimd_exit(simd_dot_impl(x, y, op, na_rm, na_check, precision));
 }
 
-/* var (sd = FALSE) or sd (sd = TRUE) of x: two passes as base R, the mean
-   (as simd_mean, in the same precision mode) and then the sum of squared
+/* var (sd = FALSE) or sd (sd = TRUE) of x, as base R: the mean (the sum
+   in the precision mode, divided by the count, then refined for doubles by
+   the mean of the deviations from it) and then the sum of squared
    deviations from it, divided by n - 1. Fewer than two elements (after
    na.rm), or any missing value without na.rm, give NA. */
 static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP precision) {
@@ -774,7 +777,10 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
   if (r.count < 2 || (!o.na_rm && (r.saw_na || r.saw_nan))) {
     return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
   }
-  m = mean_value(&in, &o, &r);
+  /* Refined in every mode, as base R does: an error d in the mean adds
+     n d^2 / (n - 1) to the result, as large as the variance itself when the
+     spread is small next to the mean. */
+  m = mean_value(&in, &o, &r, 1);
   if (!R_FINITE(m)) {
     /* The squared deviations are then all Inf, or NaN for an infinite
        element; settle that here, because a vector tier's tail lanes

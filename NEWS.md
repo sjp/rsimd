@@ -119,7 +119,10 @@ First release.
   `simd_idiv()` on doubles is the exact floor of the quotient, rounded once,
   for quotients of 2^52 and more too (it could be a few units off there);
   `simd_var()` and `simd_sd()` give `Inf` on every implementation when
-  finite values overflow the mean (some lengths gave `NaN`);
+  finite values overflow the mean (some lengths gave `NaN`), and refine
+  the mean as base R does in the `"fast"` precision mode too (a small
+  spread next to a large mean, as in `1e15 + c(0, 1)`, could come out
+  twice its true variance);
   `simd_next_up()` and `simd_next_down()` return every NaN input as it is
   (some NaNs became infinities); and `simd_sin()`, `simd_tan()`,
   `simd_asin()`, `simd_atan()`, `simd_sinh()`, `simd_tanh()`,

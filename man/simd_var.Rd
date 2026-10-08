@@ -20,9 +20,13 @@ The sample variance and standard deviation of the elements of a vector, as
 single vector (denominator \eqn{n - 1}), using SIMD instructions.
 }
 \details{
-Like base R, these take two passes over the data: the mean (computed as
-\code{\link{simd_mean}()} does, in the same precision mode), then the sum of
-squared deviations from it. They do not use the one-pass formula
+Like base R, these compute the mean first and then the sum of squared
+deviations from it. For doubles the mean is the sum (accumulated in the
+precision mode) divided by the count, refined in every mode by adding the
+mean of the deviations from it, as base R and the \code{"pairwise"} and
+\code{"compensated"} modes of \code{\link{simd_mean}()} do; so there are
+three passes over the data, and a small spread is measured accurately even
+next to a large mean. They do not use the one-pass formula
 \eqn{E[x^2] - E[x]^2}, which loses all precision when the mean is large
 compared with the spread. Integer and logical elements are converted to
 double as they are read.
