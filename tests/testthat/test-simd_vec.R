@@ -409,6 +409,11 @@ test_that("an operand of another class is rejected on either side", {
   # Paths that do not reach a kernel reject it too.
   expect_error(simd_vec(1i) == d, msg("y", "foo"))
   if (has_bit64()) expect_error(simd_vec(simd_as_integer64(2))^d, msg("y", "foo"))
+  # Other types too, on either side.
+  expect_error(sv + "a", msg("y", "character"))
+  expect_error(list(1) * sv, msg("x", "list"))
+  expect_error(sv == NULL, msg("y", "NULL"))
+  expect_error(sv & sum, msg("y", "builtin"))
   # integer64 and simd_vec operands are taken.
   expect_sv(sv + simd_vec(2), 3)
 })
@@ -616,15 +621,15 @@ test_that("conversions keep the flag only when they cannot overflow", {
   expect_identical(simd_na_free(simd_as_integer(d, "truncating")), NULL)
 })
 
-test_that("subsetting keeps TRUE unless a missing element is selected", {
+test_that("subsetting keeps TRUE unless a missing element is selected, then FALSE", {
   x <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
   expect_sv(x[2:3], c(2, 3), "none", TRUE)
   expect_sv(x[-1], c(2, 3), "none", TRUE)
   expect_sv(x[c(TRUE, FALSE, TRUE)], c(1, 3), "none", TRUE)
   expect_sv(x[0], numeric(), "none", TRUE)
-  expect_sv(x[c(1, NA)], c(1, NA), "none")
-  expect_sv(x[5], NA_real_, "none")
-  expect_sv(x[c(TRUE, NA, FALSE)], c(1, NA), "none")
+  expect_sv(x[c(1, NA)], c(1, NA), "none", FALSE)
+  expect_sv(x[5], NA_real_, "none", FALSE)
+  expect_sv(x[c(TRUE, NA, FALSE)], c(1, NA), "none", FALSE)
   expect_identical(x[], x)
   y <- simd_vec(c(1, NA), check_na = TRUE)
   expect_sv(y[1], 1)
@@ -646,6 +651,16 @@ test_that("c() is TRUE only when every part is known NA-free", {
   expect_sv(c(simd_vec(1:2), 0.5), c(1, 2, 0.5))
   expect_sv(c(simd_vec(1), c(a = 2)), c(1, 2))
   expect_sv(c(simd_vec(1), 1i), c(1 + 0i, 1i))
+  # Long parts: a simd_vec of a shared vector (which R wraps) and computed
+  # ones, the parts keeping their flags.
+  d <- as.double(seq_len(1000))
+  w <- simd_vec(d, check_na = TRUE)
+  expect_sv(c(w, simd_vec(-d, check_na = TRUE), 1), c(d, -d, 1), na_free = TRUE)
+  expect_sv(c(w, w + 1, simd_vec(1:2)), c(d, d + 1, 1, 2))
+  expect_sv(c(simd_vec(1:3), d), c(1, 2, 3, d))
+  expect_true(simd_na_free(w))
+  expect_error(c(simd_vec(1), "a"), "'x' must be an atomic vector")
+  expect_error(c(simd_vec(1), list(2)), "'x' must be an atomic vector")
 })
 
 test_that("assignment and length<- keep the class and pin", {
@@ -678,15 +693,19 @@ test_that("[ with a logical or non-negative index keeps base R's values and the 
     expect_identical(simd_unwrap(out), d[i], info = deparse(i))
     expect_true(simd_na_free(out), info = deparse(i))
   }
-  # Past the end or NA in the index: NA elements, so the flag is unknown.
-  for (i in list(c(TRUE, FALSE, TRUE, TRUE, TRUE), c(TRUE, NA), 5, c(1, NA), 2^40)) {
+  # Past the end, NA or a name in the index: NA elements, found by the scan.
+  for (i in list(c(TRUE, FALSE, TRUE, TRUE, TRUE), c(TRUE, NA), 5, c(1, NA), 2^40, "a")) {
     out <- x[i]
     expect_identical(simd_unwrap(out), d[i], info = deparse(i))
-    expect_null(simd_na_free(out), info = deparse(i))
+    expect_false(simd_na_free(out), info = deparse(i))
   }
-  # Negative indices take the general path.
-  expect_identical(simd_unwrap(x[-1]), d[-1])
-  expect_true(simd_na_free(x[-1]))
+  for (i in list(-1, c(-4, 0, -2), -5, simd_vec(c(TRUE, FALSE)), factor(c("b", "a")), x > 2)) {
+    out <- x[i]
+    expect_identical(simd_unwrap(out), d[if (is_simd_vec(i)) simd_unwrap(i) else i], info = deparse(i))
+    expect_true(simd_na_free(out), info = deparse(i))
+  }
+  # An x of unknown flag is not scanned.
+  expect_null(simd_na_free(simd_vec(d)[1:2]))
   y <- simd_vec(d, "none")
   expect_identical(simd_impl(y[c(TRUE, FALSE)]), "none")
 })
@@ -751,6 +770,18 @@ test_that("the flag belongs to the object it was set on", {
   g <- simd_vec(1:3, check_na = TRUE)
   oldClass(g) <- c("foo", oldClass(g))
   expect_null(simd_na_free(g))
+  # Nor does putting back the class vector of another simd_vec, made in R
+  # or in C, flagged or not: a flagged object has a class vector of its own.
+  k <- simd_vec(c(1, 2), check_na = TRUE)
+  for (other in list(simd_vec(1), simd_vec(1) + 1, k, k + k, simd_vec(1L) + 1L)) {
+    for (g in list(simd_vec(1:3, check_na = TRUE), simd_add(k, k))) {
+      class(g) <- NULL
+      g[2] <- NA
+      class(g) <- class(other)
+      expect_null(simd_na_free(g))
+    }
+  }
+  expect_true(simd_na_free(k))
 
   # A reloaded flag is unknown (the token's pointer is not saved).
   x <- simd_vec(c(1, 2, 3), check_na = TRUE)

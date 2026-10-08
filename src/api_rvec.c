@@ -323,6 +323,14 @@ SEXP C_simd_sv_release(SEXP x) {
   return rsimd_exit(rsimd_sv_release(x));
 }
 
+/* TRUE when x is an ALTREP object, such as the wrapper R makes when it
+   sets attributes on a shared long vector: unlist() reads its elements one
+   at a time. */
+SEXP C_simd_sv_altrep(SEXP x) {
+  rsimd_entry();
+  return rsimd_exit(Rf_ScalarLogical(ALTREP(x) != 0));
+}
+
 /* The data of x without attributes, or NULL; see rsimd_sv_bare(). */
 SEXP C_simd_sv_bare(SEXP x) {
   rsimd_entry();

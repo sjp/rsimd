@@ -29,6 +29,7 @@ SEXP C_simd_sv_stamp(SEXP x, SEXP flag);
 SEXP C_simd_bit64_unloaded(void);
 SEXP C_simd_sv_release(SEXP x);
 SEXP C_simd_sv_bare(SEXP x);
+SEXP C_simd_sv_altrep(SEXP x);
 
 /* reductions */
 SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);

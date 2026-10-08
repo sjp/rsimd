@@ -420,10 +420,11 @@ SEXP rsimd_exit(SEXP out);
    token's tag is the class attribute x had when it was stamped, and the
    flag counts only while x still has that very vector: class(x) <- NULL
    on an unshared x does not copy it, so a primitive [<- could then change
-   the data in place, but class<- installs a new vector when the class is
-   put back. A token is also never valid after unserialize() (the pointer
-   comes back NULL). Tokens and classes are read without Rf_getAttrib(),
-   which marks the value it returns as shared.
+   the data in place, but putting the class back installs another vector:
+   the stamp gives x a class vector no other object has. A token is also
+   never valid after unserialize() (the pointer comes back NULL). Tokens
+   and classes are read without Rf_getAttrib(), which marks the value it
+   returns as shared.
 
    rsimd_sv_flag() returns 1 (known NA-free), 0 (known to contain a
    missing value) or -1 (unknown) for x; raw data is always 1.

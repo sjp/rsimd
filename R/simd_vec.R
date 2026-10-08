@@ -102,20 +102,33 @@ simd_na_free <- function(x) {
   if (is.object(x) || !is.null(attributes(x))) {
     # Not attributes(x) <- NULL: on a shared x that copies the attributes,
     # and so the NA-free token (see the top of this file).
-    bare <- .Call(C_simd_sv_bare, x)
-    x <- if (is.null(bare)) .subset(x, seq_along(x)) else bare
-    names(x) <- NULL
+    # Bound to x alone, so that class<- below changes it in place.
+    orig <- x
+    x <- .Call(C_simd_sv_bare, orig)
+    if (is.null(x)) {
+      x <- .subset(orig, seq_along(orig))
+      names(x) <- NULL
+    }
   }
   if (i64) class(x) <- "integer64"
   x
 }
 
-.sv_new <- function(data, impl = NULL, na_free = NULL) {
+# data (bare, or of class integer64) as a simd_vec, with NA-free flag
+# na_free or, with check_na, the one a scan finds. The attributes are set by
+# one call of the replacement function, not bound to a name in between: a
+# second replacement, or C_simd_sv_stamp on a bound value, would see data as
+# shared and copy it. A fresh result is so changed in place, and a shared
+# one is copied by R (lazily, through an ALTREP wrapper, for a long vector).
+.sv_new <- function(data, impl = NULL, na_free = NULL, check_na = FALSE) {
   i64 <- inherits(data, "integer64")
   if (i64) .need_bit64()
-  class(data) <- if (i64) c("simd_vec", "integer64") else "simd_vec"
-  attr(data, "rsimd_impl") <- impl
-  .Call(C_simd_sv_stamp, data, if (is.raw(data)) TRUE else na_free)
+  if (check_na) na_free <- !simd_any_na(data)
+  cls <- if (i64) c("simd_vec", "integer64") else "simd_vec"
+  .Call(
+    C_simd_sv_stamp, `attributes<-`(data, list(class = cls, rsimd_impl = impl)),
+    if (is.raw(data)) TRUE else na_free
+  )
 }
 
 # The data of a simd_vec (integer64 keeps its class), as .sv_strip() but
@@ -215,30 +228,45 @@ Ops.simd_vec <- function(e1, e2) {
       stop("invalid unary operator", call. = FALSE)
     ))
   }
-  .check_data(e1, "x")
-  .check_data(e2, "y")
-  cplx <- is.complex(e1) || is.complex(e2)
-  i64 <- inherits(e1, "integer64") || inherits(e2, "integer64")
-  raw <- is.raw(e1) || is.raw(e2)
+  if (!(.sv_operand_ok(e1) && .sv_operand_ok(e2))) {
+    .check_data(e1, "x")
+    .check_data(e2, "y")
+  }
   switch(gen,
     "+" = simd_add(e1, e2),
     "-" = simd_sub(e1, e2),
     "*" = simd_mul(e1, e2),
     "/" = simd_div(e1, e2),
-    "%%" = if (cplx) .sv_ops_fallback(gen, e1, e2) else simd_mod(e1, e2),
-    "%/%" = if (cplx) .sv_ops_fallback(gen, e1, e2) else simd_idiv(e1, e2),
-    "^" = if (i64) .sv_ops_fallback(gen, e1, e2) else simd_pow(e1, e2),
-    "==" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_eq(e1, e2),
-    "!=" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_ne(e1, e2),
-    "<" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_lt(e1, e2),
-    ">" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_gt(e1, e2),
-    "<=" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_le(e1, e2),
-    ">=" = if (cplx) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_ge(e1, e2),
-    "&" = if (raw) simd_bit_and(e1, e2) else simd_and(e1, e2),
-    "|" = if (raw) simd_bit_or(e1, e2) else simd_or(e1, e2),
+    "%%" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2) else simd_mod(e1, e2),
+    "%/%" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2) else simd_idiv(e1, e2),
+    "^" = if (inherits(e1, "integer64") || inherits(e2, "integer64")) {
+      .sv_ops_fallback(gen, e1, e2)
+    } else {
+      simd_pow(e1, e2)
+    },
+    "==" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_eq(e1, e2),
+    "!=" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_ne(e1, e2),
+    "<" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_lt(e1, e2),
+    ">" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_gt(e1, e2),
+    "<=" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_le(e1, e2),
+    ">=" = if (.sv_cplx(e1, e2)) .sv_ops_fallback(gen, e1, e2, FALSE) else simd_ge(e1, e2),
+    "&" = if (is.raw(e1) || is.raw(e2)) simd_bit_and(e1, e2) else simd_and(e1, e2),
+    "|" = if (is.raw(e1) || is.raw(e2)) simd_bit_or(e1, e2) else simd_or(e1, e2),
     stop("operator '", gen, "' is not supported for simd_vec", call. = FALSE)
   )
 }
+
+# TRUE for an operand .check_data() accepts, tested with a few primitives
+# (.check_data() itself is the slower path that names a bad operand).
+.sv_operand_ok <- function(x) {
+  if (is.object(x)) {
+    inherits(x, c("simd_vec", "integer64"))
+  } else {
+    is.numeric(x) || is.logical(x) || is.complex(x) || is.raw(x)
+  }
+}
+
+.sv_cplx <- function(e1, e2) is.complex(e1) || is.complex(e2)
 
 # Unary +: base R makes a logical integer and rejects raw.
 .sv_uplus <- function(x) {
@@ -382,25 +410,16 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
     return(x)
   }
   if (...length() > 0L) stop("incorrect number of dimensions", call. = FALSE)
-  flag <- .sv_flag(x)
   impl <- attr(x, "rsimd_impl", exact = TRUE)
-  # A logical or non-negative index selects the data directly, without the
-  # vector of positions; the result is NA-free when x is and the index
-  # neither is NA nor goes past the end.
-  if (!inherits(x, "integer64") && !is.object(i) && !anyNA(i)) {
-    if (is.logical(i)) {
-      return(.sv_new(.subset(x, i), impl, if (isTRUE(flag) && length(i) <= length(x)) TRUE))
-    }
-    if (is.numeric(i)) {
-      r <- if (length(i)) range(i) else c(0, 0)
-      if (r[[1L]] >= 0) {
-        return(.sv_new(.subset(x, i), impl, if (isTRUE(flag) && r[[2L]] < length(x) + 1) TRUE))
-      }
-    }
+  # The result of an NA-free x has an NA only where the index is NA or past
+  # the end; one pass over the (fresh) result says which, so the index is
+  # never looked at.
+  check <- isTRUE(.sv_flag(x))
+  if (!inherits(x, "integer64")) {
+    return(.sv_new(.subset(x, i), impl, check_na = check))
   }
   j <- seq_along(x)[i]
-  na_free <- if (isTRUE(flag) && !anyNA(j)) TRUE
-  .sv_new(.sv_take(x, j), impl, na_free)
+  .sv_new(.sv_take(x, j), impl, if (check) !anyNA(j))
 }
 
 # The data of x (a simd_vec or its data) at positions j (NA giving a
@@ -473,28 +492,33 @@ c.simd_vec <- function(..., recursive = FALSE, use.names = TRUE) .sv_combine(lis
 .sv_combine <- function(args) {
   args <- args[lengths(args) > 0L | vapply(args, is_simd_vec, NA)]
   pin <- .sv_resolve(args)
-  flags <- lapply(args, function(a) if (is_simd_vec(a)) .sv_flag(a))
-  data <- lapply(args, function(a) .sv_strip(a))
   is_sv <- vapply(args, is_simd_vec, NA)
+  for (a in args[!is_sv]) .check_data(a)
+  flags <- lapply(args, function(a) if (is_simd_vec(a)) .sv_flag(a))
   # Checked before the integer64 conversion, whose NA bits read as -0.
-  plain_na <- any(vapply(data[!is_sv], simd_any_na, NA))
-  if (any(vapply(data, inherits, NA, what = "integer64"))) {
-    data <- lapply(data, function(d) {
-      unclass(if (inherits(d, "integer64")) d else simd_as_integer64(d))
-    })
-    out <- unlist(data, use.names = FALSE)
-    if (is.null(out)) out <- double()
-    class(out) <- "integer64"
-  } else {
-    out <- unlist(data, use.names = FALSE)
-    if (is.null(out)) out <- logical()
-  }
+  plain_na <- any(vapply(args[!is_sv], simd_any_na, NA))
   na_free <- if (any(vapply(flags, isFALSE, NA))) {
     FALSE
   } else if (all(vapply(flags[is_sv], isTRUE, NA))) {
     if (!plain_na) TRUE
   }
-  .sv_new(out, pin, na_free)
+  # The result goes to .sv_new() unbound, so that it is not copied there.
+  if (!length(args)) {
+    return(.sv_new(logical(), pin, na_free))
+  }
+  if (any(vapply(args, inherits, NA, what = "integer64"))) {
+    data <- lapply(args, function(a) {
+      d <- .sv_strip(a)
+      unclass(if (inherits(d, "integer64")) d else simd_as_integer64(d))
+    })
+    return(.sv_new(`class<-`(unlist(data, use.names = FALSE), "integer64"), pin, na_free))
+  }
+  # unlist() reads the data of the parts and ignores their attributes, so
+  # they need no stripping (a copy each); except a part that is an ALTREP
+  # wrapper (simd_vec(x) of a shared x), which unlist() reads element by
+  # element, several times slower than the copy.
+  args[is_sv] <- lapply(args[is_sv], function(a) if (.Call(C_simd_sv_altrep, a)) .sv_strip(a) else a)
+  .sv_new(unlist(args, use.names = FALSE), pin, na_free)
 }
 
 `length<-.simd_vec` <- function(x, value) {

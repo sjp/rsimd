@@ -107,7 +107,7 @@ place. It is \code{TRUE} only when a missing value is impossible:
 \code{simd_conj}, \code{simd_re}, \code{simd_im}, \code{simd_popcount}, \code{simd_lzcnt}, \code{simd_tzcnt} \tab kept \cr
 conversions that cannot overflow (to double, logical or raw; widening; saturating) \tab kept \cr
 other arithmetic (\code{+}, \code{*}, \code{/}, \code{^}, the \code{_wrap} forms), elementary functions, other bitwise operations, \code{cumsum}, \code{cumprod}, base fallbacks \tab unknown \cr
-\code{x[i]} \tab \code{TRUE} kept unless \code{i} selects a missing element; otherwise unknown \cr
+\code{x[i]} \tab for a \code{TRUE} \code{x}, \code{TRUE}, or \code{FALSE} when \code{i} selects a missing element (\code{NA}, past the end, a name); otherwise unknown \cr
 \code{x[i] <- value} \tab unknown \cr
 \code{length(x) <- n} \tab \code{TRUE} kept when shortening; otherwise unknown \cr
 \code{c(...)} \tab \code{FALSE} if any part is \code{FALSE}; \code{TRUE} if every \code{simd_vec} part is \code{TRUE} and the plain parts have no missing value; otherwise unknown \cr

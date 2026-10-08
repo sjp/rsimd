@@ -122,6 +122,12 @@ SEXP rsimd_exit(SEXP out) {
 static SEXP sym_impl, sym_precision, sym_math_accuracy, sym_na_check;
 static SEXP sym_sv_impl, sym_sv_na_token;
 
+/* The class attributes of a simd_vec result, and the values of its
+   rsimd_impl attribute by tier: made once (preserved) and shared by every
+   result. rsimd_sv_stamp() gives an object it flags a class vector of its
+   own. */
+static SEXP sv_cls, sv_cls_i64, sv_impl_value[RSIMD_TIER_COUNT];
+
 /* The value of option rsimd.impl that rsimd_entry() last synced with: its
    CHARSXP (preserved, so that its address is not reused), or R_NilValue
    when the option was unset. impl_synced is 0 before the first sync and
@@ -270,7 +276,7 @@ static int scalar_is_na(const rsimd_in *v) {
    operands are pinned to different tiers. */
 static void sv_note(rsimd_in *v, const char *arg) {
   SEXP x = v->sx, impl;
-  if (Rf_inherits(x, "simd_vec")) {
+  if (Rf_isObject(x) && Rf_inherits(x, "simd_vec")) {
     sv_call.seen = 1;
     if (rsimd_sv_flag(x) == 1) v->no_na_hint = 1;
     impl = Rf_getAttrib(x, sym_sv_impl);
@@ -364,9 +370,17 @@ SEXP rsimd_sv_stamp(SEXP x, int flag) {
   if (flag < 0) {
     sv_drop_token(x, token_sym);
   } else {
-    SEXP value = PROTECT(Rf_ScalarLogical(flag != 0));
-    Rf_setAttrib(x, token_sym,
-                 PROTECT(R_MakeExternalPtr((void *) x, sv_attr(x, R_ClassSymbol), value)));
+    SEXP value, cls = sv_attr(x, R_ClassSymbol);
+    /* The tag must be a class vector no other object has (as a shared
+       result class or a constant of R code has): class(x) <- class(y),
+       after an edit made while x had no class, would put it back. */
+    if (MAYBE_SHARED(cls)) {
+      cls = PROTECT(Rf_duplicate(cls));
+      Rf_setAttrib(x, R_ClassSymbol, cls);
+      UNPROTECT(1);
+    }
+    value = PROTECT(Rf_ScalarLogical(flag != 0));
+    Rf_setAttrib(x, token_sym, PROTECT(R_MakeExternalPtr((void *) x, cls, value)));
     UNPROTECT(2);
   }
   UNPROTECT(1);
@@ -405,26 +419,26 @@ SEXP rsimd_sv_bare(SEXP x) {
 }
 
 SEXP rsimd_sv_result(SEXP out, int keeps_na_free) {
-  SEXP cls, impl, impl_sym;
+  SEXP impl_sym = sym_sv_impl;
   int na_free;
   if (!sv_call.seen) return out;
   if (MAYBE_REFERENCED(out)) out = Rf_shallow_duplicate(out);
   PROTECT(out);
-  if (Rf_inherits(out, "integer64")) {
-    cls = PROTECT(Rf_allocVector(STRSXP, 2));
-    SET_STRING_ELT(cls, 0, Rf_mkChar("simd_vec"));
-    SET_STRING_ELT(cls, 1, Rf_mkChar("integer64"));
-  } else {
-    cls = PROTECT(Rf_mkString("simd_vec"));
+  Rf_setAttrib(out, R_ClassSymbol,
+               Rf_isObject(out) && Rf_inherits(out, "integer64") ? sv_cls_i64 : sv_cls);
+  if (sv_call.pin != RSIMD_TIER_COUNT) {
+    SEXP *impl = &sv_impl_value[sv_call.pin];
+    if (*impl == NULL) {
+      *impl = Rf_mkString(rsimd_tier_names[sv_call.pin]);
+      R_PreserveObject(*impl);
+    }
+    Rf_setAttrib(out, impl_sym, *impl);
+  } else if (sv_attr(out, impl_sym) != R_NilValue) {
+    Rf_setAttrib(out, impl_sym, R_NilValue);
   }
-  Rf_setAttrib(out, R_ClassSymbol, cls);
-  impl_sym = sym_sv_impl;
-  impl = PROTECT(sv_call.pin == RSIMD_TIER_COUNT ? R_NilValue
-                                                 : Rf_mkString(rsimd_tier_names[sv_call.pin]));
-  Rf_setAttrib(out, impl_sym, impl);
   na_free = TYPEOF(out) == RAWSXP || (keeps_na_free && sv_call.na_free);
   rsimd_sv_stamp(out, na_free ? 1 : -1);
-  UNPROTECT(3);
+  UNPROTECT(1);
   return out;
 }
 
@@ -486,6 +500,12 @@ void rsimd_rvec_init(void) {
   sym_na_check = Rf_install("rsimd.na_check");
   sym_sv_impl = Rf_install("rsimd_impl");
   sym_sv_na_token = Rf_install("rsimd_na_token");
+  sv_cls = Rf_mkString("simd_vec");
+  R_PreserveObject(sv_cls);
+  sv_cls_i64 = Rf_allocVector(STRSXP, 2);
+  R_PreserveObject(sv_cls_i64);
+  SET_STRING_ELT(sv_cls_i64, 0, Rf_mkChar("simd_vec"));
+  SET_STRING_ELT(sv_cls_i64, 1, Rf_mkChar("integer64"));
   if (s == NULL || *s == '\0') return;
   for (p = s; *p != '\0'; p++) {
     if (*p < '0' || *p > '9') return;
