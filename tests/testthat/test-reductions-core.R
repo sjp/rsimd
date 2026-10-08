@@ -509,6 +509,28 @@ test_that("warnings are emitted once per call, as base R", {
   expect_warning(simd_all(as.raw(1)), "coercing argument of type 'raw' to logical", fixed = TRUE)
 })
 
+test_that("complex any/all read values as base R does, with its warning", {
+  cplx <- function(r, i) complex(real = r, imaginary = i)
+  vals <- list(
+    0i, 1i, cplx(1, 0), cplx(-0, -0), NA_complex_, cplx(NaN, 0), cplx(0, NaN),
+    cplx(NA, 1), cplx(NaN, 1), cplx(Inf, 0), c(0i, NA_complex_), c(1i, NA_complex_),
+    c(NA_complex_, 0i, 1i), complex(0), c(rep(1i, 5000), 0i), c(rep(0i, 5000), 1i)
+  )
+  for (v in vals) {
+    for (rm in c(FALSE, TRUE)) {
+      for (f in list(c(simd_any, any), c(simd_all, all))) {
+        expect_tiers_give(suppressWarnings(f[[2]](v, na.rm = rm)),
+          function(...) suppressWarnings(f[[1]](...)), v, na.rm = rm)
+      }
+    }
+  }
+  expect_warning(simd_any(1i), "coercing argument of type 'complex' to logical", fixed = TRUE)
+  expect_warning(simd_all(c(0i, 1i)), "coercing argument of type 'complex' to logical",
+    fixed = TRUE)
+  expect_no_warning(simd_any(complex(0)))
+  expect_identical(suppressWarnings(simd_any(simd_vec(c(0i, 1i)))), TRUE)
+})
+
 test_that("arguments and types are validated", {
   for (f in c("simd_prod", "simd_mean", "simd_min", "simd_max", "simd_range")) {
     expect_error(get(f)(as.raw(1)), "invalid 'type' (raw) of argument", fixed = TRUE)
@@ -516,7 +538,7 @@ test_that("arguments and types are validated", {
   for (f in c("simd_min", "simd_max", "simd_range")) {
     expect_error(get(f)(1i), "invalid 'type' (complex) of argument", fixed = TRUE)
   }
-  no_complex <- c("simd_which_min", "simd_which_max", "simd_any", "simd_all")
+  no_complex <- c("simd_which_min", "simd_which_max")
   for (f in no_complex) {
     msg <- tryCatch(get(f)(1i), error = conditionMessage)
     expect_identical(msg, paste0(f, "() does not support 'x' of type complex"))

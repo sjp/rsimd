@@ -579,10 +579,28 @@ SEXP C_simd_which(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   return rsimd_exit(simd_which_impl(x, max, absval, accuracy));
 }
 
-/* any (all = FALSE) or all (all = TRUE) with three-valued logic. Double and
-   raw inputs are read as logical values without being converted, with
-   base R's warning; integer64 inputs (non-zero TRUE) without one, as in
-   bit64; reading stops once the answer is known. */
+/* The any/all flags of n complex values, read as logical as base R does:
+   NA when either part is NaN (NA included), otherwise TRUE when either part
+   is non-zero. Stops after the first TRUE or FALSE as `stop` says. */
+static void anyall_c128(const Rcomplex *x, R_xlen_t n, int stop, rsimd_reduce_result *r) {
+  R_xlen_t i;
+  for (i = 0; i < n; i++) {
+    if (isnan(x[i].r) || isnan(x[i].i)) {
+      r->saw_na = 1;
+    } else if (x[i].r == 0 && x[i].i == 0) {
+      r->any_false = 1;
+      if (stop == RSIMD_STOP_FALSE) return;
+    } else {
+      r->any_true = 1;
+      if (stop == RSIMD_STOP_TRUE) return;
+    }
+  }
+}
+
+/* any (all = FALSE) or all (all = TRUE) with three-valued logic. Double,
+   raw and complex inputs are read as logical values without being
+   converted, with base R's warning; integer64 inputs (non-zero TRUE)
+   without one, as in bit64; reading stops once the answer is known. */
 static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
   rsimd_reduce_result r;
   rsimd_opts o;
@@ -624,6 +642,13 @@ static SEXP simd_anyall_impl(SEXP x, SEXP all, SEXP na_rm) {
   case RSIMD_I64:
     RSIMD_FOREACH_CHUNK(&in, double, px, len, off, {
       rsimd_active->anyall_i64((const int64_t *) px, len, stop, &r, &o);
+      if (RSIMD_DONE_) break;
+    });
+    break;
+  case RSIMD_C128:
+    if (in.n > 0) rsimd_warn("coercing argument of type 'complex' to logical");
+    RSIMD_FOREACH_CHUNK(&in, Rcomplex, px, len, off, {
+      anyall_c128(px, len, stop, &r);
       if (RSIMD_DONE_) break;
     });
     break;
@@ -983,6 +1008,30 @@ static void fill_after_nan(const rsimd_in *in, R_xlen_t i, double *out) {
   }
 }
 
+/* Scan `which` (as for simd_scan_impl) of raw x, as base R: on the values
+   converted to double, with a double result. Raw values are never
+   missing, so the scan runs to the end. */
+static SEXP raw_scan(const rsimd_in *in, int which, rsimd_scan_state *s, const rsimd_opts *o) {
+  double buf[RSIMD_CHUNK];
+  SEXP out = PROTECT(rsimd_alloc_like(RSIMD_F64, in->n));
+  double *po = (double *) rsimd_out_ptr(out);
+
+  RSIMD_FOREACH_CHUNK(in, Rbyte, px, len, off, {
+    R_xlen_t j, m;
+    for (j = 0; j < len; j += m) {
+      m = len - j < RSIMD_CHUNK ? len - j : RSIMD_CHUNK;
+      rsimd_active->convert(RSIMD_CVT_U8_F64, RSIMD_CVT_CHECKED, px + j, m, buf);
+      switch (which) {
+      case 0: rsimd_active->cumsum_f64(buf, m, po + off + j, s, o); break;
+      case 1: rsimd_active->cumprod_f64(buf, m, po + off + j, s); break;
+      default: rsimd_active->cumminmax_f64(buf, m, which == 3, po + off + j, s); break;
+      }
+    }
+  });
+  UNPROTECT(1);
+  return out;
+}
+
 /* cumsum (op 0), cumprod (op 1), cummin (op 2) or cummax (op 3) of x, with
    base R's result types: double for double x and for cumprod, integer for
    the others on integer and logical x, integer64 for cumsum, cummin and
@@ -990,7 +1039,7 @@ static void fill_after_nan(const rsimd_in *in, R_xlen_t i, double *out) {
    missing; an integer cumsum that leaves the int32 range is NA from there
    on, with base R's warning, and an integer64 one that leaves int64 with
    bit64's. cumsum and cumprod of complex x are complex, computed and
-   NA-fixed as base R does. */
+   NA-fixed as base R does. Raw x gives a double result, as in base R. */
 static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
   rsimd_scan_state s;
   rsimd_opts o;
@@ -1024,6 +1073,7 @@ static SEXP simd_scan_impl(SEXP x, SEXP op, SEXP precision) {
     return out;
   }
   if (in.type == RSIMD_C128 && which <= 1) return rsimd_c128_scan(&in, which);
+  if (in.type == RSIMD_U8) return raw_scan(&in, which, &s, &o);
   if (!is_numeric(in.type)) bad_type(in.type);
   out = PROTECT(rsimd_alloc_like(in.type == RSIMD_F64 || which == 1 ? RSIMD_F64 : RSIMD_I32, in.n));
 

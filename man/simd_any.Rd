@@ -8,8 +8,8 @@ simd_any(x, ..., na.rm = FALSE)
 simd_all(x, ..., na.rm = FALSE)
 }
 \arguments{
-\item{x}{A logical, integer, double, raw or \pkg{bit64} \code{integer64}
-vector.}
+\item{x}{A logical, integer, double, raw, complex or \pkg{bit64}
+\code{integer64} vector.}
 \item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm}
 must be named, so that an extra vector is not read as \code{na.rm}. Combine
 several vectors with \code{c()}: unlike \code{any(x, y)},
@@ -30,17 +30,20 @@ an element is \code{TRUE}, otherwise \code{NA} if an element is \code{NA}
 once the answer is known. The empty vector gives \code{FALSE} and
 \code{TRUE}.
 
-Integer, double and raw values are read as logical values without being
-converted: non-zero is \code{TRUE} and zero \code{FALSE}; an integer
-\code{NA} and a double \code{NA} or \code{NaN} are \code{NA}. As in base R,
-a non-empty double or raw \code{x} gives the warning \code{"coercing
-argument of type 'double' to logical"} (or \code{'raw'}). Integer64 values
+Integer, double, raw and complex values are read as logical values without
+being converted: non-zero is \code{TRUE} and zero \code{FALSE}; an integer
+\code{NA}, a double \code{NA} or \code{NaN} and a complex value with an
+\code{NA} or \code{NaN} part are \code{NA}, and otherwise a complex value is
+\code{TRUE} when either part is non-zero. As in base R, a non-empty double,
+raw or complex \code{x} gives the warning \code{"coercing argument of type
+'double' to logical"} (or \code{'raw'}, \code{'complex'}). Integer64 values
 are read the same way, without a warning, as in \pkg{bit64} (see
 \link{rsimd-integer64}).
 
 The results are the same for every implementation; all have their own
 kernels, except that on 32-bit ARM the double version uses the scalar
-\code{"none"} code. The precision mode does not apply.
+\code{"none"} code and every implementation reads complex values with
+the same scalar loop. The precision mode does not apply.
 }
 \value{
 \code{TRUE}, \code{FALSE} or \code{NA}.

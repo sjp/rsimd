@@ -14,7 +14,7 @@ simd_cummin(x)
 simd_cummax(x)
 }
 \arguments{
-\item{x}{A double, integer or logical vector; for \code{simd_cumsum()}
+\item{x}{A double, integer, logical or raw vector; for \code{simd_cumsum()}
 and \code{simd_cumprod()} also a complex vector, and except for
 \code{simd_cumprod()} a \pkg{bit64} \code{integer64} vector.}
 }
@@ -25,8 +25,9 @@ Running sums, products, minima and maxima of the elements of a vector, like
 }
 \details{
 The result types are base R's: \code{simd_cumprod()} always returns a
-double; the others return a double for double \code{x} and an integer for
-integer and logical \code{x}.
+double; the others return a double for double and raw \code{x} and an
+integer for integer and logical \code{x}. Raw values are scanned as
+doubles (\code{simd_cumsum(as.raw(1:3))} is \code{1 3 6}).
 
 As in base R, everything from the first missing value onward is missing:
 from the first \code{NaN} the results are \code{NaN}, and from the first

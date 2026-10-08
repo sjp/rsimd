@@ -111,13 +111,13 @@ simd_which_max_abs <- function(x) {
 
 simd_any <- function(x, ..., na.rm = FALSE) {
   if (...length()) .dots_error("simd_any", named = "na.rm")
-  if (is.object(x) || is.complex(x)) .check_supported(x, "simd_any", "complex", character())
+  if (is.object(x)) .check_data(x)
   .Call(C_simd_anyall, x, FALSE, na.rm)
 }
 
 simd_all <- function(x, ..., na.rm = FALSE) {
   if (...length()) .dots_error("simd_all", named = "na.rm")
-  if (is.object(x) || is.complex(x)) .check_supported(x, "simd_all", "complex", character())
+  if (is.object(x)) .check_data(x)
   .Call(C_simd_anyall, x, TRUE, na.rm)
 }
 

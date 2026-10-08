@@ -273,9 +273,29 @@ test_that("scans carry across chunk boundaries", {
   }
 })
 
+test_that("raw input is scanned as double, as in base R", {
+  set.seed(18)
+  x <- as.raw(sample(0:255, 10000, replace = TRUE))
+  ones <- as.raw(c(rep(255, 200), 0, 2))
+  for (f in scans) {
+    for (v in list(raw(0), as.raw(1:3), x, ones)) {
+      # The same as the double scan on every tier, so base R's own result
+      # for the exact ones (cumprod's tree products differ in the last bits).
+      res <- with_each_tier(function() list(f$simd(v), f$simd(as.double(v))))
+      for (tier in names(res)) {
+        expect_identical(res[[tier]][[1]], res[[tier]][[2]], info = tier)
+      }
+      if (!identical(f$simd, simd_cumprod) || length(v) < 10) {
+        expect_tiers_give(f$base(v), f$simd, v)
+      }
+    }
+  }
+  expect_identical(simd_cumsum(as.raw(1:3)), c(1, 3, 6))
+  expect_identical(simd_cummin(as.raw(c(3, 1, 2))), c(3, 1, 1))
+})
+
 test_that("argument errors and attributes", {
   for (f in scans) {
-    expect_error(f$simd(as.raw(1:3)), "invalid 'type' (raw) of argument", fixed = TRUE)
     if (identical(f$simd, simd_cummin) || identical(f$simd, simd_cummax)) {
       expect_error(f$simd(c(1i, 2i)), "does not support 'x' of type complex$")
     }
