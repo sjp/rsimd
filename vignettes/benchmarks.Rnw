@@ -208,8 +208,14 @@ code.
   into C, checking arguments and selecting a kernel, about half a
   microsecond, is a large part of the time, and base R's built-in
   operators, which have less to do per call, are often faster for simple
-  elementwise work such as \code{add} and \code{is\_na}. Reductions are
-  already faster than base R there.
+  elementwise work such as \code{add} and \code{is\_na}: about a tenth of a
+  microsecond per call, so for those base R stays faster up to about
+  $10^4$ elements. Reductions are already faster than base R there: sums,
+  dot products and cumulative sums from a few dozen elements, and
+  \code{mean}, \code{var}, \code{sd}, \code{range} and \code{pmin}, which
+  base R computes with more R-level work, from a single element. The
+  operators and \code{Math} methods of a \code{simd\_vec} add a few
+  microseconds per call on top of the \code{simd\_*()} function.
 \item \emph{Memory-bound operations.} \code{add}, \code{fma} and
   \code{is\_na} read and write whole vectors. At $10^7$ elements they are
   limited by memory bandwidth, for base R as much as for \pkg{rsimd}, so the

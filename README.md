@@ -88,10 +88,40 @@ There are several benchmarks for this package some of which are documented in a 
 vignette("benchmarks", package = "rsimd")
 ```
 
-As a general rule, you should expect improvements to be more clearly observable on vectors of at least 1,000 elements.
-Longer vectors (e.g. 10,000 or more) can observe significant performance improvements, often over 5 times faster.
+What to expect depends mostly on the kind of function:
 
-When you have shorter vectors (smaller than 1,000 elements), base R is simpler and just as fast.
+- **Reductions and scans** (`simd_sum()`, `simd_mean()`, `simd_var()`,
+  `simd_dot()`, `simd_range()`, `simd_cumsum()`, ...) are faster than base R
+  from a few dozen elements, and `simd_mean()`, `simd_var()`, `simd_sd()` and
+  `simd_range()` even from one. Above 10,000 elements they are typically 5 to
+  50 times faster, and more for `simd_mean()` and `simd_var()`. Extremes and
+  searches (`simd_min()`, `simd_which_max()`, `simd_any_na()`) gain less: 2 to
+  6 times on long vectors.
+- **Elementwise operations that base R does slowly**, such as `simd_pmin()`,
+  `simd_idiv()`, `simd_mod()`, `simd_round()` and `simd_sqrt()`, are faster
+  from at most a few hundred elements and 10 to 50 times faster on long
+  vectors.
+- **Elementwise arithmetic, comparisons, predicates and conversions**
+  (`simd_add()`, `simd_mul()`, `simd_fma()`, `simd_eq()`, `simd_is_na()`,
+  `simd_as_integer()`, ...) cost about half a microsecond per call, against a
+  tenth of that for a base R operator, so base R is faster below about
+  10,000 elements. On long vectors both are limited by memory bandwidth, and
+  `rsimd` is between 1 and 3 times faster.
+- **Elementary functions** gain only where SLEEF's vector code beats the
+  platform's C math library: `simd_sin()` is about 2.5 times faster on long
+  vectors here, while `simd_exp()`, `simd_pow()` and `simd_tanh()` are about
+  1.2 times faster and `simd_log()` is no faster than base R.
+- **64-bit integers** are 2 to 10 times faster than `bit64` at every length.
+
+For short vectors, use base R's operators for elementwise work and the
+`simd_*()` functions for reductions. The operators and `Math` methods of a
+`simd_vec` add a few microseconds per call on top of the `simd_*()`
+function, so `v + 1` is slower than base R until about 100,000 elements.
+
+These figures come from one arm64 Linux machine and will differ on other
+CPUs. On arm64 Linux, base R's `sum()`, `mean()` and `sum(x * y)` accumulate
+in software `long double`, which inflates those speed-ups; the vignette
+compares against the scalar `"none"` implementation too.
 
 ## Documentation
 
