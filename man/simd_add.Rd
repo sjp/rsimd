@@ -87,12 +87,16 @@ On doubles, \code{simd_idiv(x, y)} is the exact floor of the real quotient
 \code{x - simd_idiv(x, y) * y}, rounded once; it has the sign of \code{y}.
 These are what base R computes in \code{long double}: \code{-2 \%/\% Inf} is
 \code{-1}, \code{-2 \%\% Inf} is \code{Inf}, \code{x \%/\% 0} is
-\code{x / 0} and \code{x \%\% 0} and \code{Inf \%\% y} are \code{NaN}. Where
-base R's \code{long double} is not wide enough to be exact (on x86, or where
-there is none, as on arm64 macOS) base R can differ in the last bits for
-large quotients, and it warns \code{"probable complete loss of accuracy in
-modulus"} above a platform-dependent quotient; \pkg{rsimd} stays exact and
-never warns. A zero remainder is \code{0}, not \code{-0}, except that
+\code{x / 0} and \code{x \%\% 0} and \code{Inf \%\% y} are \code{NaN}. But
+base R's \code{\%\%} is only exact for quotients up to the precision of its
+\code{long double}: above about \eqn{2^{52}} where there is none (as on
+arm64 macOS), \eqn{2^{63}} on x86 and \eqn{2^{112}} with a 128-bit
+\code{long double}, it warns \code{"probable complete loss of accuracy in
+modulus"} and its result can be wrong in every bit (\code{1e300 \%\% 7} is
+often \code{0}, not \code{1}); and where \eqn{x / y} overflows, as with a
+subnormal divisor, it returns \code{NaN} without a warning (\code{1 \%\%
+5e-324} is \code{NaN}, not \code{0}). \pkg{rsimd} stays exact and never
+warns. A zero remainder is \code{0}, not \code{-0}, except that
 \code{simd_mod(x, Inf)} returns \code{x} unchanged as base R does.
 
 \rsimdSemantics
@@ -129,6 +133,7 @@ simd_add(1:5, 10L)
 simd_mul(c(1.5, NA, 3), 2)
 simd_idiv(c(-7, 7), 2)
 simd_mod(c(-7, 5.5), 2)
+simd_mod(c(1e300, 1), c(7, 5e-324))   # 1 and 0, exactly; base R gives 0 or NaN
 simd_add(.Machine$integer.max, 1L)    # NA with a warning
 simd_add_wrap(.Machine$integer.max, 2L)
 simd_add(c(1, 2), 1i)

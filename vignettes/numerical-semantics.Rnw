@@ -351,8 +351,9 @@ Odd functions of \code{-0} &
   returns \code{0}. &
   The IEEE 754 and C rule. Add \code{0} to turn \code{-0} into \code{0}. \\
 \code{simd\_idiv}, \code{simd\_mod} on doubles &
-  Always exact; base R computes in \code{long double} and can differ in
-  the last bits, or warn about loss of accuracy, for large quotients. &
+  Always exact; for very large quotients base R's \code{\%\%} warns about
+  loss of accuracy and can be wrong in every bit (often giving \code{0}),
+  and it gives \code{NaN} when \code{x / y} overflows. &
   Exactness. No workaround needed. \\
 Complex elementary functions &
   The SIMD implementations are within 2 to 5 ULP of the exact value
