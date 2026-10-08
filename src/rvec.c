@@ -120,7 +120,7 @@ SEXP rsimd_exit(SEXP out) {
 
 /* Option and attribute symbols, installed by rsimd_rvec_init(). */
 static SEXP sym_impl, sym_precision, sym_math_accuracy, sym_na_check;
-static SEXP sym_sv_impl, sym_sv_na_free, sym_sv_na_token;
+static SEXP sym_sv_impl, sym_sv_na_token;
 
 /* The value of option rsimd.impl that rsimd_entry() last synced with: its
    CHARSXP (preserved, so that its address is not reused), or R_NilValue
@@ -334,15 +334,15 @@ static SEXP sv_attr(SEXP x, SEXP name) {
 #endif
 
 int rsimd_sv_flag(SEXP x) {
-  SEXP flag, token;
+  SEXP token, flag;
   if (TYPEOF(x) == RAWSXP) return 1;
-  flag = sv_attr(x, sym_sv_na_free);
-  if (TYPEOF(flag) != LGLSXP || XLENGTH(flag) != 1 || LOGICAL_ELT(flag, 0) == NA_LOGICAL) {
-    return -1;
-  }
   token = sv_attr(x, sym_sv_na_token);
   if (TYPEOF(token) != EXTPTRSXP || R_ExternalPtrAddr(token) != (void *) x ||
-      MAYBE_SHARED(token)) {
+      MAYBE_SHARED(token) || R_ExternalPtrTag(token) != sv_attr(x, R_ClassSymbol)) {
+    return -1;
+  }
+  flag = R_ExternalPtrProtected(token);
+  if (TYPEOF(flag) != LGLSXP || XLENGTH(flag) != 1 || LOGICAL_ELT(flag, 0) == NA_LOGICAL) {
     return -1;
   }
   return LOGICAL_ELT(flag, 0);
@@ -359,14 +359,14 @@ static void sv_drop_token(SEXP x, SEXP token_sym) {
 }
 
 SEXP rsimd_sv_stamp(SEXP x, int flag) {
-  SEXP flag_sym = sym_sv_na_free, token_sym = sym_sv_na_token;
+  SEXP token_sym = sym_sv_na_token;
   PROTECT(x);
   if (flag < 0) {
-    Rf_setAttrib(x, flag_sym, R_NilValue);
     sv_drop_token(x, token_sym);
   } else {
-    Rf_setAttrib(x, flag_sym, PROTECT(Rf_ScalarLogical(flag != 0)));
-    Rf_setAttrib(x, token_sym, PROTECT(R_MakeExternalPtr((void *) x, R_NilValue, R_NilValue)));
+    SEXP value = PROTECT(Rf_ScalarLogical(flag != 0));
+    Rf_setAttrib(x, token_sym,
+                 PROTECT(R_MakeExternalPtr((void *) x, sv_attr(x, R_ClassSymbol), value)));
     UNPROTECT(2);
   }
   UNPROTECT(1);
@@ -380,7 +380,6 @@ SEXP rsimd_sv_release(SEXP x) {
   }
   PROTECT(x);
   sv_drop_token(x, token_sym);
-  Rf_setAttrib(x, sym_sv_na_free, R_NilValue);
   UNPROTECT(1);
   return x;
 }
@@ -486,7 +485,6 @@ void rsimd_rvec_init(void) {
   sym_math_accuracy = Rf_install("rsimd.math_accuracy");
   sym_na_check = Rf_install("rsimd.na_check");
   sym_sv_impl = Rf_install("rsimd_impl");
-  sym_sv_na_free = Rf_install("rsimd_na_free");
   sym_sv_na_token = Rf_install("rsimd_na_token");
   if (s == NULL || *s == '\0') return;
   for (p = s; *p != '\0'; p++) {

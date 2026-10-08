@@ -409,16 +409,21 @@ void rsimd_warn(const char *fmt, ...)
 void rsimd_warn_flush(void);
 SEXP rsimd_exit(SEXP out);
 
-/* The NA-free flag of a simd_vec is attribute rsimd_na_free (TRUE or
-   FALSE) together with attribute rsimd_na_token, an external pointer to
-   the object itself. Base R copies attributes onto new data (pmin(),
-   storage.mode<-, Re(), ...), so the flag counts only while the token
-   points at x and is not shared: a copy shares the token, which raises its
-   reference count for good (GC never lowers it), so the copy and the
-   original both read as unknown, and a later object at a reused address
-   cannot pick the flag up either. A token is also never valid after
-   unserialize() (the pointer comes back NULL). Tokens are read without
-   Rf_getAttrib(), which marks the value it returns as shared.
+/* The NA-free flag of a simd_vec lives in attribute rsimd_na_token, an
+   external pointer to the object itself whose protected value is the flag
+   (TRUE or FALSE), so that R code cannot forge it. Base R copies
+   attributes onto new data (pmin(), storage.mode<-, Re(), ...), so the
+   flag counts only while the token points at x and is not shared: a copy
+   shares the token, which raises its reference count for good (GC never
+   lowers it), so the copy and the original both read as unknown, and a
+   later object at a reused address cannot pick the flag up either. The
+   token's tag is the class attribute x had when it was stamped, and the
+   flag counts only while x still has that very vector: class(x) <- NULL
+   on an unshared x does not copy it, so a primitive [<- could then change
+   the data in place, but class<- installs a new vector when the class is
+   put back. A token is also never valid after unserialize() (the pointer
+   comes back NULL). Tokens and classes are read without Rf_getAttrib(),
+   which marks the value it returns as shared.
 
    rsimd_sv_flag() returns 1 (known NA-free), 0 (known to contain a
    missing value) or -1 (unknown) for x; raw data is always 1.
