@@ -279,8 +279,12 @@ overhead_ops <- list(
     base = quote(as.integer(xc))
   ),
   list(op = "dot", type = "double", simd = quote(simd_dot(x, y)), base = quote(sum(x * y))),
-  list(op = "mul", type = "complex", simd = quote(simd_mul(cx, cy)), base = quote(cx * cy))
+  list(op = "mul", type = "complex", simd = quote(simd_mul(cx, cy)), base = quote(cx * cy)),
+  if (requireNamespace("bit64", quietly = TRUE)) {
+    list(op = "add", type = "integer64", simd = quote(simd_add(xi64, yi64)), base = quote(xi64 + yi64))
+  }
 )
+overhead_ops <- Filter(Negate(is.null), overhead_ops)
 overhead_sizes <- c(1, 10, 100)
 op_names <- unique(vapply(c(ops, math_ops, overhead_ops), `[[`, "", "op"))
 
@@ -348,6 +352,11 @@ make_inputs <- function(n) {
   # Raw bytes, drawn last so that the inputs above stay the same.
   env$rx <- as.raw(sample.int(256L, n, replace = TRUE) - 1L)
   env$ry <- as.raw(sample.int(256L, n, replace = TRUE) - 1L)
+  # integer64 copies of xi and yi (no further draws), when bit64 is there.
+  if (requireNamespace("bit64", quietly = TRUE)) {
+    env$xi64 <- bit64::as.integer64(env$xi)
+    env$yi64 <- bit64::as.integer64(env$yi)
+  }
   env
 }
 

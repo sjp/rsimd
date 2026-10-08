@@ -39,16 +39,17 @@
 # integer64 operands are converted in any case, the warning still being
 # given only when a double is present.
 .i64_to_double <- function(args, call, always = FALSE) {
-  i64 <- vapply(args, inherits, NA, what = "integer64")
-  if (!any(i64)) {
+  i64 <- dbl <- FALSE
+  for (a in args) {
+    if (inherits(a, "integer64")) i64 <- TRUE else if (is.double(a)) dbl <- TRUE
+  }
+  if (!i64 || !(dbl || always)) {
     return(args)
   }
-  dbl <- vapply(args, function(a) is.double(a) && !inherits(a, "integer64"), NA)
-  if (!any(dbl) && !always) {
-    return(args)
+  if (dbl) warning(simpleWarning("integer64 coerced to double", call))
+  for (i in seq_along(args)) {
+    if (inherits(args[[i]], "integer64")) args[[i]] <- .as_etype(args[[i]], "double")
   }
-  if (any(dbl)) warning(simpleWarning("integer64 coerced to double", call))
-  args[i64] <- lapply(args[i64], .as_etype, to = "double")
   args
 }
 

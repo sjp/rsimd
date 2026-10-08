@@ -22,11 +22,22 @@
 # Checks every operand in `args` (a named list) for function `fun`; the
 # _wrap ops (`wrap = TRUE`) also reject doubles.
 .ew_check <- function(fun, args, wrap = FALSE) {
+  if (any(fun == .ew_i64) && all(vapply(args, .is_i64_data, NA))) {
+    return(invisible())
+  }
   cplx <- fun %in% .ew_complex
   unsupported <- c(if (!(fun %in% .ew_i64)) "integer64", if (!cplx) "complex", if (wrap) "double")
   if (cplx && length(args) == 2L) .check_complex_i64(fun, args[[1L]], args[[2L]])
   for (arg in names(args)) .check_supported(args[[arg]], fun, unsupported, character(), arg)
   invisible()
+}
+
+# Whether x is an integer64, plain or as a simd_vec (no other class), which
+# needs no further checks for a function that takes integer64.
+.is_i64_data <- function(x) {
+  cls <- oldClass(x)
+  n <- length(cls)
+  n > 0L && n <= 2L && cls[[n]] == "integer64" && (n == 1L || cls[[1L]] == "simd_vec")
 }
 
 # Complex operands do not combine with integer64 ones.
@@ -39,9 +50,11 @@
 }
 
 # The operands in `args` (a named list) of elementwise function `fun`,
-# returned as they are when none has a class other than a plain simd_vec
-# (so none is integer64) and they are all complex (for a function that
-# takes complex) or none is (nor, for the _wrap ops, double); otherwise
+# returned as they are when none has a class other than a simd_vec or
+# integer64 (.is_i64_data()) and they are all complex (for a function that
+# takes complex) or none is (nor, for the _wrap ops, double; with an
+# integer64 operand, for a function that takes integer64 other than
+# simd_div, nor double); otherwise
 # checked (.ew_check()) and converted for the C side: with a complex
 # operand the others become complex, otherwise integer64 operands become
 # double when another operand is a double (always for simd_div, whose
@@ -49,14 +62,29 @@
 .ew_args <- function(fun, args, wrap = FALSE, call = sys.call(-1L)) {
   plain <- TRUE
   ncplx <- 0L
-  dbl <- raw <- FALSE
+  i64 <- dbl <- raw <- FALSE
   for (a in args) {
-    if (is.object(a) && !identical(oldClass(a), "simd_vec")) plain <- FALSE
+    if (is.object(a)) {
+      # .is_i64_data() inline: this loop is the per-call cost.
+      cls <- oldClass(a)
+      n <- length(cls)
+      if (cls[[n]] == "integer64" && (n == 1L || (n == 2L && cls[[1L]] == "simd_vec"))) {
+        i64 <- TRUE
+        next
+      }
+      if (n != 1L || cls != "simd_vec") plain <- FALSE
+    }
     if (is.complex(a)) ncplx <- ncplx + 1L
     if (is.double(a)) dbl <- TRUE
     if (is.raw(a)) raw <- TRUE
   }
-  if (plain && (if (ncplx) ncplx == length(args) && fun %in% .ew_complex else !(wrap && dbl))) {
+  if (plain && (if (ncplx) {
+    ncplx == length(args) && !i64 && fun %in% .ew_complex
+  } else if (i64) {
+    !dbl && fun != "simd_div" && any(fun == .ew_i64)
+  } else {
+    !(wrap && dbl)
+  })) {
     return(args)
   }
   .ew_check(fun, args, wrap)
