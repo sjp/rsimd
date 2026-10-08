@@ -31,7 +31,7 @@ expect_sv <- function(x, value, impl = NULL, na_free = NULL) {
     sort(names(attributes(x))),
     sort(c(
       "class", if (!is.null(impl)) "rsimd_impl",
-      if (!is.null(na_free)) c("rsimd_na_free", "rsimd_na_token")
+      if (!is.null(na_free)) "rsimd_na_token"
     )),
     info = c("attributes", impl)
   )
@@ -283,7 +283,7 @@ test_that("the input is not modified", {
   y <- simd_floor(x)
   simd_impl(y) <- "none"
   z <- simd_as_double(x)
-  attr(z, "rsimd_na_free") <- FALSE
+  class(z) <- NULL
   expect_identical(x, before)
 })
 
@@ -728,6 +728,29 @@ test_that("the flag belongs to the object it was set on", {
   attributes(g) <- attributes(x)
   expect_null(simd_na_free(g))
   expect_identical(sum(g), NA_real_)
+  # Setting the old flag attribute on an object with a valid token of its
+  # own changes nothing.
+  f <- simd_vec(c(1L, NA, 3L), check_na = TRUE)
+  attr(f, "rsimd_na_free") <- TRUE
+  expect_false(simd_na_free(f))
+  expect_identical(sum(f), NA_integer_)
+  expect_true(anyNA(f))
+
+  # Any change of class voids the flag: without one, [<- can change the
+  # data in place.
+  g <- simd_vec(1:3, check_na = TRUE)
+  class(g) <- NULL
+  g[2] <- NA
+  class(g) <- "simd_vec"
+  expect_null(simd_na_free(g))
+  expect_true(anyNA(g))
+  expect_identical(sum(g), NA_integer_)
+  expect_identical(min(g), NA_integer_)
+  expect_identical(mean(g), NA_real_)
+  expect_identical(simd_count_na(g), 1)
+  g <- simd_vec(1:3, check_na = TRUE)
+  oldClass(g) <- c("foo", oldClass(g))
+  expect_null(simd_na_free(g))
 
   # A reloaded flag is unknown (the token's pointer is not saved).
   x <- simd_vec(c(1, 2, 3), check_na = TRUE)
@@ -1049,6 +1072,24 @@ test_that("rev, sort, head and tail keep the class; rep and unique do not", {
   expect_sv(tail(x, 1), 2, "none", TRUE)
   expect_false(is_simd_vec(rep(x, 2)))
   expect_false(is_simd_vec(unique(x)))
+})
+
+test_that("match and %in% compare the data, not its 15-digit strings", {
+  d <- c(0.1 + 0.2, 1/3, 1e15 + 1)
+  tab <- c(0.3, 0.333333333333333, 1e15 + 2)
+  x <- simd_vec(d, impl = "none", check_na = TRUE)
+  expect_identical(match(x, tab), match(d, tab))
+  expect_identical(match(tab, x), match(tab, d))
+  expect_identical(match(x, x), 1:3)
+  expect_identical(x %in% 0.3, d %in% 0.3)
+  expect_identical(is.element(x, d), rep(TRUE, 3))
+  expect_identical(setdiff(x, tab), setdiff(d, tab))
+  expect_identical(match(simd_vec(c(2L, NA)), c(NA, 2L)), c(2L, 1L))
+  expect_identical(mtfrm(x), d)
+  skip_if_not_installed("bit64")
+  b <- simd_vec(bit64::as.integer64(c("9007199254740993", NA)))
+  expect_identical(match(b, bit64::as.integer64(c(NA, "9007199254740993"))), c(2L, 1L))
+  expect_identical(match(b, bit64::as.integer64("9007199254740992")), c(NA_integer_, NA_integer_))
 })
 
 test_that("unwrapping returns plain vectors", {

@@ -51,12 +51,12 @@ returns plain vectors.
   are reached for what \pkg{rsimd} does not implement.}
 \item{\code{rsimd_impl}}{The pinned implementation, absent when the
   object is not pinned.}
-\item{\code{rsimd_na_free}}{\code{TRUE} if the data is known to contain no
-  \code{NA} or \code{NaN}, \code{FALSE} if it is known to contain one,
-  absent when unknown.}
-\item{\code{rsimd_na_token}}{An external pointer that ties the flag to
-  this object (see \dQuote{Where the flag holds} below); present with
-  \code{rsimd_na_free}.}
+\item{\code{rsimd_na_token}}{An external pointer that holds the
+  NA-free flag and ties it to this object (see \dQuote{Where the flag
+  holds} below), absent when the flag is unknown. The flag is
+  \code{TRUE} if the data is known to contain no \code{NA} or
+  \code{NaN} and \code{FALSE} if it is known to contain one; read it
+  with \code{simd_na_free()}.}
 }
 \code{simd_vec()} drops every other attribute of \code{x} (names,
 dimensions, dimnames). Given a \code{simd_vec}, it replaces the pin only
@@ -129,9 +129,16 @@ for the object it was set on. Its token points at that object, and the
 flag reads as unknown (\code{simd_na_free()} gives \code{NULL}) on any
 object the attributes were copied to, and also on the original once a
 copy has been made: R cannot tell which of the two still holds the data
-the flag describes. A flag forged with \code{attr<-} or
-\code{structure()} is unknown too, and so is a flag reloaded by
-\code{readRDS()} or \code{unserialize()}. Assigning into a copy
+the flag describes. Any change of class voids the flag
+too, even \code{class(x) <- NULL} followed by \code{class(x) <-
+"simd_vec"}: on an unshared \code{x} the first assignment makes no copy,
+so \code{x[i] <- NA} in between would change the data in place. A flag
+reloaded by \code{readRDS()} or \code{unserialize()} is unknown, and R
+code cannot set one (\code{attr<-} and \code{structure()} cannot make a
+valid token). Two in-place routes stay open: putting back the class
+vector that was taken off (\code{cl <- class(x); class(x) <- NULL;
+x[1] <- NA; class(x) <- cl}), and C code that writes into \code{x} by
+reference; take the data out with \code{simd_unwrap()} instead. Assigning into a copy
 (\code{y <- x; y[1] <- 0}), passing \code{x} to functions, putting it in
 a list, subsetting, sorting and printing leave the flag of \code{x}
 alone; \code{attributes(x)}, \code{saveRDS(x)} and \code{serialize(x)}
@@ -200,6 +207,8 @@ too (an \code{integer64} object converts \code{value} to
 \code{integer64}); \code{x[[i]]} returns a plain element.
 \code{is.na(x)} calls \code{\link{simd_is_na}} and returns a plain
 logical vector.
+\code{match()}, \code{\%in\%} and so \code{setdiff()}, \code{union()}
+and \code{intersect()} compare the data, as for plain data.
 A \code{simd_vec} has no names, dimensions or dimnames. Setting them with a
 value other than \code{NULL} (\code{names<-}, \code{dim<-},
 \code{dimnames<-}) unwraps: the result is the plain data with the value

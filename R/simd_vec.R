@@ -1,15 +1,15 @@
 # The simd_vec wrapper: an atomic vector with class "simd_vec" (or
 # c("simd_vec", "integer64")), an optional pinned implementation (attribute
-# rsimd_impl) and a known-NA-free flag (attribute rsimd_na_free: TRUE,
-# FALSE or absent for unknown, with attribute rsimd_na_token).
+# rsimd_impl) and a known-NA-free flag (TRUE or FALSE, held by attribute
+# rsimd_na_token; absent for unknown).
 #
 # Base R copies attributes onto new data (pmin(), storage.mode<-, ...), so
 # the flag is only read through .sv_flag(), which trusts it only while its
-# token is this object's own and unshared (see rsimd_sv_flag() in
-# src/rvec.h), and only set through .Call(C_simd_sv_stamp, ...), which
-# makes a fresh token. The methods here strip a simd_vec with .subset(),
-# never by copying its attributes, so that they do not share the token of
-# the original and void its flag.
+# token is this object's own and unshared and the class is the one it was
+# set with (see rsimd_sv_flag() in src/rvec.h), and only set through
+# .Call(C_simd_sv_stamp, ...), which makes a fresh token. The methods here
+# strip a simd_vec with .subset(), never by copying its attributes, so that
+# they do not share the token of the original and void its flag.
 #
 # The simd_* functions themselves handle simd_vec operands on the C side
 # (src/rvec.c): they run under the operands' pin, skip NA checks for
@@ -355,6 +355,14 @@ is.na.simd_vec <- function(x) simd_is_na(x)
 # The data, for order() and so sort(): xtfrm.default would unclass(x),
 # copying the attributes and so voiding x's NA-free flag.
 xtfrm.simd_vec <- function(x) xtfrm(.sv_strip(x))
+
+# The data, for match() and so %in%: mtfrm.default would compare through
+# as.character(x), i.e. 15 significant digits. integer64 data keeps bit64's
+# transform.
+mtfrm.simd_vec <- function(x) {
+  data <- simd_unwrap(x)
+  if (inherits(data, "integer64")) mtfrm(data) else data
+}
 
 anyNA.simd_vec <- function(x, recursive = FALSE) {
   flag <- .sv_flag(x)
