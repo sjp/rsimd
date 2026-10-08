@@ -146,7 +146,8 @@ math1_table <- function() {
   # glibc's cbrt is up to 3 ULP from the exact value on aarch64, and base R
   # has no cbrt: compare with the none tier (libm) at 4 ULP and with
   # sign(x) * abs(x)^(1/3) loosely. glibc 2.43's sinpi is up to 2 ULP off.
-  # The none tier's tanpi is built on libm's tan, about 2 ULP off on macOS.
+  # The none tier's tanpi is built on libm's tan, about 2 ULP off on macOS;
+  # glibc's keeps it within 2 ULP of the SIMD tiers, near the poles too.
   list(
     exp = list(simd_exp, exp, dom(-750, 710)),
     exp2 = list(simd_exp2, function(x) 2^x, dom(-1080, 1025)),
@@ -165,7 +166,7 @@ math1_table <- function() {
     atan = list(simd_atan, atan, dom(-300, 300, TRUE)),
     sinpi = list(simd_sinpi, sinpi, dom(-1e3, 1e3), base = 3, platform = TRUE),
     cospi = list(simd_cospi, cospi, dom(-1e3, 1e3), base = 3, platform = TRUE),
-    tanpi = list(simd_tanpi, NULL, dom(-1e3, 1e3), none = 3),
+    tanpi = list(simd_tanpi, NULL, dom(-1e3, 1e3), none = if (Sys.info()[["sysname"]] == "Linux") 2 else 3),
     sinh = list(simd_sinh, sinh, dom(-712, 712)),
     cosh = list(simd_cosh, cosh, dom(-712, 712)),
     tanh = list(simd_tanh, tanh, dom(-25, 25)),

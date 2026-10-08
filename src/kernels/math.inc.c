@@ -140,12 +140,16 @@ static inline double rsimd_cospi_small(double t) {
   return cos(hi) - sin(hi) * lo;
 }
 
-/* tan(pi t) for 0 < t < 1/2, corrected to first order for the low part
-   of pi t (within about 1 ULP, measured). */
+/* tan(pi t) for 0 < t < 1/2: tan(hi + lo) = (th + lo) / (1 - th lo) with
+   th = tan(hi) (tan(lo) is lo to far below a rounding), written as th plus
+   a correction. The correction is not small near the pole at 1/2, where th
+   lo approaches 1 (a first-order correction lost up to 11 bits there).
+   Within about 1 ULP, measured against tanl, the 2e7 doubles below 1/2
+   included. */
 static inline double rsimd_tanpi_small(double t) {
   double hi = RSIMD_MATH_PI * t, lo = rsimd_fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
   double th = tan(hi);
-  return th + (1.0 + th * th) * lo;
+  return th + (1.0 + th * th) * lo / (1.0 - th * lo);
 }
 
 /* sin(pi x): x reduced exactly modulo 2 into (-1, 1] as base R does, exact

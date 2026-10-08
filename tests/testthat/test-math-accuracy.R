@@ -95,6 +95,25 @@ test_that("cbrt and tanpi are close to their base R expressions", {
   }
 })
 
+test_that("tanpi keeps its accuracy next to the poles at the half-integers", {
+  # issue 014: the none tier corrected tan(hi) for the low part of pi x to
+  # first order only, which lost up to 11 bits within 1e-9 of 1/2 (off by
+  # 3e-3 at 1/2 - 2^-50). tan(pi (1/2 - t)) tan(pi t) = 1, and both sides of
+  # the reciprocal are computed independently. The none tier is the
+  # reference elsewhere, so it is checked here against identities.
+  t <- 2^-(2:53)
+  for (tier in tiers_to_test()) {
+    near <- simd_with_impl(tier, simd_tanpi(c(0.5 - t, t - 0.5)))
+    small <- simd_with_impl(tier, simd_tanpi(t))
+    expect_lte(max(abs(near[seq_along(t)] * small - 1)), 4 * .Machine$double.eps,
+      label = paste("tanpi(1/2 - t) tanpi(t) - 1 on", tier)
+    )
+    expect_lte(max(ulp_dist(near, c(1 / small, -1 / small))), 3,
+      label = paste("tanpi(1/2 - t) vs 1 / tanpi(t) on", tier)
+    )
+  }
+})
+
 test_that("binary functions match none and base R", {
   x <- c(math_specials(), math_random(1500, -300, 300, TRUE))
   y <- c(rev(math_specials()), math_random(1500, -300, 300, TRUE, seed = 7L))
