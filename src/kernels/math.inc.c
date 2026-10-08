@@ -57,6 +57,16 @@
    rsimd_rpow_f64 for fallback lanes, and the vector layer test compares
    the SIMD kernels with them. */
 
+/* C's pow, or powl as R's USE_POWL_IN_R_POW: Mingw-w64's pow is
+   inaccurate, so 64-bit Windows builds of R use powl. */
+static inline double rsimd_cpow_f64(double x, double y) {
+#if defined(_WIN64) && defined(__MINGW64_VERSION_MAJOR) && __MINGW64_VERSION_MAJOR >= 3
+  return (double) powl(x, y);
+#else
+  return pow(x, y);
+#endif
+}
+
 /* Base R's x ^ y (R_pow in R's arithmetic.c), including its special cases
    y == 2, y == 3 or 4 with |x| <= 11, x == 0, and its rules for infinite
    operands, which differ from C's pow: (-Inf)^0.5 and (-2)^Inf are NaN. */
@@ -68,18 +78,12 @@ static inline double rsimd_rpow_f64(double x, double y) {
     if (y < 0.0) return INFINITY;
     return y;
   }
-  if (x >= -11.0 && x <= 11.0) {
-    if (y == 4.0) return x * x * x * x;
-    if (y == 3.0) return x * x * x;
-  }
   if (isfinite(x) && isfinite(y)) {
-#if defined(_WIN64) && defined(__MINGW64_VERSION_MAJOR) && __MINGW64_VERSION_MAJOR >= 3
-    /* R's USE_POWL_IN_R_POW: Mingw-w64's pow is inaccurate, so 64-bit
-       Windows builds of R use powl. */
-    return (double) powl(x, y);
-#else
-    return pow(x, y);
-#endif
+    /* y first: x on both sides of 11 would make this branch unpredictable. */
+    if ((y == 4.0 || y == 3.0) && x >= -11.0 && x <= 11.0) {
+      return y == 4.0 ? x * x * x * x : x * x * x;
+    }
+    return rsimd_cpow_f64(x, y);
   }
   if (isnan(x) || isnan(y)) return x + y;
   if (isinf(x)) {
@@ -95,10 +99,26 @@ static inline double rsimd_rpow_f64(double x, double y) {
 
 /* x ^ y with the missing-value rule of the package's elementwise ops: 1
    when x is 1 or y is 0 (whatever the other operand), else NA if either
-   operand is NA. */
+   operand is NA. rsimd_rpow_f64 with the finite operands handled inline,
+   those outside base R's special cases tested together, without
+   branches, and sent straight to pow; for the others it gives 1 in the
+   first case and NaN whenever an operand is NaN otherwise, so only a NaN
+   result can need NA put back. */
 static inline double rsimd_pow_f64(double x, double y) {
-  if (x == 1.0 || y == 0.0) return 1.0;
-  return rsimd_na_merge_f64(rsimd_rpow_f64(x, y), x, y);
+  double r;
+  if (y == 2.0) return x * x;
+  if ((fabs(x) < INFINITY) & (fabs(y) < INFINITY)) {
+    if ((x != 0.0) & (x != 1.0) & (y != 0.0) & (y != 3.0) & (y != 4.0)) {
+      return rsimd_cpow_f64(x, y);
+    }
+    if (x == 1.0 || y == 0.0) return 1.0;
+    if (x == 0.0) return y > 0.0 ? 0.0 : INFINITY;
+    /* y is 3 or 4. */
+    if (x >= -11.0 && x <= 11.0) return y == 4.0 ? x * x * x * x : x * x * x;
+    return rsimd_cpow_f64(x, y);
+  }
+  r = rsimd_rpow_f64(x, y);
+  return isnan(r) ? rsimd_na_merge_f64(r, x, y) : r;
 }
 
 /* atan2 and hypot with R's math2 missing-value rule. */
@@ -505,10 +525,26 @@ static inline int rsimd_math2_libm(int op, const void *x, const void *y, R_xlen_
   int st = 0;
   R_xlen_t i;
   if (op == RSIMD_MATH_POW) {
-    /* Base R's ^ never warns. */
-    for (i = 0; i < n; i++) {
-      out[i] = rsimd_pow_f64(rsimd_math_get(x, flags, 0, i), rsimd_math_get(y, flags, 1, i));
+    /* Base R's ^ never warns. The common flags have their own loops, with
+       the flags constant. */
+#define RSIMD_MATH_POW_LOOP(fl)                                                  \
+  {                                                                              \
+    const double b0_ = ((fl) & RSIMD_EW_SCALAR(1)) && n > 0 ? rsimd_math_get(y, fl, 1, 0) : 0; \
+    for (i = 0; i < n; i++) {                                                    \
+      out[i] = rsimd_pow_f64(rsimd_math_get(x, fl, 0, i),                        \
+                             ((fl) & RSIMD_EW_SCALAR(1)) ? b0_ : rsimd_math_get(y, fl, 1, i)); \
+    }                                                                            \
+  }
+    switch (flags) {
+    case 0: RSIMD_MATH_POW_LOOP(0) break;
+    case RSIMD_EW_SCALAR(1): RSIMD_MATH_POW_LOOP(RSIMD_EW_SCALAR(1)) break;
+    case RSIMD_EW_I32(0): RSIMD_MATH_POW_LOOP(RSIMD_EW_I32(0)) break;
+    case RSIMD_EW_I32(0) | RSIMD_EW_SCALAR(1):
+      RSIMD_MATH_POW_LOOP(RSIMD_EW_I32(0) | RSIMD_EW_SCALAR(1))
+      break;
+    default: RSIMD_MATH_POW_LOOP(flags) break;
     }
+#undef RSIMD_MATH_POW_LOOP
     return 0;
   }
   for (i = 0; i < n; i++) {

@@ -121,6 +121,38 @@ SEXP C_simd_log(SEXP x, SEXP base, SEXP accuracy) {
   return rsimd_exit(rsimd_sv_result(simd_log_impl(x, base, accuracy), 0));
 }
 
+/* x ^ b for a single exponent b of 2, 0.5 or -1 with the elementwise
+   kernels, chunk by chunk in place: x * x (base R's x^2), sqrt(x + 0) and
+   1 / (x + 0) + 0, where the additions of 0 turn -0 into +0, as base R's
+   (-0)^0.5 = 0, (-0)^-1 = Inf and (-Inf)^-1 = 0. sqrt and 1 / x are
+   correctly rounded, so these can differ from C's pow in the last bit;
+   NA and NaN stay as they are, and nothing warns, as base R's ^. */
+static SEXP run_pow_special(rsimd_ew *e, int flags, double b) {
+  static const double zero = 0.0, one = 1.0;
+  const int fx = flags & (RSIMD_EW_SCALAR(0) | RSIMD_EW_I32(0));
+  SEXP out = PROTECT(rsimd_alloc_like(RSIMD_F64, e->n));
+  double *po = (double *) rsimd_out_ptr(out);
+  rsimd_opts o;
+  rsimd_opts_init(&o, R_NilValue, R_NilValue, 0);
+  o.na_check = !e->no_na_hint;
+  RSIMD_FOREACH_CHUNK_EW(e, p, len, off, {
+    double *q = po + off;
+    if (b == 2) {
+      rsimd_active->ew2_f64(RSIMD_EW_MUL, p[0], p[0], len, fx | fx << 1, q, &o);
+    } else {
+      rsimd_active->ew2_f64(RSIMD_EW_ADD, p[0], &zero, len, fx | RSIMD_EW_SCALAR(1), q, &o);
+      if (b == 0.5) {
+        rsimd_active->ew1_f64(RSIMD_EW_SQRT, q, len, 0, q, &o);
+      } else {
+        rsimd_active->ew2_f64(RSIMD_EW_DIV, &one, q, len, RSIMD_EW_SCALAR(0), q, &o);
+        rsimd_active->ew2_f64(RSIMD_EW_ADD, q, &zero, len, RSIMD_EW_SCALAR(1), q, &o);
+      }
+    }
+  });
+  UNPROTECT(1);
+  return out;
+}
+
 /* Binary functions by name: pow(x, y), atan2(y, x), hypot(x, y),
    nextafter(x, y), remainder(x, y), and scaleb(x, n) and rootn(x, n),
    whose n the R side has made a vector of whole numbers. */
@@ -143,6 +175,10 @@ static SEXP simd_math2_impl(SEXP x, SEXP y, SEXP op, SEXP accuracy) {
   flags = e.flags | check_operands(&e, code == RSIMD_MATH_POW
                                          ? "non-numeric argument to binary operator"
                                          : math_msg);
+  if (code == RSIMD_MATH_POW && Rf_xlength(y) == 1) {
+    double b = Rf_asReal(y);
+    if (b == 2 || b == 0.5 || b == -1) return run_pow_special(&e, flags, b);
+  }
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, e.n));
   po = (double *) rsimd_out_ptr(out);
   RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {

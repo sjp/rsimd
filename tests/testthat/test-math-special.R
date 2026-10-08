@@ -164,6 +164,70 @@ test_that("simd_pow() is bit-identical to base R's ^ at its special cases", {
   expect_tiers_give(c(1, 1, 1, 1), simd_pow, c(NA, NaN, Inf, 1), c(0, 0, 0, NA))
 })
 
+test_that("simd_pow() is bit-identical to base R's ^ with a scalar exponent and integer x", {
+  v <- c(
+    0, -0, 1, -1, 3, -3, 0.5, -0.5, 1 / 3, -8, 11, -11, 11.5, 12, 4, 1e300, 1e-300, 1e-310,
+    Inf, -Inf, NaN, NA
+  )
+  xi <- c(0L, 1L, -1L, 2L, 3L, -3L, 11L, 12L, -12L, 1000L, NA)
+  # The tiers that call the C library's pow are identical to base R
+  # everywhere; the others at base R's special cases.
+  libm <- c("none", if (.Platform$OS.type != "windows") c("neon", "sve", "sve2"))
+  for (b in setdiff(v, c(0.5, -1))) {
+    want <- na_merged(suppressWarnings(v^b), v, b)
+    want[v %in% 1 | b %in% 0] <- 1
+    want_i <- na_merged(suppressWarnings(xi^b), xi, b)
+    want_i[xi %in% 1 | b %in% 0] <- 1
+    special <- is.na(v) | is.na(b) | !is.finite(v) | !is.finite(b) | v %in% c(0, 1) |
+      b %in% 0 | (getRversion() >= "4.6.0" & b %in% c(3, 4) & abs(v) <= 11)
+    expect_tiers_give(want[special], simd_pow, v[special], b)
+    for (tier in intersect(tiers_to_test(), libm)) {
+      expect_true(same_values(simd_with_impl(tier, simd_pow(v, b)), want), label = paste(tier, b))
+      expect_true(same_values(simd_with_impl(tier, simd_pow(xi, b)), want_i),
+        label = paste(tier, "integer", b)
+      )
+    }
+  }
+  p <- all_pairs(xi, v)
+  for (tier in intersect(tiers_to_test(), libm)) {
+    want <- na_merged(suppressWarnings(p$x^p$y), p$x, p$y)
+    want[p$x %in% 1 | p$y %in% 0] <- 1
+    expect_true(same_values(simd_with_impl(tier, simd_pow(p$x, p$y)), want), label = tier)
+  }
+})
+
+test_that("simd_pow() with a single exponent of 2, 0.5 or -1 is x * x, sqrt(x) or 1 / x", {
+  v <- c(
+    0, -0, 1, -1, 2, -2, 0.25, 3, 1e-310, -1e-310, 1e308, -1e308, 1e-200, 1e200, Inf, -Inf,
+    NaN, NA
+  )
+  expect_tiers_give(v^2, simd_pow, v, 2)
+  expect_tiers_give(v^2, simd_pow, v, 2L)
+  # Correctly rounded; adding 0 makes -0 +0, as base R's rules have it:
+  # (-0)^0.5 = 0, (-0)^-1 = Inf and (-Inf)^-1 = 0.
+  expect_tiers_give(suppressWarnings(sqrt(v + 0)), simd_pow, v, 0.5)
+  expect_tiers_give(1 / (v + 0) + 0, simd_pow, v, -1)
+  expect_tiers_give(1 / (v + 0) + 0, simd_pow, v, -1L)
+  expect_tiers_give(c(0, Inf, 0, NaN), simd_pow, c(-0, -0, -Inf, -Inf), c(0.5, -1, -1, 0.5))
+  # Base R's special values and exact cases are the same.
+  s <- c(0, -0, 1, -1, 4, 0.25, -4, Inf, -Inf, NaN, NA)
+  for (b in c(0.5, -1)) expect_tiers_give(suppressWarnings(s^b), simd_pow, s, b)
+  # Elsewhere within 1 ULP of base R's pow.
+  x <- math_random(2000, -300, 300, log_scale = TRUE, signed = FALSE)
+  expect_close_to(simd_pow(x, 0.5), x^0.5, 1, "x^0.5 vs base R")
+  expect_close_to(simd_pow(x, -1), x^-1, 1, "x^-1 vs base R")
+  # Integer and logical x, and a single x.
+  xi <- c(0L, 1L, -1L, 4L, NA, 46341L, -46341L)
+  expect_tiers_give(xi^2, simd_pow, xi, 2)
+  expect_tiers_give(suppressWarnings(sqrt(xi + 0)), simd_pow, xi, 0.5)
+  expect_tiers_give(1 / (xi + 0) + 0, simd_pow, xi, -1)
+  expect_tiers_give(c(1, Inf, NA), simd_pow, c(TRUE, FALSE, NA), -1)
+  expect_tiers_give(0, simd_pow, -0, 0.5)
+  expect_tiers_give(9, simd_pow, -3L, 2)
+  # No warning for the NaN of a negative x, like ^.
+  expect_tier_warnings(character(), simd_pow, c(-4, -Inf, NA), 0.5)
+})
+
 test_that("simd_pow() never warns, like ^", {
   expect_tier_warnings(character(), simd_pow, c(-8, -1, -Inf), c(1 / 3, 0.5, 0.5))
   expect_true(all(is.nan(simd_pow(c(-8, -1), c(1 / 3, 0.5)))))

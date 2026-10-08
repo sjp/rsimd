@@ -28,7 +28,7 @@ real \code{n}-th root of \code{x} and \code{1 / sqrt(x)}, computed with
 SIMD instructions.
 }
 \details{
-\code{simd_pow(x, y)} follows base R's \code{x^y} exactly: \code{x^2} is
+\code{simd_pow(x, y)} follows base R's \code{x^y}: \code{x^2} is
 \code{x * x}, \code{x^3} and \code{x^4} are products for \code{|x| <= 11}
 (as in R >= 4.6.0; older R calls \code{pow()} there, which can differ
 by 1 ULP),
@@ -36,10 +36,18 @@ by 1 ULP),
 \code{NA} and \code{NaN}, \code{0^y} is \code{0} for \code{y > 0} and
 \code{Inf} for \code{y < 0} (also for \code{-0}), and infinite operands
 follow R's rules, which differ from C's: \code{(-Inf)^0.5} and
-\code{(-2)^Inf} are \code{NaN}. Everything else is the SLEEF (or C) power
-function, within 1 ULP; the \code{"none"} implementation and those
-of arm64 (\code{"neon"}, \code{"sve"}, \code{"sve2"}) call the C library's, so they are identical to base R (see
-\link{simd_math_accuracy}). Apart from \code{x^0} and \code{1^y}, an \code{NA}
+\code{(-2)^Inf} are \code{NaN}. A single exponent of \code{0.5} or
+\code{-1} gives \code{sqrt(x)} or \code{1 / x}, with base R's signed
+zeros (\code{(-0)^0.5} is \code{0}, \code{(-0)^-1} is \code{Inf},
+\code{(-Inf)^-1} is \code{0}): these are correctly rounded, so they can
+differ by 1 ULP from base R, which calls \code{pow()}. Everything else is
+the SLEEF (or C) power function, within 1 ULP; the \code{"none"}
+implementation and those of arm64 (\code{"neon"}, \code{"sve"},
+\code{"sve2"}) call the C library's, so they are identical to base R (see
+\link{simd_math_accuracy}). On arm64 that makes \code{simd_pow()} about
+as fast as \code{^} (between 0.85 and 1.25 times its speed, depending on
+the data), and much faster only for the exponents 2, 0.5 and -1, which
+use vector instructions on every implementation. Apart from \code{x^0} and \code{1^y}, an \code{NA}
 operand gives \code{NA}, as in \code{\link{simd_add}()}. Like \code{^},
 \code{simd_pow()} never warns: \code{simd_pow(-8, 1/3)} is a silent
 \code{NaN}.
@@ -49,7 +57,11 @@ is negative (\code{simd_cbrt(-8)} is \code{-2}), unlike
 \code{(-8)^(1/3)}, which is \code{NaN}. Base R has no \code{cbrt()}; the
 \code{"none"} implementation calls the C library's, which may be less
 accurate than SLEEF's (up to 3 ULP with glibc on arm64, where
-\code{cbrt(27)} is \code{3 + 4.4e-16}).
+\code{cbrt(27)} is \code{3 + 4.4e-16}). On arm64 that accuracy costs
+speed: in accurate mode \code{"neon"} is about 15\% slower than the C
+library's \code{cbrt()} and 25\% slower than \code{abs(x)^(1/3)}; fast
+mode (\link{simd_math_accuracy}) is about 1.4 times as fast as the
+latter.
 
 \code{simd_hypot()} is C's \code{hypot()}, which does not overflow or
 underflow in the squares: \code{simd_hypot(1e200, 1e200)} is
