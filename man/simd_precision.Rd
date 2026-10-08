@@ -16,11 +16,13 @@ possible, or more accurately at some cost in speed.
 
 The mode is stored in the option \code{rsimd.precision} (see
 \link{rsimd_options}). Setting that option directly works too; an invalid
-value is reported by the next function that uses it.
+value is reported by the next function that uses it, including
+\code{simd_precision()} without \code{mode}, until \code{simd_precision(mode)} replaces it.
 }
 \value{
 Without \code{mode}, the current mode. With \code{mode}, the previous mode,
-invisibly; an invalid \code{mode} is an error and leaves the mode unchanged.
+invisibly (\code{"fast"}, the default, when the option held an invalid
+value); an invalid \code{mode} is an error and leaves the mode unchanged.
 }
 \seealso{
 \link{rsimd_options} for all options.

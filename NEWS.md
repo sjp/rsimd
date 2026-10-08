@@ -141,7 +141,9 @@ First release.
   user's call (`simd_log(-1)`). An invalid value of one of the four options
   set before loading gives a warning naming the option, and the default is
   used; one set after loading makes the next call that reads it an error
-  naming the option (`?rsimd_options`).
+  naming the option and how to reset it, and `simd_use()`,
+  `simd_precision()` and `simd_math_accuracy()` replace it
+  (`?rsimd_options`).
 * Results follow base R's types, warnings and missing-value rules; `NA` and
   `NaN` stay distinct. Where a result can differ from base R's (the last
   bits of floating-point sums and elementary functions, and a few

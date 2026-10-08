@@ -112,6 +112,9 @@ test_that("na_check = NULL reads option rsimd.na_check on every call", {
       fixed = TRUE, info = deparse(bad)
     )
     expect_error(simd_add(x, 1), "invalid option rsimd.na_check", info = deparse(bad))
+    expect_error(simd_add(x, 1), "; reset it with options(rsimd.na_check = TRUE)",
+      fixed = TRUE, info = deparse(bad)
+    )
     # An explicit argument does not read the option; nor do functions
     # without na_check.
     expect_identical(simd_sum(x, na_check = TRUE), NA_real_)

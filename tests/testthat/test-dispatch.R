@@ -201,7 +201,9 @@ test_that("compute functions honour rsimd.impl set directly, without simd_curren
   )
   options(rsimd.impl = "rvv")
   expect_error(simd_sum(1), "invalid option rsimd.impl: implementation 'rvv' is not available")
-  options(rsimd.impl = "auto")
+  # The error says how to recover, and simd_use() does.
+  expect_error(simd_sum(1), "; reset it with simd_use()", fixed = TRUE)
+  expect_identical(simd_use("auto"), "none")
   expect_identical(simd_sum(c(1, 2)), 3)
   expect_identical(.debug_active(1), best)
 })

@@ -33,6 +33,15 @@ test_that("simd_precision() gets, sets and validates the mode", {
   expect_error(simd_softmax(1), msg, fixed = TRUE)
   # Those that do not sum do not read it.
   expect_identical(simd_max(c(1, 2)), 2)
+  # The errors say how to recover, and the setter repairs the option,
+  # returning the default as the previous mode.
+  expect_error(simd_precision(), "; reset it with simd_precision()", fixed = TRUE)
+  expect_error(simd_sum(1), "; reset it with simd_precision()", fixed = TRUE)
+  expect_error(simd_precision("bogus"), "precision mode must be one of")
+  expect_identical(getOption("rsimd.precision"), "bogus")
+  expect_identical(withVisible(simd_precision("pairwise")), list(value = "fast", visible = FALSE))
+  expect_identical(simd_precision(), "pairwise")
+  expect_identical(simd_sum(1), 1)
   options(rsimd.precision = NULL)
   expect_identical(.debug_opts(1)$precision, 0L)
 })

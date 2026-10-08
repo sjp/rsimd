@@ -27,7 +27,10 @@ The options are set to their defaults when the package is loaded, unless
 they are already set. An option already set to a value that is not valid
 gives a warning naming it, and is set to its default. A value that is not
 valid set after loading makes the next call of a function that reads the
-option an error naming it.
+option an error naming it and how to reset it: with \code{\link{simd_use}()},
+\code{\link{simd_precision}()} or \code{\link{simd_math_accuracy}()}, which
+replace an invalid value, or for \code{rsimd.na_check} with
+\code{options(rsimd.na_check = TRUE)}.
 }
 \section{Environment variables}{
 \describe{

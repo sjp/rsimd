@@ -203,7 +203,8 @@ int rsimd_arg_precision(SEXP precision) {
     p = option_choice(v, modes, 3);
     if (p < 0) {
       Rf_errorcall(R_NilValue, "invalid option rsimd.precision: precision mode must be one "
-                               "of \"fast\", \"pairwise\", \"compensated\"");
+                               "of \"fast\", \"pairwise\", \"compensated\"; reset it "
+                               "with simd_precision()");
     }
     return p;
   }
@@ -223,7 +224,8 @@ int rsimd_arg_accuracy(SEXP accuracy) {
     a = option_choice(v, modes, 2);
     if (a < 0) {
       Rf_errorcall(R_NilValue, "invalid option rsimd.math_accuracy: math accuracy mode must "
-                               "be one of \"accurate\", \"fast\"");
+                               "be one of \"accurate\", \"fast\"; reset it with "
+                               "simd_math_accuracy()");
     }
     return a;
   }
@@ -237,7 +239,8 @@ static int na_check_option(void) {
   SEXP v = Rf_GetOption1(sym_na_check);
   if (v == R_NilValue) return 1;
   if (TYPEOF(v) != LGLSXP || XLENGTH(v) != 1 || LOGICAL_ELT(v, 0) == NA_LOGICAL) {
-    Rf_errorcall(R_NilValue, "invalid option rsimd.na_check: must be TRUE or FALSE");
+    Rf_errorcall(R_NilValue, "invalid option rsimd.na_check: must be TRUE or FALSE; reset it "
+                             "with options(rsimd.na_check = TRUE)");
   }
   return LOGICAL_ELT(v, 0);
 }

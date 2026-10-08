@@ -58,14 +58,17 @@ simd_use <- function(impl) {
 }
 
 simd_precision <- function(mode) {
-  old <- .precision_mode()
   if (missing(mode)) {
-    return(old)
+    return(.precision_mode())
   }
   problem <- .precision_problem(mode)
   if (!is.null(problem)) {
     .stop(problem)
   }
+  # An invalid current value is replaced, not reported, so that this call
+  # repairs it; the default stands in as the previous mode.
+  old <- getOption("rsimd.precision", "fast")
+  if (!is.null(.precision_problem(old))) old <- "fast"
   options(rsimd.precision = mode)
   invisible(old)
 }
@@ -90,7 +93,10 @@ simd_precision <- function(mode) {
   mode <- getOption("rsimd.precision", "fast")
   problem <- .precision_problem(mode)
   if (!is.null(problem)) {
-    .stop("invalid option rsimd.precision: ", problem)
+    .stop(
+      "invalid option rsimd.precision: ", problem,
+      "; reset it with simd_precision()"
+    )
   }
   mode
 }
@@ -104,14 +110,16 @@ simd_precision <- function(mode) {
 }
 
 simd_math_accuracy <- function(mode) {
-  old <- .math_accuracy_mode()
   if (missing(mode)) {
-    return(old)
+    return(.math_accuracy_mode())
   }
   problem <- .math_accuracy_problem(mode)
   if (!is.null(problem)) {
     .stop(problem)
   }
+  # As in simd_precision(): replace an invalid current value.
+  old <- getOption("rsimd.math_accuracy", "accurate")
+  if (!is.null(.math_accuracy_problem(old))) old <- "accurate"
   options(rsimd.math_accuracy = mode)
   invisible(old)
 }
@@ -137,7 +145,10 @@ simd_math_accuracy <- function(mode) {
   mode <- getOption("rsimd.math_accuracy", "accurate")
   problem <- .math_accuracy_problem(mode)
   if (!is.null(problem)) {
-    .stop("invalid option rsimd.math_accuracy: ", problem)
+    .stop(
+      "invalid option rsimd.math_accuracy: ", problem,
+      "; reset it with simd_math_accuracy()"
+    )
   }
   mode
 }
@@ -190,7 +201,9 @@ simd_with_impl <- function(impl, expr) {
   if (!identical(impl, .impl_state$requested)) {
     problem <- .impl_problem(impl)
     if (!is.null(problem)) {
-      .stop("invalid option rsimd.impl: ", problem)
+      .stop(
+        "invalid option rsimd.impl: ", problem, "; reset it with simd_use()"
+      )
     }
     simd_use(impl)
   }

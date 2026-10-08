@@ -77,6 +77,15 @@ test_that("simd_math_accuracy() gets, sets and validates the mode", {
   expect_error(simd_max_abs(1i), "invalid option rsimd.math_accuracy")
   # Functions the mode does not affect do not read it.
   expect_identical(simd_next_up(0), 4.9406564584124654e-324)
+  # The errors say how to recover, and the setter repairs the option,
+  # returning the default as the previous mode.
+  expect_error(simd_math_accuracy(), "; reset it with simd_math_accuracy()", fixed = TRUE)
+  expect_error(simd_sin(1), "; reset it with simd_math_accuracy()", fixed = TRUE)
+  expect_identical(
+    withVisible(simd_math_accuracy("fast")), list(value = "accurate", visible = FALSE)
+  )
+  expect_identical(simd_math_accuracy(), "fast")
+  expect_identical(simd_sin(0), 0)
 })
 
 test_that("fast unary functions are within 3.5 ULP of SLEEF's bound of the none tier", {
