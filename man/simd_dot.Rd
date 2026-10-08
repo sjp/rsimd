@@ -17,8 +17,8 @@ types may differ.}
 \code{na.rm} and \code{na_check} must be named, so that an extra vector is
 not read as \code{na.rm}.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove the pairs
-\code{(x[i], y[i])} in which either element is missing (\code{NA} or
-\code{NaN}) first?}
+\code{(x[i], y[i])} whose term (\code{x[i] * y[i]} or
+\code{x[i] - y[i]}) is \code{NA} or \code{NaN} first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} and \code{y} have no missing values, so they are not looked for; see
 Details.}
@@ -36,9 +36,13 @@ functions, these never recycle a length-one argument. Integer and logical
 elements are converted to double as they are read.
 
 Missing values are handled per pair: \code{(x[i], y[i])} is missing when
-either element is, and \code{na.rm = TRUE} drops the pair from both sums
-(base R has no equivalent; \code{sum(x * y, na.rm = TRUE)} does the same for
-\code{simd_dot()}). \code{simd_cosine()} has no \code{na.rm}.
+its term is \code{NA} or \code{NaN}, which is when either element is
+missing, and also for \code{Inf * 0} in \code{simd_dot()} and
+\code{Inf - Inf} in \code{simd_dist()}. \code{na.rm = TRUE} drops those
+pairs, as \code{sum(x * y, na.rm = TRUE)} and
+\code{sqrt(sum((x - y)^2, na.rm = TRUE))} do, even when \code{na_check}
+is \code{FALSE} or the vectors are flagged free of \code{NA}.
+\code{simd_cosine()} has no \code{na.rm}.
 
 The distance of two empty vectors is 0. The cosine similarity is \code{NaN} for empty input, when
 either vector is all zero, and when any element is infinite. It is not
@@ -65,4 +69,5 @@ simd_dot(1:3, c(0.5, 1, 2))
 simd_dist(c(0, 0), c(3, 4))
 simd_cosine(c(1, 0), c(1, 1))
 simd_dot(c(1, NA, 3), c(2, 5, 1), na.rm = TRUE)
+simd_dot(c(Inf, 2), c(0, 3), na.rm = TRUE) # Inf * 0 is NaN, so dropped
 }

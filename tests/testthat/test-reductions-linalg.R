@@ -224,6 +224,49 @@ test_that("missing values: NA beats NaN, var and sd give NA, na.rm drops pairs",
   })
 })
 
+test_that("na.rm drops pairs whose term is NaN (Inf * 0, Inf - Inf), as base R does", {
+  for (mode in c("fast", "pairwise", "compensated")) {
+    old <- simd_precision(mode)
+    for (n in c(2L, 7L, 33L, 5000L)) {
+      set.seed(n)
+      x <- round(rnorm(n) * 8)
+      y <- round(rnorm(n) * 8)
+      x[c(1L, n)] <- c(Inf, -Inf)
+      y[c(1L, n)] <- c(0, -Inf)
+      if (n > 2L) x[2L] <- NA
+      if (n > 7L) y[n - 3L] <- NaN
+      want_dot <- sum(x * y, na.rm = TRUE)
+      want_dist <- sqrt(sum((x - y)^2, na.rm = TRUE))
+      res <- with_each_tier(function() {
+        c(
+          simd_dot(x, y, na.rm = TRUE), simd_dist(x, y, na.rm = TRUE),
+          simd_dot(simd_vec(x), simd_vec(y), na.rm = TRUE),
+          simd_dot(x, y, na.rm = TRUE, na_check = FALSE),
+          simd_dist(x, y, na.rm = TRUE, na_check = FALSE)
+        )
+      })
+      for (tier in names(res)) {
+        check_identical(res[[tier]], c(want_dot, want_dist, want_dot, want_dot, want_dist),
+                        info = sprintf("%s %s n = %d", tier, mode, n))
+      }
+    }
+    simd_precision(old)
+  }
+  for (tier in tiers_to_test()) {
+    simd_with_impl(tier, {
+      check_identical(simd_dot(c(Inf, 2), c(0L, 3L), na.rm = TRUE), 6)
+      check_identical(simd_dot(c(0L, 2L), c(Inf, 3), na.rm = TRUE), 6)
+      check_identical(simd_dist(c(Inf, 1), c(Inf, 4), na.rm = TRUE), 3)
+      # NA-free input is still scanned for NaN terms under na.rm.
+      check_identical(simd_dot(simd_vec(c(Inf, 1)), simd_vec(c(0, 1)), na.rm = TRUE), 1)
+      # Without na.rm the term stays: NaN, or NA when an element is NA.
+      check_identical(simd_dot(c(Inf, 1), c(0, 1)), NaN)
+      check_identical(simd_dist(c(Inf, 1), c(Inf, 1)), NaN)
+      check_identical(simd_dot(c(Inf, NA, 1), c(0, 1, 1)), NA_real_)
+    })
+  }
+})
+
 test_that("edge values: empty, zero vectors, Inf, overflow and short input", {
   for (tier in tiers_to_test()) {
     simd_with_impl(tier, {

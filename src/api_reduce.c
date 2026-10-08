@@ -780,7 +780,8 @@ SEXP C_simd_sum_sq(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
 /* dot (op 0), dist (op 1) or cosine (op 2) of x and y, which must have the
    same length (no broadcast). Double, integer and logical operands mix
    without conversion: the kernels read int32 elements as doubles. A pair
-   with a missing element is missing (removed under na.rm). cosine is
+   whose term is NaN (a missing element, Inf * 0, Inf - Inf) is missing
+   (removed under na.rm, which always scans for them). cosine is
    dot / (norm(x) * norm(y)), NaN for a zero vector or any Inf. */
 static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r[3];

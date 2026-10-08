@@ -480,8 +480,9 @@ static inline double rsimd_elt_f64(const void *p, int i32, ptrdiff_t i) {
 enum { RSIMD_STOP_NONE = 0, RSIMD_STOP_TRUE = 1, RSIMD_STOP_FALSE = 2 };
 
 /* Elements of the input that a fold missed when it is told na_check: an
-   element is missing when x (or, for x*y, y) is NaN, and saw_na is set when
-   one of those is NA. */
+   element is missing when x is NaN, or for a pair term when the term is
+   NaN (so also Inf * 0 and Inf - Inf, as in sum(x * y, na.rm = TRUE)), and
+   saw_na is set when x (or y) is NA. */
 typedef struct {
   int check, narm;
   int nan, na;
@@ -498,7 +499,7 @@ static inline double rsimd_fold_term(rsimd_fold_state *st, int term, double x, d
              : term == RSIMD_TERM_SQDIFF || term == RSIMD_TERM_DEVSQ ? d * d
              : x;
   if (st->check) {
-    int missing = isnan(x) || (RSIMD_TERM_PAIR(term) && isnan(y));
+    int missing = RSIMD_TERM_PAIR(term) ? isnan(t) : isnan(x);
     if (missing) {
       st->nan = 1;
       if (rsimd_is_na_f64(x) || (RSIMD_TERM_PAIR(term) && rsimd_is_na_f64(y))) st->na = 1;
@@ -899,12 +900,12 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_load_elt_tail_(const void *p, const in
    tracked as one running NaN mask; the chunk is rescanned for NA only if it
    had a NaN. */
 
-/* m = the missing lanes of vx (and vy for a pair term), recorded in mnan;
-   under narm they are counted as removed, in the lanes of rcnt. */
-#define RSIMD_VFOLD_MISSING_(m, vx, vy)                                                  \
+/* m = the missing lanes: those of vx, or for a pair term those where its
+   term vt is NaN; recorded in mnan, and under narm counted as removed, in
+   the lanes of rcnt. */
+#define RSIMD_VFOLD_MISSING_(m, vx, vt)                                                  \
   do {                                                                                   \
-    (m) = rsimd_vf64_is_nan(vx);                                                         \
-    if (RSIMD_TERM_PAIR(term)) (m) = rsimd_mf64_or((m), rsimd_vf64_is_nan(vy));          \
+    (m) = rsimd_vf64_is_nan(RSIMD_TERM_PAIR(term) ? (vt) : (vx));                        \
     mnan = rsimd_mf64_or(mnan, (m));                                                     \
     if (narm) rcnt = rsimd_vi64_inc(rcnt, rsimd_mf64_to_mi64(m));                        \
   } while (0)
@@ -923,7 +924,7 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_load_elt_tail_(const void *p, const in
     }                                                                                    \
     if (check) {                                                                         \
       rsimd_mf64 m_;                                                                     \
-      RSIMD_VFOLD_MISSING_(m_, vx, vy);                                                  \
+      RSIMD_VFOLD_MISSING_(m_, vx, (t));                                                 \
       if (narm) (t) = rsimd_vf64_blend((t), rsimd_vf64_zero(), m_);                      \
     }                                                                                    \
   } while (0)
@@ -940,7 +941,9 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vf64_load_elt_tail_(const void *p, const in
       rsimd_vf64 g_ = term == RSIMD_TERM_XY ? (vy) : f_;                                 \
       if (check) {                                                                       \
         rsimd_mf64 m_;                                                                   \
-        RSIMD_VFOLD_MISSING_(m_, vx, vy);                                                \
+        /* The term of dist is NaN where its difference f_ is. */                       \
+        RSIMD_VFOLD_MISSING_(m_, vx,                                                     \
+                             term == RSIMD_TERM_XY ? rsimd_vf64_mul((vx), (vy)) : f_);   \
         if (narm) {                                                                      \
           f_ = rsimd_vf64_blend(f_, rsimd_vf64_zero(), m_);                              \
           g_ = rsimd_vf64_blend(g_, rsimd_vf64_zero(), m_);                              \
