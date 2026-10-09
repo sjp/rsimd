@@ -133,6 +133,34 @@ test_that("%/% on doubles is the exact floor rounded once beyond 2^52", {
   }
 })
 
+test_that("%/% recomputes huge quotients wherever they fall in a long vector", {
+  # Long enough for several blocks of the vector kernels, with huge
+  # quotients first absent, then alone, then dense, in the tail and at the
+  # start, and NA beside them. The huge quotient is the tie case above,
+  # whose floor the vector form gets wrong by one.
+  n <- 5 * 4096 + 7
+  x <- rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = 21L)
+  y <- 1 + abs(rand_vec("double", n, na_frac = 0, nan_frac = 0, inf_frac = 0, seed = 22L))
+  expect_true(all(abs(x / y) < 2^52))
+  for (at in list(integer(0), 1L, 4096L + 3L, n, c(9000L, 9001L, seq(12001L, 16000L, 3L)))) {
+    xb <- x
+    yb <- y
+    xb[at] <- 0x1.0000000000001p+52
+    yb[at] <- 0x1.9d8a32c110e47p-3
+    res <- expect_simd_identical(simd_idiv, xb, yb)
+    expect_identical(res[["none"]][at], rep(0x1.3cf38a2701880p+54, length(at)))
+    xn <- xb
+    xn[pmin(at + 1L, n)] <- NA
+    expect_simd_identical(simd_idiv, xn, yb)
+    expect_simd_identical(simd_idiv, xb, 0x1.9d8a32c110e47p-3)
+  }
+  # Int32 operands over tiny divisors.
+  i <- rep(c(5L, -7L, NA, 3L), length.out = n)
+  d <- rep(c(2, 3, 1e-300, 4), length.out = n)
+  d[c(10L, 10000L)] <- 1e-300
+  expect_simd_identical(simd_idiv, i, d)
+})
+
 test_that("%/% and %% match base R on random doubles", {
   x <- rand_vec("double", 3001, seed = 11L)
   y <- rand_vec("double", 3001, seed = 12L)

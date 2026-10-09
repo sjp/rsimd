@@ -606,11 +606,21 @@ static inline const double *rsimd_ew_dptr(const void *p, int flags, int k, rsimd
     }                                                                            \
   } while (0)
 
-/* x %% y: the vector form, with the lanes it leaves to the scalar form
-   (huge quotients) recomputed. */
-static inline rsimd_vf64 rsimd_ew_mod(rsimd_vf64 a, rsimd_vf64 b, int lanes) {
-  rsimd_mf64 slow;
-  rsimd_vf64 r = rsimd_vf64_mod(a, b, &slow);
+/* Operand k from element off on: a scalar stays as it is. */
+static inline const void *rsimd_ew_at(const void *p, int flags, int k, R_xlen_t off) {
+  if (RSIMD_EW_IS_SCALAR(flags, k)) return p;
+  if (RSIMD_EW_IS_I32(flags, k)) return (const int *) p + off;
+  return (const double *) p + off;
+}
+/* Elements per block for kernels that make a second pass over a block,
+   small enough for the operands to stay in cache between the passes. */
+#define RSIMD_EW_BLOCK 4096
+
+/* r with the lanes in slow (of the first `lanes`) recomputed as f(a, b):
+   the vector forms of %% and %/% leave huge quotients to the scalar ones.
+   Such lanes are rare, so the branch is almost never taken. */
+static inline rsimd_vf64 rsimd_ew_fixup(rsimd_vf64 r, rsimd_mf64 slow, rsimd_vf64 a, rsimd_vf64 b,
+                                        int lanes, double (*f)(double, double)) {
   if (rsimd_mf64_any(slow)) {
     double ba[RSIMD_MAX_LANES_64], bb[RSIMD_MAX_LANES_64], br[RSIMD_MAX_LANES_64],
       bs[RSIMD_MAX_LANES_64];
@@ -620,11 +630,24 @@ static inline rsimd_vf64 rsimd_ew_mod(rsimd_vf64 a, rsimd_vf64 b, int lanes) {
     rsimd_vf64_storeu(br, r);
     rsimd_vf64_storeu(bs, rsimd_vf64_blend(rsimd_vf64_zero(), rsimd_vf64_set1(1.0), slow));
     for (j = 0; j < lanes; j++) {
-      if (bs[j] != 0) br[j] = rsimd_mod_f64(ba[j], bb[j]);
+      if (bs[j] != 0) br[j] = f(ba[j], bb[j]);
     }
     r = rsimd_vf64_loadu(br);
   }
   return r;
+}
+
+/* x %% y and x %/% y: the vector forms, with the lanes they leave to the
+   scalar forms recomputed. */
+static inline rsimd_vf64 rsimd_ew_mod(rsimd_vf64 a, rsimd_vf64 b, int lanes) {
+  rsimd_mf64 slow;
+  rsimd_vf64 r = rsimd_vf64_mod(a, b, &slow);
+  return rsimd_ew_fixup(r, slow, a, b, lanes, rsimd_mod_f64);
+}
+static inline rsimd_vf64 rsimd_ew_idiv(rsimd_vf64 a, rsimd_vf64 b, int lanes) {
+  rsimd_mf64 slow;
+  rsimd_vf64 r = rsimd_vf64_idiv(a, b, &slow);
+  return rsimd_ew_fixup(r, slow, a, b, lanes, rsimd_idiv_f64);
 }
 
 int RSIMD_KERNEL(ew1_f64)(int op, const void *x, R_xlen_t n, int flags, double *out,
@@ -710,20 +733,28 @@ int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int 
   case RSIMD_EW_MUL: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_mul(a, b))); break;
   case RSIMD_EW_DIV: RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_vf64_div(a, b))); break;
   case RSIMD_EW_IDIV: {
-    /* The vector form, then the elements it leaves to the scalar form
-       (quotients of 2^52 and more, which are rare) recomputed in a second
-       pass, so that the loop has no per-vector branch for them. */
-    rsimd_mf64 big = rsimd_vf64_cmp_lt(bc2, bc2), s;
-    R_xlen_t k;
-    RSIMD_EW_F64_LOOP(2, {
-      RSIMD_EW_MERGED(rsimd_vf64_idiv(a, b, &s));
-      big = rsimd_mf64_or(big, s);
-    });
-    if (rsimd_mf64_any(big)) {
-      for (k = 0; k < n; k++) {
-        double a = rsimd_ew_get(x, flags, 0, k, check), b = rsimd_ew_get(y, flags, 1, k, check);
-        if (fabs(a / b) >= 0x1p52) out[k] = rsimd_idiv_f64(a, b);
+    /* Block by block, the vector form without a per-vector branch, until
+       a block has lanes left to the scalar form (quotients of 2^52 and
+       more, which are rare): that block and the rest of the chunk are run
+       with those lanes recomputed vector by vector. */
+    const void *const x0 = x, *const y0 = y;
+    double *const out0 = out;
+    const R_xlen_t n0 = n;
+    R_xlen_t off;
+    int big = 0;
+    for (off = 0; off < n0; off += RSIMD_EW_BLOCK) {
+      const void *x = rsimd_ew_at(x0, flags, 0, off), *y = rsimd_ew_at(y0, flags, 1, off);
+      double *out = out0 + off;
+      const R_xlen_t n = n0 - off < RSIMD_EW_BLOCK ? n0 - off : RSIMD_EW_BLOCK;
+      if (!big) {
+        rsimd_mf64 any = rsimd_vf64_cmp_lt(bc2, bc2), s;
+        RSIMD_EW_F64_LOOP(2, {
+          RSIMD_EW_MERGED(rsimd_vf64_idiv(a, b, &s));
+          any = rsimd_mf64_or(any, s);
+        });
+        big = rsimd_mf64_any(any);
       }
+      if (big) RSIMD_EW_F64_LOOP(2, RSIMD_EW_MERGED(rsimd_ew_idiv(a, b, lanes)));
     }
     break;
   }
