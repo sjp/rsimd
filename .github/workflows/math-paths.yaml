@@ -1,5 +1,5 @@
 # Times the elementary functions whose implementation depends on the tier
-# (bench/math_paths.R, issue 036) on the arm64 runners, on demand only: the
+# (bench/math_paths.R) on the arm64 runners, on demand only: the
 # arm64 tiers hand some functions to the C math library (RSIMD_MATH1_LIBM in
 # src/kernels/math.inc.c) only where libm was measured faster on every core,
 # and this job measures Neoverse (ubuntu-24.04-arm) and Apple with macOS's

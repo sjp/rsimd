@@ -994,8 +994,8 @@ static int rsimd_math1_extra(int op, const void *x, R_xlen_t n, int flags, doubl
    The ops for which this tier runs the none tier's loops
    (rsimd_math1_libm, rsimd_math2_libm), and so libm as base R does,
    because libm was measured faster on this tier than SLEEF's 1-ULP vector
-   function (issue 036, amending D13): bit k of RSIMD_MATH1_LIBM is
-   math1_f64 op k, of RSIMD_MATH2_LIBM math2_f64 op k. A function belongs
+   function: bit k of RSIMD_MATH1_LIBM is math1_f64 op k, of
+   RSIMD_MATH2_LIBM math2_f64 op k. A function belongs
    here only if libm wins on every core measured: on neon, Apple's (glibc
    and macOS's libm) and Neoverse N2's; on sve and sve2, which are 128-bit
    there, Neoverse N2's (glibc). Windows is not measured. LOGB is log(x) /

@@ -242,8 +242,8 @@ math_ops <- list(
     op = "hypot", type = "double", simd = quote(simd_hypot(x, y)),
     base = quote(sqrt(x * x + y * y))
   ),
-  # Two of the functions the neon tier hands to the C math library (issue
-  # 036); pow has no fast variant.
+  # Two of the functions the neon tier hands to the C math library; pow has
+  # no fast variant.
   list(op = "pow", type = "double", simd = quote(simd_pow(xp, xt)), base = quote(xp^xt)),
   list(op = "asinh", type = "double", simd = quote(simd_asinh(x)), base = quote(asinh(x))),
   list(op = "sqrt", type = "complex", simd = quote(simd_sqrt(cs)), base = quote(sqrt(cs))),

@@ -249,7 +249,7 @@ test_that("a zero extremum has the sign of the first zero, wherever the zeros ar
 
 test_that("prod is exact about zeros, infinities and out-of-range partial products", {
   # Partial products in different lanes overflow and underflow; a zero in
-  # one lane met an Inf in another and gave NaN (issue 015).
+  # one lane meeting an Inf in another must not give NaN.
   x <- with_seed(42L, round(stats::rnorm(2^20 + 1) * 100))
   big <- c(rep(1e300, 40), -2, rep(1e-300, 40))
   for (tier in tiers_to_test()) {

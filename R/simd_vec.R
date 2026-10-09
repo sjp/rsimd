@@ -191,7 +191,7 @@ simd_na_free <- function(x) {
 
 .sv_type <- function(x) if (inherits(x, "integer64")) "integer64" else typeof(x)
 
-# Length rule of the binary operators (D24), for base fallbacks: a
+# Length rule of the binary operators, for base fallbacks: a
 # zero-length operand gives a zero-length result, as in base R.
 .sv_check_lengths <- function(e1, e2) {
   n1 <- length(e1)

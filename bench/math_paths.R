@@ -1,7 +1,7 @@
-# Times the elementary functions whose implementation depends on the tier
-# (issue 036): the real functions that the SIMD tiers may hand to the C
-# math library, and the complex inverse functions on base R's branch-cut
-# lines, where every lane is computed by the scalar code. Each case runs on
+# Times the elementary functions whose implementation depends on the tier:
+# the real functions that the SIMD tiers may hand to the C math library,
+# and the complex inverse functions on base R's branch-cut lines, where
+# every lane is computed by the scalar code. Each case runs on
 # every implementation in simd_available(), in both accuracy modes, and in
 # base R, so the table shows where a SIMD tier is slower than `none`.
 #

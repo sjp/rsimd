@@ -217,8 +217,8 @@ The benchmarks vignette does not run `bench`. It renders snapshots committed und
 
 ## Math paths
 
-`math_paths.R` times the elementary functions whose implementation depends on the tier
-(issue 036): the real functions the arm64 tiers (`neon`, `sve`, `sve2`) hand to the C
+`math_paths.R` times the elementary functions whose implementation depends on the tier:
+the real functions the arm64 tiers (`neon`, `sve`, `sve2`) hand to the C
 math library because its scalar code beat SLEEF's 128-bit vectors there (`log`, `log2`,
 `cosh`, `asinh`, `acosh`, `pow`, with `exp` and `cbrt` as controls), and the complex `asin`, `acos`,
 `atanh`, `asinh` and `atan` on base R's branch cuts (pure cut input, 25% of the elements

@@ -93,7 +93,7 @@ test_that("errors from the R side name the user's call", {
   expect_identical(condition_call(simd_sum(1)), quote(simd_sum(1)))
 })
 
-test_that("type errors from the C side name the function and argument (issue 046)", {
+test_that("type errors from the C side name the function and argument", {
   msg <- function(expr) tryCatch(expr, error = conditionMessage)
   expect_identical(condition_call(simd_var(as.raw(1))), quote(simd_var(as.raw(1))))
   expect_identical(msg(simd_var(as.raw(1))), "simd_var() does not support 'x' of type raw")
@@ -121,7 +121,7 @@ test_that("errors from simd_vec methods name the generic's call, not an inner he
   expect_identical(condition_call(+simd_vec(as.raw(1))), quote(+simd_vec(as.raw(1))))
 })
 
-test_that("conditions raised through simd_vec methods name the user's call (issue 053)", {
+test_that("conditions raised through simd_vec methods name the user's call", {
   r <- simd_vec(as.raw(1:3))
   v <- simd_vec(c(1, 2, 3, 4))
   # Kernel errors and warnings (rsimd_error(), the warning flush, .type_error()).
@@ -157,7 +157,7 @@ test_that("conditions raised through simd_vec methods name the user's call (issu
   expect_identical(simd_unwrap(w), c(0, 5, 0, 4, NA, NA))
 })
 
-test_that("simd_with_impl() names its own call, and leaves expr's calls alone (issue 053)", {
+test_that("simd_with_impl() names its own call, and leaves expr's calls alone", {
   expect_identical(
     condition_call(simd_with_impl("none", stop("boom"))),
     quote(simd_with_impl("none", stop("boom")))
@@ -166,7 +166,7 @@ test_that("simd_with_impl() names its own call, and leaves expr's calls alone (i
   expect_identical(condition_call(simd_with_impl("none", g())), quote(g()))
 })
 
-test_that("integer64 conditions through simd_vec methods name the user's call (issue 053)", {
+test_that("integer64 conditions through simd_vec methods name the user's call", {
   skip_if_not_installed("bit64")
   z <- simd_vec(bit64::as.integer64(1:3))
   big <- simd_vec(bit64::as.integer64("1099511627776"))

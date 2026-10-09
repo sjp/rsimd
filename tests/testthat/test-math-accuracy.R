@@ -36,7 +36,7 @@ test_that("unary functions are accurate on 1e5 random values (extended)", {
 })
 
 test_that("the arm64 tiers hand log, log2, cosh, asinh, acosh and pow to the C library", {
-  # issue 036: on neon, sve and sve2 the C library was measured faster than
+  # On neon, sve and sve2 the C library was measured faster than
   # SLEEF, so these are the none tier's results bit for bit (asinh, acosh
   # and pow, which SLEEF has no fast variant of, in fast mode too). Not on
   # Windows.
@@ -96,9 +96,9 @@ test_that("cbrt and tanpi are close to their base R expressions", {
 })
 
 test_that("tanpi keeps its accuracy next to the poles at the half-integers", {
-  # issue 014: the none tier corrected tan(hi) for the low part of pi x to
-  # first order only, which lost up to 11 bits within 1e-9 of 1/2 (off by
-  # 3e-3 at 1/2 - 2^-50). tan(pi (1/2 - t)) tan(pi t) = 1, and both sides of
+  # Correcting tan(hi) for the low part of pi x to first order only would
+  # lose up to 11 bits within 1e-9 of 1/2 (off by 3e-3 at 1/2 - 2^-50).
+  # tan(pi (1/2 - t)) tan(pi t) = 1, and both sides of
   # the reciprocal are computed independently. The none tier is the
   # reference elsewhere, so it is checked here against identities.
   t <- 2^-(2:53)
@@ -244,7 +244,7 @@ test_that("hyperbolic functions are accurate up to overflow", {
 })
 
 test_that("sinh and cosh beyond 709 are the C library's on every tier, in both modes", {
-  # issue 057: ?simd_math_accuracy gives these about 2 ULP, the C library's
+  # ?simd_math_accuracy gives these about 2 ULP, the C library's
   # bound, rather than SLEEF's 1.
   x <- seq(709.0001, 710.4758, length.out = 2000)
   x <- c(x, -x)
