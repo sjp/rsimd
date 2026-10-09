@@ -6,7 +6,8 @@
 # .ew_args(), which checks the types the C side takes but the function does
 # not, and converts integer64 operands mixed with doubles to double, with a
 # warning. Each function makes its own .Call(), so that warnings and errors
-# from the C side name the user's call.
+# from the C side name the user's call; the regular ones are made by .ew1(),
+# .ew2(), .ew3() and .pmin_num() (see .wrapper()).
 
 # Functions that take complex operands. A double, integer or logical
 # operand of a binary one is converted to complex when the other operand
@@ -106,94 +107,60 @@
   x
 }
 
-simd_add <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
-    p <- .ew_args("simd_add", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
+# The two-operand function for `op`, named simd_<op>. `guard` is the test
+# for operands that go through .ew_args(): "mixed" for a complex operand
+# beside a non-complex one, "complex" for any complex operand and "wrap" for
+# any complex or double operand.
+.ew2 <- function(op, guard) {
+  fun <- paste0("simd_", op)
+  test <- switch(guard,
+    mixed = quote(is.object(x) || is.object(y) || is.complex(x) != is.complex(y)),
+    complex = quote(is.object(x) || is.object(y) || is.complex(x) || is.complex(y)),
+    wrap = quote(is.object(x) || is.object(y) || is.complex(x) || is.complex(y) ||
+      is.double(x) || is.double(y))
+  )
+  args <- if (guard == "wrap") {
+    bquote(.ew_args(.(fun), list(x = x, y = y), wrap = TRUE))
+  } else {
+    bquote(.ew_args(.(fun), list(x = x, y = y)))
   }
-  .Call(C_simd_ew2, x, y, "add", na_check)
+  .wrapper(alist(x = , y = , na_check = NULL), bquote({
+    if (.(test)) {
+      p <- .(args)
+      x <- p[[1L]]
+      y <- p[[2L]]
+    }
+    .Call(C_simd_ew2, x, y, .(op), na_check)
+  }))
 }
 
-simd_sub <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
-    p <- .ew_args("simd_sub", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "sub", na_check)
+simd_add <- .ew2("add", "mixed")
+simd_sub <- .ew2("sub", "mixed")
+simd_mul <- .ew2("mul", "mixed")
+simd_div <- .ew2("div", "mixed")
+simd_idiv <- .ew2("idiv", "complex")
+simd_mod <- .ew2("mod", "complex")
+simd_add_wrap <- .ew2("add_wrap", "wrap")
+simd_sub_wrap <- .ew2("sub_wrap", "wrap")
+simd_mul_wrap <- .ew2("mul_wrap", "wrap")
+
+# The one-operand function named `fun` for `op`; with `wrap = TRUE` it also
+# rejects doubles.
+.ew1 <- function(fun, op, wrap = FALSE) {
+  .wrapper(alist(x = ), if (wrap) {
+    bquote({
+      if (is.object(x) || is.complex(x) || is.double(x)) .ew_check(.(fun), list(x = x), TRUE)
+      .Call(C_simd_ew1, x, .(op))
+    })
+  } else {
+    bquote({
+      if (is.object(x) || is.complex(x)) .ew_check(.(fun), list(x = x))
+      .Call(C_simd_ew1, x, .(op))
+    })
+  })
 }
 
-simd_mul <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
-    p <- .ew_args("simd_mul", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "mul", na_check)
-}
-
-simd_div <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
-    p <- .ew_args("simd_div", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "div", na_check)
-}
-
-simd_idiv <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
-    p <- .ew_args("simd_idiv", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "idiv", na_check)
-}
-
-simd_mod <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
-    p <- .ew_args("simd_mod", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "mod", na_check)
-}
-
-simd_add_wrap <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) ||
-    is.double(x) || is.double(y)) {
-    p <- .ew_args("simd_add_wrap", list(x = x, y = y), wrap = TRUE)
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "add_wrap", na_check)
-}
-
-simd_sub_wrap <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) ||
-    is.double(x) || is.double(y)) {
-    p <- .ew_args("simd_sub_wrap", list(x = x, y = y), wrap = TRUE)
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "sub_wrap", na_check)
-}
-
-simd_mul_wrap <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) ||
-    is.double(x) || is.double(y)) {
-    p <- .ew_args("simd_mul_wrap", list(x = x, y = y), wrap = TRUE)
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "mul_wrap", na_check)
-}
-
-simd_neg <- function(x) {
-  if (is.object(x) || is.complex(x)) .ew_check("simd_neg", list(x = x))
-  .Call(C_simd_ew1, x, "neg")
-}
+simd_neg <- .ew1("simd_neg", "neg")
 
 # abs of complex z is its modulus, as in base R.
 simd_abs <- function(x) {
@@ -204,20 +171,9 @@ simd_abs <- function(x) {
   .Call(C_simd_ew1, x, "abs")
 }
 
-simd_neg_wrap <- function(x) {
-  if (is.object(x) || is.complex(x) || is.double(x)) .ew_check("simd_neg_wrap", list(x = x), TRUE)
-  .Call(C_simd_ew1, x, "neg")
-}
-
-simd_abs_wrap <- function(x) {
-  if (is.object(x) || is.complex(x) || is.double(x)) .ew_check("simd_abs_wrap", list(x = x), TRUE)
-  .Call(C_simd_ew1, x, "abs")
-}
-
-simd_sign <- function(x) {
-  if (is.object(x) || is.complex(x)) .ew_check("simd_sign", list(x = x))
-  .Call(C_simd_ew1, x, "sign")
-}
+simd_neg_wrap <- .ew1("simd_neg_wrap", "neg", wrap = TRUE)
+simd_abs_wrap <- .ew1("simd_abs_wrap", "abs", wrap = TRUE)
+simd_sign <- .ew1("simd_sign", "sign")
 
 simd_copysign <- function(x, sign, na_check = NULL) {
   if (is.object(x) || is.object(sign) || is.complex(x) || is.complex(sign)) {
@@ -228,10 +184,7 @@ simd_copysign <- function(x, sign, na_check = NULL) {
   .Call(C_simd_ew2, x, sign, "copysign", na_check)
 }
 
-simd_recip <- function(x) {
-  if (is.object(x) || is.complex(x)) .ew_check("simd_recip", list(x = x))
-  .Call(C_simd_ew1, x, "recip")
-}
+simd_recip <- .ew1("simd_recip", "recip")
 
 simd_sqrt <- function(x) {
   if (is.complex(x)) {
@@ -241,49 +194,24 @@ simd_sqrt <- function(x) {
   .Call(C_simd_ew1, x, "sqrt")
 }
 
-simd_fma <- function(x, y, z, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.object(z) ||
-    is.complex(x) || is.complex(y) || is.complex(z)) {
-    p <- .ew_args("simd_fma", list(x = x, y = y, z = z))
-    x <- p[[1L]]
-    y <- p[[2L]]
-    z <- p[[3L]]
-  }
-  .Call(C_simd_ew3, x, y, z, "fma", na_check)
+# The three-operand function for `op`, named simd_<op>.
+.ew3 <- function(op) {
+  .wrapper(alist(x = , y = , z = , na_check = NULL), bquote({
+    if (is.object(x) || is.object(y) || is.object(z) ||
+      is.complex(x) || is.complex(y) || is.complex(z)) {
+      p <- .ew_args(.(paste0("simd_", op)), list(x = x, y = y, z = z))
+      x <- p[[1L]]
+      y <- p[[2L]]
+      z <- p[[3L]]
+    }
+    .Call(C_simd_ew3, x, y, z, .(op), na_check)
+  }))
 }
 
-simd_mul_add <- function(x, y, z, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.object(z) ||
-    is.complex(x) || is.complex(y) || is.complex(z)) {
-    p <- .ew_args("simd_mul_add", list(x = x, y = y, z = z))
-    x <- p[[1L]]
-    y <- p[[2L]]
-    z <- p[[3L]]
-  }
-  .Call(C_simd_ew3, x, y, z, "mul_add", na_check)
-}
-
-simd_mul_add_approx <- function(x, y, z, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.object(z) ||
-    is.complex(x) || is.complex(y) || is.complex(z)) {
-    p <- .ew_args("simd_mul_add_approx", list(x = x, y = y, z = z))
-    x <- p[[1L]]
-    y <- p[[2L]]
-    z <- p[[3L]]
-  }
-  .Call(C_simd_ew3, x, y, z, "mul_add_approx", na_check)
-}
-
-simd_add_mul <- function(x, y, z, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.object(z) ||
-    is.complex(x) || is.complex(y) || is.complex(z)) {
-    p <- .ew_args("simd_add_mul", list(x = x, y = y, z = z))
-    x <- p[[1L]]
-    y <- p[[2L]]
-    z <- p[[3L]]
-  }
-  .Call(C_simd_ew3, x, y, z, "add_mul", na_check)
-}
+simd_fma <- .ew3("fma")
+simd_mul_add <- .ew3("mul_add")
+simd_mul_add_approx <- .ew3("mul_add_approx")
+simd_add_mul <- .ew3("add_mul")
 
 simd_lerp <- function(x, y, t, na_check = NULL) {
   if (is.object(x) || is.object(y) || is.object(t) ||
@@ -327,23 +255,20 @@ simd_pmax <- function(x, y, ..., na.rm = FALSE) {
   .Call(C_simd_ew2, x, y, op, TRUE)
 }
 
-simd_pmin_num <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
-    p <- .ew_args("simd_pmin_num", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "pmin_num", TRUE)
+# simd_pmin_num() and simd_pmax_num() (`op`).
+.pmin_num <- function(op) {
+  .wrapper(alist(x = , y = ), bquote({
+    if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
+      p <- .ew_args(.(paste0("simd_", op)), list(x = x, y = y))
+      x <- p[[1L]]
+      y <- p[[2L]]
+    }
+    .Call(C_simd_ew2, x, y, .(op), TRUE)
+  }))
 }
 
-simd_pmax_num <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
-    p <- .ew_args("simd_pmax_num", list(x = x, y = y))
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_ew2, x, y, "pmax_num", TRUE)
-}
+simd_pmin_num <- .pmin_num("pmin_num")
+simd_pmax_num <- .pmin_num("pmax_num")
 
 simd_clamp <- function(x, lo, hi) {
   if (is.object(x) || is.object(lo) || is.object(hi) ||
@@ -356,20 +281,9 @@ simd_clamp <- function(x, lo, hi) {
   .Call(C_simd_ew3, x, lo, hi, "clamp", TRUE)
 }
 
-simd_floor <- function(x) {
-  if (is.object(x) || is.complex(x)) .ew_check("simd_floor", list(x = x))
-  .Call(C_simd_ew1, x, "floor")
-}
-
-simd_ceiling <- function(x) {
-  if (is.object(x) || is.complex(x)) .ew_check("simd_ceiling", list(x = x))
-  .Call(C_simd_ew1, x, "ceiling")
-}
-
-simd_trunc <- function(x) {
-  if (is.object(x) || is.complex(x)) .ew_check("simd_trunc", list(x = x))
-  .Call(C_simd_ew1, x, "trunc")
-}
+simd_floor <- .ew1("simd_floor", "floor")
+simd_ceiling <- .ew1("simd_ceiling", "ceiling")
+simd_trunc <- .ew1("simd_trunc", "trunc")
 
 simd_round <- function(x, digits = 0) {
   if (!(is.numeric(digits) || is.logical(digits)) || length(digits) != 1L ||

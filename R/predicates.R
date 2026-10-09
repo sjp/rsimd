@@ -1,148 +1,73 @@
 # Predicates (elementwise, any, all) and elementwise comparisons. Each
 # function checks the types the C side takes but the function does not
 # (complex, and raw where it is not taken) and calls the entry point with
-# the op's name.
+# the op's name. They are made by .pred() and .cmp() (see .wrapper()).
 
 # Predicates. mode: 0 elementwise, 1 any, 2 all. Only na, nan, finite and
 # infinite take raw and complex input; the others check for them here.
 .pred_check <- function(x, fun) .check_supported(x, fun, c("complex", "raw"), character())
 
-simd_is_na <- function(x) .Call(C_simd_pred, x, "na", 0L)
-simd_is_na_any <- function(x) .Call(C_simd_pred, x, "na", 1L)
-simd_is_na_all <- function(x) .Call(C_simd_pred, x, "na", 2L)
-
-simd_is_nan <- function(x) .Call(C_simd_pred, x, "nan", 0L)
-simd_is_nan_any <- function(x) .Call(C_simd_pred, x, "nan", 1L)
-simd_is_nan_all <- function(x) .Call(C_simd_pred, x, "nan", 2L)
-
-simd_is_finite <- function(x) .Call(C_simd_pred, x, "finite", 0L)
-simd_is_finite_any <- function(x) .Call(C_simd_pred, x, "finite", 1L)
-simd_is_finite_all <- function(x) .Call(C_simd_pred, x, "finite", 2L)
-
-simd_is_infinite <- function(x) .Call(C_simd_pred, x, "infinite", 0L)
-simd_is_infinite_any <- function(x) .Call(C_simd_pred, x, "infinite", 1L)
-simd_is_infinite_all <- function(x) .Call(C_simd_pred, x, "infinite", 2L)
-
-simd_is_negative <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_negative")
-  .Call(C_simd_pred, x, "negative", 0L)
+# The predicate for `op` in `mode`, named simd_is_<op>, with _any or _all
+# for modes 1 and 2.
+.pred <- function(op, mode) {
+  fun <- paste0("simd_is_", op, c("", "_any", "_all")[[mode + 1L]])
+  .wrapper(alist(x = ), if (op %in% c("na", "nan", "finite", "infinite")) {
+    bquote(.Call(C_simd_pred, x, .(op), .(mode)))
+  } else {
+    bquote({
+      if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, .(fun))
+      .Call(C_simd_pred, x, .(op), .(mode))
+    })
+  })
 }
 
-simd_is_negative_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_negative_any")
-  .Call(C_simd_pred, x, "negative", 1L)
-}
+simd_is_na <- .pred("na", 0L)
+simd_is_na_any <- .pred("na", 1L)
+simd_is_na_all <- .pred("na", 2L)
 
-simd_is_negative_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_negative_all")
-  .Call(C_simd_pred, x, "negative", 2L)
-}
+simd_is_nan <- .pred("nan", 0L)
+simd_is_nan_any <- .pred("nan", 1L)
+simd_is_nan_all <- .pred("nan", 2L)
 
-simd_is_zero <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_zero")
-  .Call(C_simd_pred, x, "zero", 0L)
-}
+simd_is_finite <- .pred("finite", 0L)
+simd_is_finite_any <- .pred("finite", 1L)
+simd_is_finite_all <- .pred("finite", 2L)
 
-simd_is_zero_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_zero_any")
-  .Call(C_simd_pred, x, "zero", 1L)
-}
+simd_is_infinite <- .pred("infinite", 0L)
+simd_is_infinite_any <- .pred("infinite", 1L)
+simd_is_infinite_all <- .pred("infinite", 2L)
 
-simd_is_zero_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_zero_all")
-  .Call(C_simd_pred, x, "zero", 2L)
-}
+simd_is_negative <- .pred("negative", 0L)
+simd_is_negative_any <- .pred("negative", 1L)
+simd_is_negative_all <- .pred("negative", 2L)
 
-simd_is_normal <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_normal")
-  .Call(C_simd_pred, x, "normal", 0L)
-}
+simd_is_zero <- .pred("zero", 0L)
+simd_is_zero_any <- .pred("zero", 1L)
+simd_is_zero_all <- .pred("zero", 2L)
 
-simd_is_normal_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_normal_any")
-  .Call(C_simd_pred, x, "normal", 1L)
-}
+simd_is_normal <- .pred("normal", 0L)
+simd_is_normal_any <- .pred("normal", 1L)
+simd_is_normal_all <- .pred("normal", 2L)
 
-simd_is_normal_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_normal_all")
-  .Call(C_simd_pred, x, "normal", 2L)
-}
+simd_is_subnormal <- .pred("subnormal", 0L)
+simd_is_subnormal_any <- .pred("subnormal", 1L)
+simd_is_subnormal_all <- .pred("subnormal", 2L)
 
-simd_is_subnormal <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_subnormal")
-  .Call(C_simd_pred, x, "subnormal", 0L)
-}
+simd_is_whole <- .pred("whole", 0L)
+simd_is_whole_any <- .pred("whole", 1L)
+simd_is_whole_all <- .pred("whole", 2L)
 
-simd_is_subnormal_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_subnormal_any")
-  .Call(C_simd_pred, x, "subnormal", 1L)
-}
+simd_is_even <- .pred("even", 0L)
+simd_is_even_any <- .pred("even", 1L)
+simd_is_even_all <- .pred("even", 2L)
 
-simd_is_subnormal_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_subnormal_all")
-  .Call(C_simd_pred, x, "subnormal", 2L)
-}
+simd_is_odd <- .pred("odd", 0L)
+simd_is_odd_any <- .pred("odd", 1L)
+simd_is_odd_all <- .pred("odd", 2L)
 
-simd_is_whole <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_whole")
-  .Call(C_simd_pred, x, "whole", 0L)
-}
-
-simd_is_whole_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_whole_any")
-  .Call(C_simd_pred, x, "whole", 1L)
-}
-
-simd_is_whole_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_whole_all")
-  .Call(C_simd_pred, x, "whole", 2L)
-}
-
-simd_is_even <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_even")
-  .Call(C_simd_pred, x, "even", 0L)
-}
-
-simd_is_even_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_even_any")
-  .Call(C_simd_pred, x, "even", 1L)
-}
-
-simd_is_even_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_even_all")
-  .Call(C_simd_pred, x, "even", 2L)
-}
-
-simd_is_odd <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_odd")
-  .Call(C_simd_pred, x, "odd", 0L)
-}
-
-simd_is_odd_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_odd_any")
-  .Call(C_simd_pred, x, "odd", 1L)
-}
-
-simd_is_odd_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_odd_all")
-  .Call(C_simd_pred, x, "odd", 2L)
-}
-
-simd_is_pow2 <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_pow2")
-  .Call(C_simd_pred, x, "pow2", 0L)
-}
-
-simd_is_pow2_any <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_pow2_any")
-  .Call(C_simd_pred, x, "pow2", 1L)
-}
-
-simd_is_pow2_all <- function(x) {
-  if (is.object(x) || is.complex(x) || is.raw(x)) .pred_check(x, "simd_is_pow2_all")
-  .Call(C_simd_pred, x, "pow2", 2L)
-}
-
+simd_is_pow2 <- .pred("pow2", 0L)
+simd_is_pow2_any <- .pred("pow2", 1L)
+simd_is_pow2_all <- .pred("pow2", 2L)
 # A complex comparison takes only == and !=; the others give base R's
 # error. Operands with a class, complex operands and raw with non-raw ones
 # are converted by .cmp_args() first; the integer64 warning names the
@@ -187,56 +112,21 @@ simd_is_pow2_all <- function(x) {
   .sv_like(as.complex(a), a)
 }
 
-simd_eq <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_args(x, y, "eq")
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_cmp, x, y, "eq")
+# The comparison for `op`, named simd_<op>.
+.cmp <- function(op) {
+  .wrapper(alist(x = , y = ), bquote({
+    if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
+      p <- .cmp_args(x, y, .(op))
+      x <- p[[1L]]
+      y <- p[[2L]]
+    }
+    .Call(C_simd_cmp, x, y, .(op))
+  }))
 }
 
-simd_ne <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_args(x, y, "ne")
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_cmp, x, y, "ne")
-}
-
-simd_lt <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_args(x, y, "lt")
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_cmp, x, y, "lt")
-}
-
-simd_le <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_args(x, y, "le")
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_cmp, x, y, "le")
-}
-
-simd_gt <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_args(x, y, "gt")
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_cmp, x, y, "gt")
-}
-
-simd_ge <- function(x, y) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_args(x, y, "ge")
-    x <- p[[1L]]
-    y <- p[[2L]]
-  }
-  .Call(C_simd_cmp, x, y, "ge")
-}
+simd_eq <- .cmp("eq")
+simd_ne <- .cmp("ne")
+simd_lt <- .cmp("lt")
+simd_le <- .cmp("le")
+simd_gt <- .cmp("gt")
+simd_ge <- .cmp("ge")
