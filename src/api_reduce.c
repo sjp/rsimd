@@ -458,6 +458,14 @@ static double mean_unscaled_f64(const rsimd_in *in, const rsimd_opts *o,
   return ldexp(q + (fma(-q, n, s) + c) / n, k);
 }
 
+/* Clears the NA handling of o for the later passes over the n elements
+   whose first pass r counted all of them: that pass found no missing
+   value (na.rm removed none, or without na.rm there was none), so with
+   the same data the later passes give the same sums without the check. */
+static void after_clean_pass(rsimd_opts *o, const rsimd_reduce_result *r, R_xlen_t n) {
+  if (r->count == n) o->na_rm = o->na_check = 0;
+}
+
 /* The mean of x, from the sum fold r (sum_f64 or sum_i32 over every chunk,
    with r->count > 0 elements left): the exact integer sum divided in long
    double, or the double sum divided by the count refined by the mean of
@@ -523,6 +531,7 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   if (r.count == 0 || (!o.na_rm && (r.saw_na || r.saw_nan))) {
     return rsimd_reduce_finish(RSIMD_RED_MEAN, in.type, in.n, &r, &o);
   }
+  after_clean_pass(&o, &r, in.n);
   m = mean_value(&in, &o, &r, 0);
   return Rf_ScalarReal(m);
 }
@@ -1141,6 +1150,7 @@ static SEXP simd_var_impl(SEXP x, SEXP sd, SEXP na_rm, SEXP na_check, SEXP preci
   if (r.count < 2 || (!o.na_rm && (r.saw_na || r.saw_nan))) {
     return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
   }
+  after_clean_pass(&o, &r, in.n);
   /* Refined in every mode, as base R does: an error d in the mean adds
      n d^2 / (n - 1) to the result, as large as the variance itself when the
      spread is small next to the mean. */

@@ -850,3 +850,33 @@ test_that("an NA past the first chunk, or before it, gives NA on every tier", {
     }
   }
 })
+
+test_that("mean, var and sd with na.rm give the same bits as without when nothing is removed", {
+  # The passes after the first skip the NA handling when the first one
+  # removed nothing, and keep it when it removed something.
+  fs <- list(list(mean, simd_mean), list(stats::var, simd_var), list(stats::sd, simd_sd))
+  for (precision in c("fast", "pairwise", "compensated")) {
+    old <- simd_precision(precision)
+    on.exit(simd_precision(old))
+    for (n in c(7L, 101L, 3e4L + 3L)) {
+      x <- with_seed(n, 1e6 + runif(n))
+      xi <- with_seed(n, sample.int(1e6, n, TRUE))
+      for (v in list(x, xi)) {
+        for (f in fs) {
+          plain <- with_each_tier(function() f[[2]](v))
+          expect_identical(with_each_tier(function() f[[2]](v, na.rm = TRUE)), plain)
+          y <- v
+          y[c(1L, n %/% 2L, n)] <- NA
+          if (is.double(v)) y[2L] <- NaN
+          # Removing elements moves the others to other lanes, so the
+          # result can differ from that of the kept elements in the last bit.
+          want <- f[[1]](y, na.rm = TRUE)
+          for (got in with_each_tier(function() f[[2]](y, na.rm = TRUE))) {
+            expect_equal(got, want, tolerance = 1e-12)
+          }
+        }
+      }
+    }
+    simd_precision(old)
+  }
+})

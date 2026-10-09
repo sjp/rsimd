@@ -24,6 +24,13 @@ that the input has no missing values and skips looking for them. If the
 promise is broken, the result is unspecified (but never a crash): an integer
 \code{NA} is counted as \code{-2147483648} and a double \code{NA} may come
 back as \code{NaN}. \code{na.rm = TRUE} always looks for missing values.
+The check is made in the same pass over the data as the operation, never
+as a separate one. On doubles without \code{na.rm} it costs little, as a
+missing value carries through to the result and is looked for only where
+one shows; on integers it adds a comparison per element. A
+\code{\link{simd_vec}} made with \code{scan_na = TRUE} that holds no missing
+value skips the check, as \code{na_check = FALSE} does, with no promise to
+keep.
 
 Elementwise operations on doubles return \code{NA} wherever an operand is
 \code{NA}, and \code{NaN} where IEEE arithmetic gives one (base R may give
