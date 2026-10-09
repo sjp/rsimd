@@ -15,3 +15,4 @@
 ^\.cache$
 ^\.sde$
 ^\.claude$
+^config\.log$

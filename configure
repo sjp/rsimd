@@ -29,6 +29,11 @@
 # The none tier and the platform baseline (sse2 on x86-64, neon on arm64)
 # must compile: if they do not, configure fails.
 #
+# Every probe's command line, exit status and compiler output, and the
+# source of every probe that fails, go to config.log in the package root.
+# When a tier is dropped or built without SLEEF, the first lines of the
+# compiler output are also printed, so the install log says why.
+#
 # Why the tier flags are safe
 # ---------------------------
 # Tier flags such as -mavx2 or -march=armv8-a+sve apply only to that tier's
@@ -54,7 +59,9 @@
 #                           "avx512,sve2". none cannot be disabled.
 #   RSIMD_DISABLE_SLEEF=1   do not use SLEEF elementary functions in any
 #                           tier (they then come from the none tier's libm).
-#   RSIMD_CONFIGURE_VERBOSE=1  show the compiler output of failed probes.
+#   RSIMD_CONFIGURE_VERBOSE=1  show the full compiler output of every failed
+#                           probe, not only the first lines of a dropped
+#                           tier or SLEEF probe.
 #   RSIMD_DEBUG=1           debug build: compile everything with
 #                           -DRSIMD_DEBUG (extra internal checks at load).
 #   RSIMD_TEST_HOLE=<slot>  test build: leave the kernel slot <slot> (a name
@@ -155,6 +162,16 @@ if [ -z "$tmp" ] || [ ! -d "$tmp" ]; then
   exit 1
 fi
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+config_log=config.log
+{
+  echo "config.log: compiler output of the probes run by rsimd's configure"
+  echo "date: $(date)"
+  echo "compiler: $CC, target $arch-$os ($machine)"
+  echo "CPPFLAGS: $CPPFLAGS"
+  echo "CFLAGS: $CFLAGS"
+  echo "CPICFLAGS: $CPICFLAGS"
+} > "$config_log"
 
 # Probe bodies: one representative operation per tier, plus a check that
 # SIMDe (or the compiler) really selected the tier's native instructions.
@@ -280,11 +297,25 @@ write_probe() {
   probe_body "$1" "$2" >> "$4"
 }
 
-# Compiles a probe: try_compile <source> <extra flags>.
+# Compiles a probe: try_compile <source> <extra flags>. Logs the command,
+# its exit status and output to config.log, and the source if it failed.
 try_compile() {
   # shellcheck disable=SC2086 # flag variables are word lists
   $CC $CPPFLAGS $CFLAGS $CPICFLAGS $2 -I"$simde" -I"$sleef" -c "$1" -o "$tmp/conftest.o" \
     > "$tmp/conftest.log" 2>&1
+  rc=$?
+  {
+    echo
+    # shellcheck disable=SC2086,SC2116 # joins the flags with single spaces
+    echo "## $(echo $CC $CPPFLAGS $CFLAGS $CPICFLAGS $2) -I$simde -I$sleef -c $(basename "$1")"
+    cat "$tmp/conftest.log"
+    echo "## exit status $rc"
+    if [ "$rc" != 0 ]; then
+      echo "## failed probe $(basename "$1"):"
+      sed 's/^/| /' "$1"
+    fi
+  } >> "$config_log"
+  return $rc
 }
 
 # Writes the SLEEF probe for an inline header: write_sleef_probe <header>
@@ -296,7 +327,10 @@ write_sleef_probe() {
     sleefinline_avx512f.h) intrin='<immintrin.h>' vec=__m512d fn=Sleef_expd8_u10avx512f ;;
     sleefinline_advsimd.h) intrin='<arm_neon.h>' vec=float64x2_t fn=Sleef_expd2_u10advsimd ;;
     sleefinline_sve.h) intrin='<arm_sve.h>' vec=svfloat64_t fn=Sleef_expdx_u10sve ;;
-    *) return 1 ;;
+    *)
+      echo "configure: no SLEEF probe for $1" > "$tmp/conftest.log"
+      return 1
+      ;;
   esac
   cat > "$2" << EOF
 #include <stdint.h>
@@ -309,9 +343,23 @@ $vec rsimd_probe($vec x) { return $fn(x); }
 EOF
 }
 
+# Prints the compiler output of the last probe with RSIMD_CONFIGURE_VERBOSE=1.
 show_log() {
   if [ "$verbose" = 1 ]; then
     sed 's/^/  | /' "$tmp/conftest.log"
+  fi
+}
+
+# Prints the compiler output of the last probe: in full with
+# RSIMD_CONFIGURE_VERBOSE=1, otherwise its first lines.
+show_excerpt() {
+  if [ "$verbose" = 1 ]; then
+    show_log
+  else
+    head -n 5 "$tmp/conftest.log" | sed 's/^/  | /'
+    if [ "$(wc -l < "$tmp/conftest.log")" -gt 5 ]; then
+      echo "  | ... (the full output is in config.log)"
+    fi
   fi
 }
 
@@ -457,7 +505,7 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled row_sleef; 
         extra="$extra -DRSIMD_HAVE_SLEEF_$(echo "$tier" | tr '[:lower:]' '[:upper:]')=1"
       else
         echo "no (built without SLEEF)"
-        show_log
+        show_excerpt
       fi
     fi
     config_rules="$config_rules$tier|$flags $extra
@@ -473,7 +521,7 @@ while IFS='|' read -r tier row_arch row_os flags headers row_enabled row_sleef; 
     fi
   else
     echo "no (dropped)"
-    show_log
+    show_excerpt
     rejected="$rejected$tier|${flags:-default flags}
 "
   fi
@@ -484,7 +532,7 @@ done < "$tiers_file"
 for t in none $baseline; do
   case "$enabled$disabled" in *" $t "*) ;; *)
     echo "configure: error: $CC cannot build the $t tier, which rsimd requires on $arch" >&2
-    echo "configure: error: set RSIMD_CONFIGURE_VERBOSE=1 to see the compiler output" >&2
+    echo "configure: error: the compiler output is above and in config.log (RSIMD_CONFIGURE_VERBOSE=1 prints all of it)" >&2
     exit 1
     ;;
   esac
