@@ -619,7 +619,8 @@ as.data.frame.simd_vec <- function(x, row.names = NULL, optional = FALSE, ...,
 }
 
 print.simd_vec <- function(x, ...) {
-  cat(sprintf("<simd_vec[%d] %s %s>\n", length(x), .sv_type(x), .sv_header(x)))
+  # %.0f, as %d rejects the double length of a long vector.
+  cat(sprintf("<simd_vec[%.0f] %s %s>\n", length(x), .sv_type(x), .sv_header(x)))
   if (length(x) > 0L) print(.sv_printable(x), ...)
   invisible(x)
 }
@@ -628,9 +629,13 @@ format.simd_vec <- function(x, ...) format(.sv_printable(x), ...)
 
 str.simd_vec <- function(object, ...) {
   n <- length(object)
+  if (n == 0) {
+    cat(sprintf("simd_vec [0] %s %s\n", .sv_type(object), .sv_header(object)))
+    return(invisible())
+  }
   shown <- format(.sv_printable(object[seq_len(min(n, 10L))]))
   cat(sprintf(
-    "simd_vec [1:%d] %s %s %s%s\n", n, .sv_type(object), .sv_header(object),
+    "simd_vec [1:%.0f] %s %s %s%s\n", n, .sv_type(object), .sv_header(object),
     paste(shown, collapse = " "), if (n > 10L) " ..." else ""
   ))
   invisible()

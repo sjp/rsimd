@@ -1178,6 +1178,22 @@ test_that("print, format and str", {
   )
   expect_output(str(simd_vec(1:20)), "10 ...", fixed = TRUE)
   expect_output(str(list(a = x)), "simd_vec [1:3] double", fixed = TRUE)
+  expect_identical(
+    capture.output(str(simd_vec(numeric()))), "simd_vec [0] double impl=auto na_free=unknown"
+  )
+})
+
+test_that("print and str give the full length of a long simd_vec", {
+  skip_on_cran()
+  skip_if_not(
+    identical(Sys.getenv("RSIMD_EXTENDED_TESTS"), "true"),
+    "RSIMD_EXTENDED_TESTS is not true"
+  )
+  skip_if(.Machine$sizeof.pointer < 8, "no long vectors on 32-bit platforms")
+  x <- simd_vec(raw(2^31 + 1), check_na = TRUE)
+  out <- capture.output(print(x, max = 3))
+  expect_identical(out[1L], "<simd_vec[2147483649] raw impl=auto na_free=TRUE>")
+  expect_output(str(x), "simd_vec [1:2147483649] raw impl=auto na_free=TRUE 00 00", fixed = TRUE)
 })
 
 # ---- integer64 -------------------------------------------------------------
