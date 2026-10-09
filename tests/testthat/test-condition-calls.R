@@ -115,10 +115,65 @@ test_that("type errors from the C side name the function and argument (issue 046
   expect_identical(msg(min(simd_vec(1i))), msg(min(1i)))
 })
 
-test_that("errors from simd_vec methods name the method's call, not an inner helper", {
+test_that("errors from simd_vec methods name the generic's call, not an inner helper", {
   v <- simd_vec(c(1, 2))
-  expect_identical(condition_call(v + "a"), quote(Ops.simd_vec(v, "a")))
-  expect_identical(condition_call(+simd_vec(as.raw(1))), quote(Ops.simd_vec(simd_vec(as.raw(1)))))
+  expect_identical(condition_call(v + "a"), quote(v + "a"))
+  expect_identical(condition_call(+simd_vec(as.raw(1))), quote(+simd_vec(as.raw(1))))
+})
+
+test_that("conditions raised through simd_vec methods name the user's call (issue 053)", {
+  r <- simd_vec(as.raw(1:3))
+  v <- simd_vec(c(1, 2, 3, 4))
+  # Kernel errors and warnings (rsimd_error(), the warning flush, .type_error()).
+  expect_identical(condition_call(abs(r)), quote(abs(r)))
+  expect_identical(condition_call(log(v, "a")), quote(log(v, "a")))
+  expect_identical(condition_call(sqrt(simd_vec(-1))), quote(sqrt(simd_vec(-1))))
+  expect_identical(condition_call(simd_vec(1:3) + simd_vec(1:2)), quote(simd_vec(1:3) + simd_vec(1:2)))
+  # Summary and Math with extra arguments get values, a simd_vec as its data.
+  expect_identical(condition_call(sum(r)), call("sum", as.raw(1:3), na.rm = FALSE))
+  expect_identical(condition_call(round(v, "a")), call("round", c(1, 2, 3, 4), "a"))
+  # Base R fallbacks.
+  expect_identical(condition_call(gamma(simd_vec(-1))), quote(gamma(simd_vec(-1))))
+  expect_identical(condition_call(mean(v, trim = "a")), quote(mean(v, trim = "a")))
+  expect_identical(condition_call(median(r)), quote(median(r)))
+  expect_identical(condition_call(as.integer(simd_vec(1e10))), quote(as.integer(simd_vec(1e10))))
+  expect_identical(condition_call(as.double(simd_vec(1i))), quote(as.double(simd_vec(1i))))
+  # Subsetting and replacement, `*tmp*` being R's name for the object changed
+  # (R passes a replacement method the value, not its expression).
+  expect_identical(condition_call(v[["a"]]), quote(v[["a"]]))
+  expect_identical(condition_call(v[[10]]), quote(v[[10]]))
+  expect_identical(condition_call(v[1:2] <- c(1, 2, 3)), call("<-", quote(`*tmp*`[1:2]), c(1, 2, 3)))
+  expect_identical(condition_call(v[list(1)] <- 1), call("<-", quote(`*tmp*`[list(1)]), 1))
+  expect_identical(condition_call(v[[1]] <- 1:2), call("<-", quote(`*tmp*`[[1]]), 1:2))
+  expect_identical(condition_call(length(v) <- "a"), call("<-", quote(length(`*tmp*`)), "a"))
+  expect_identical(condition_call(dim(v) <- 3), call("<-", quote(dim(`*tmp*`)), 3))
+  # The fast paths still give base R's results.
+  expect_identical(v[[2]], 2)
+  w <- v
+  w[2] <- 5
+  w[c(TRUE, FALSE)] <- 0
+  expect_identical(simd_unwrap(w), c(0, 5, 0, 4))
+  length(w) <- "6"
+  expect_identical(simd_unwrap(w), c(0, 5, 0, 4, NA, NA))
+})
+
+test_that("simd_with_impl() names its own call, and leaves expr's calls alone (issue 053)", {
+  expect_identical(
+    condition_call(simd_with_impl("none", stop("boom"))),
+    quote(simd_with_impl("none", stop("boom")))
+  )
+  g <- function() stop("boom")
+  expect_identical(condition_call(simd_with_impl("none", g())), quote(g()))
+})
+
+test_that("integer64 conditions through simd_vec methods name the user's call (issue 053)", {
+  skip_if_not_installed("bit64")
+  z <- simd_vec(bit64::as.integer64(1:3))
+  big <- simd_vec(bit64::as.integer64("1099511627776"))
+  expect_identical(condition_call(z + 1.5), quote(z + 1.5))
+  expect_identical(condition_call(z[["a"]]), quote(z[["a"]]))
+  expect_identical(condition_call(as.integer(big)), quote(as.integer(big)))
+  expect_identical(condition_call(z[1:2] <- 1:3), call("<-", quote(`*tmp*`[1:2]), 1:3))
 })
 
 test_that("R/ raises no call-less errors", {

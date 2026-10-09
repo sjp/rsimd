@@ -137,7 +137,7 @@ static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
   po = (int *) rsimd_out_ptr(out);
   if (tx == RSIMD_C128 || ty == RSIMD_C128) {
     if (code != RSIMD_CMP_EQ && code != RSIMD_CMP_NE) {
-      Rf_error("invalid comparison with complex values");
+      rsimd_error("invalid comparison with complex values");
     }
     rsimd_c128_cmp(code, x, y, po);
   } else if (tx == RSIMD_U8 && ty == RSIMD_U8) {
@@ -164,7 +164,7 @@ static SEXP simd_cmp_impl(SEXP x, SEXP y, SEXP op) {
       rsimd_active->cmp_f64(code, p[0], p[1], len, flags, po + off);
     });
   } else {
-    Rf_error("comparison of these types is not implemented");
+    rsimd_error("comparison of these types is not implemented");
   }
   UNPROTECT(1);
   return out;
@@ -234,7 +234,7 @@ static SEXP simd_hamming_impl(SEXP x, SEXP y, SEXP na_rm) {
         if (r.saw_na && !o.na_rm) break;
       });
     } else {
-      Rf_error("Hamming distance of these types is not implemented");
+      rsimd_error("Hamming distance of these types is not implemented");
     }
   }
   return Rf_ScalarReal(r.saw_na && !o.na_rm ? NA_REAL : (double) r.i64);

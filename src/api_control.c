@@ -112,7 +112,7 @@ SEXP C_simd_available(void) {
 /* Selects "auto" or a tier; returns 0, -1 (unknown) or -2 (unavailable). */
 SEXP C_simd_select(SEXP name) {
   if (!Rf_isString(name) || XLENGTH(name) != 1 || STRING_ELT(name, 0) == NA_STRING) {
-    Rf_error("'impl' must be a single string");
+    rsimd_error("'impl' must be a single string");
   }
   rsimd_impl_selected();
   return Rf_ScalarInteger(rsimd_select(CHAR(STRING_ELT(name, 0))));
@@ -131,11 +131,11 @@ SEXP C_simd_kernel_tiers(SEXP tier) {
   int s;
   if (!Rf_isNull(tier)) {
     if (!Rf_isString(tier) || XLENGTH(tier) != 1 || STRING_ELT(tier, 0) == NA_STRING) {
-      Rf_error("'tier' must be NULL or a single string");
+      rsimd_error("'tier' must be NULL or a single string");
     }
     t = rsimd_tier_from_name(CHAR(STRING_ELT(tier, 0)));
     if (!rsimd_tier_available(t)) {
-      Rf_error("tier '%s' is not available", CHAR(STRING_ELT(tier, 0)));
+      rsimd_error("tier '%s' is not available", CHAR(STRING_ELT(tier, 0)));
     }
   }
   out = PROTECT(Rf_allocVector(STRSXP, RSIMD_SLOT_COUNT));

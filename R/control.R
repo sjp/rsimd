@@ -157,7 +157,9 @@ simd_math_accuracy <- function(mode) {
 simd_with_impl <- function(impl, expr) {
   old <- simd_use(impl)
   on.exit(simd_use(old))
-  force(expr)
+  # Evaluated here, not by force(expr), so that a condition expr raises
+  # names this call rather than force(expr).
+  expr
 }
 
 # For a candidate value of rsimd.impl: NULL if it can be selected, otherwise

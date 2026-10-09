@@ -181,7 +181,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
       st |= rsimd_active->ew3_i64(code, p[0], p[1], p[2], len, flags, (int64_t *) (po + off), &o);
     });
-    if (st & RSIMD_EW_LO_GT_HI) Rf_error("'lo' must not be greater than 'hi'");
+    if (st & RSIMD_EW_LO_GT_HI) rsimd_error("'lo' must not be greater than 'hi'");
     rsimd_set_i64_class(out);
     warn_status_i64(st);
     UNPROTECT(1);
@@ -205,7 +205,7 @@ static SEXP simd_ew3_impl(SEXP x, SEXP y, SEXP z, SEXP op, SEXP na_check) {
       st |= rsimd_active->ew3_f64(code, p[0], p[1], p[2], len, flags, po + off, &o);
     });
   }
-  if (st & RSIMD_EW_LO_GT_HI) Rf_error("'lo' must not be greater than 'hi'");
+  if (st & RSIMD_EW_LO_GT_HI) rsimd_error("'lo' must not be greater than 'hi'");
   warn_status(st);
   UNPROTECT(1);
   return out;

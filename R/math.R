@@ -19,7 +19,7 @@
 # ("atan2") when either is complex, as a list: checked, and the other
 # converted to complex, as in base R. The integer64 warning names `call`,
 # the user's call.
-.cmath_args <- function(x, y, op, call = sys.call(-1L)) {
+.cmath_args <- function(x, y, op, call = .user_call()) {
   # Unclassed complex, double, integer or logical operands need no checks.
   if (!is.object(x) && !is.object(y) && .cmath_plain(x) && .cmath_plain(y)) {
     if (!is.complex(x)) x <- as.complex(x)

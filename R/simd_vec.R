@@ -182,7 +182,7 @@ simd_na_free <- function(x) {
   pin <- .sv_resolve(args)
   data <- lapply(args, function(a) if (is_simd_vec(a)) .sv_strip(a) else a)
   if (any(vapply(data, inherits, NA, what = "integer64"))) .need_bit64()
-  out <- do.call(f, data)
+  out <- .relay(do.call(f, data))
   if (wrap && ((is.atomic(out) && !is.object(out)) || inherits(out, "integer64"))) {
     out <- .sv_new(.sv_strip(out), pin)
   }
@@ -316,7 +316,7 @@ Math.simd_vec <- function(x, ...) {
   if (type == "integer64") {
     .need_bit64()
     if (is.null(getS3method(gen, "integer64", optional = TRUE))) {
-      return(get(gen, envir = baseenv())(simd_as_double(x), ...))
+      return(.relay(get(gen, envir = baseenv())(simd_as_double(x), ...)))
     }
   }
   f <- get(gen, envir = baseenv())
@@ -462,11 +462,28 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
     value <- .sv_strip(value)
   }
   data <- .sv_data_own(x)
-  if (inherits(data, "integer64")) {
+  i64 <- inherits(data, "integer64")
+  if (i64) {
     if (!is.null(value) && !inherits(value, "integer64")) value <- simd_as_integer64(value)
     data <- unclass(data)
+    value <- unclass(value)
     n <- length(data)
-    if (missing(i)) data[] <- unclass(value) else data[i] <- unclass(value)
+  } else if (inherits(value, "integer64")) {
+    .stop("cannot assign integer64 values into a ", typeof(data), " simd_vec")
+  }
+  # Base R's errors and warnings (a bad subscript, a value whose length
+  # does not fit) name the user's call; one value at a logical or single
+  # subscript raises none, and so skips .relay()'s handlers.
+  plain <- length(value) == 1L &&
+    (missing(i) || (!is.object(i) && (is.logical(i) || (is.numeric(i) && length(i) == 1L))))
+  if (missing(i)) {
+    if (plain) data[] <- value else .relay(data[] <- value)
+  } else if (plain) {
+    data[i] <- value
+  } else {
+    .relay(data[i] <- value)
+  }
+  if (i64) {
     if (length(data) > n) {
       # The gap R filled with double NA becomes integer64 NA.
       gap <- logical(n)
@@ -474,12 +491,6 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
       data[is.na(gap)] <- unclass(.sv_na_i64())
     }
     class(data) <- "integer64"
-  } else if (inherits(value, "integer64")) {
-    .stop("cannot assign integer64 values into a ", typeof(data), " simd_vec")
-  } else if (missing(i)) {
-    data[] <- value
-  } else {
-    data[i] <- value
   }
   .sv_new(.sv_strip(data), attr(x, "rsimd_impl", exact = TRUE))
 }
@@ -504,7 +515,21 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 
 `[[.simd_vec` <- function(x, i, ...) {
   if (...length() > 0L) .stop("incorrect number of subscripts")
-  if (inherits(x, "integer64")) .sv_take(x, seq_along(x)[[i]]) else .subset2(x, i)
+  # An index other than one in range goes through .relay(), for base R's
+  # error to name the user's call; the handlers are too slow for every call.
+  if (inherits(x, "integer64")) {
+    plain <- is.numeric(i) && !is.object(i) && length(i) == 1L && !is.na(i) && i >= 1 &&
+      i < length(x) + 1
+    return(.sv_take(x, if (plain) seq_along(x)[[i]] else .relay(seq_along(x)[[i]])))
+  }
+  # .subset() gives NA rather than an error out of range, so a single
+  # element that is not NA is the answer; anything else is left to
+  # .subset2().
+  if (is.numeric(i)) {
+    out <- .subset(x, i)
+    if (length(out) == 1L && !is.na(out)) return(out)
+  }
+  .relay(.subset2(x, i))
 }
 
 # recursive and use.names change nothing for atomic parts without names.
@@ -550,16 +575,20 @@ c.simd_vec <- function(..., recursive = FALSE, use.names = TRUE) .sv_combine(lis
   flag <- .sv_flag(x)
   data <- .sv_data_own(x)
   n <- length(data)
-  if (inherits(data, "integer64")) {
-    raw <- unclass(data)
-    length(raw) <- value
-    if (value > n) raw[(n + 1L):value] <- unclass(.sv_na_i64())
-    class(raw) <- "integer64"
-    data <- raw
-  } else {
+  i64 <- inherits(data, "integer64")
+  if (i64) data <- unclass(data)
+  # A value other than one count goes through .relay(), for base R's
+  # errors and warnings to name the user's call.
+  if (is.numeric(value) && !is.object(value) && length(value) == 1L && !is.na(value)) {
     length(data) <- value
+  } else {
+    .relay(length(data) <- value)
   }
-  na_free <- if (isTRUE(flag) && value <= n) TRUE else NULL
+  if (i64) {
+    if (length(data) > n) data[(n + 1L):length(data)] <- unclass(.sv_na_i64())
+    class(data) <- "integer64"
+  }
+  na_free <- if (isTRUE(flag) && length(data) <= n) TRUE else NULL
   .sv_new(data, attr(x, "rsimd_impl", exact = TRUE), na_free)
 }
 
@@ -582,7 +611,7 @@ c.simd_vec <- function(..., recursive = FALSE, use.names = TRUE) .sv_combine(lis
   # whose token a copy of the attributes would void.
   data <- .sv_strip(x)
   if (inherits(data, "integer64")) .need_bit64()
-  set(data, value)
+  .relay(set(data, value))
 }
 
 # ---- Unwrapping ------------------------------------------------------------
@@ -606,17 +635,35 @@ as.integer64.simd_vec <- function(x, ...) {
 as.vector.simd_vec <- function(x, mode = "any") {
   data <- .sv_strip(x)
   if (inherits(data, "integer64")) data <- simd_as_double(data)
-  as.vector(data, mode)
+  .relay(as.vector(data, mode))
 }
 
 as.double.simd_vec <- function(x, ...) {
   data <- .sv_strip(x)
-  if (inherits(data, "integer64")) unclass(simd_as_double(data)) else as.double(data)
+  if (inherits(data, "integer64")) {
+    unclass(simd_as_double(data))
+  } else if (is.complex(data)) {
+    # Its warning (imaginary parts discarded) names the user's call.
+    .relay(as.double(data))
+  } else {
+    as.double(data)
+  }
 }
 
 as.integer.simd_vec <- function(x, ...) {
   data <- .sv_strip(x)
-  if (inherits(data, "integer64")) unclass(simd_as_integer(data)) else as.integer(data)
+  if (inherits(data, "integer64")) {
+    unclass(simd_as_integer(data))
+  } else if (is.double(data)) {
+    # The kernel converts as base R does, and its warning (NAs out of
+    # range) names the user's call.
+    simd_as_integer(data)
+  } else if (is.complex(data)) {
+    # Its warning (imaginary parts discarded) names the user's call.
+    .relay(as.integer(data))
+  } else {
+    as.integer(data)
+  }
 }
 
 as.logical.simd_vec <- function(x, ...) {

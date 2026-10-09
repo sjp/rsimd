@@ -7,7 +7,7 @@ simd_hamming <- function(x, y, ..., na.rm = FALSE) {
   if (...length()) .dots_error("simd_hamming", "two vectors", named = "na.rm")
   na.rm <- .arg_flag(na.rm, "na.rm")
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y) || is.raw(x) != is.raw(y)) {
-    p <- .cmp_operands(x, y, sys.call())
+    p <- .cmp_operands(x, y, .user_call())
     x <- p[[1L]]
     y <- p[[2L]]
   }

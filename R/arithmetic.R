@@ -61,7 +61,7 @@
 # operand the others become complex, otherwise integer64 operands become
 # double when another operand is a double (always for simd_div, whose
 # result is double). The integer64 warning names `call`, the user's call.
-.ew_args <- function(fun, args, wrap = FALSE, call = sys.call(-1L)) {
+.ew_args <- function(fun, args, wrap = FALSE, call = .user_call()) {
   plain <- TRUE
   ncplx <- 0L
   i64 <- dbl <- raw <- FALSE

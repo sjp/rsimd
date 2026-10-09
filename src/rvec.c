@@ -37,16 +37,16 @@ rsimd_etype rsimd_check_atomic(SEXP x, const char *arg) {
   rsimd_etype t = rsimd_etype_of(x);
   if (t == RSIMD_BAD) {
     /* NULL is rejected, not taken as a zero-length vector. */
-    if (Rf_isNull(x)) Rf_error("'%s' is NULL", arg);
+    if (Rf_isNull(x)) rsimd_error("'%s' is NULL", arg);
     /* The first class, or the type for an object without one (R_data_class
        is not part of R's API). */
     SEXP cls = Rf_getAttrib(x, R_ClassSymbol);
     const char *name = TYPEOF(cls) == STRSXP && XLENGTH(cls) > 0
                            ? Rf_translateChar(STRING_ELT(cls, 0))
                            : (TYPEOF(x) == VECSXP ? "list" : Rf_type2char((SEXPTYPE) TYPEOF(x)));
-    Rf_error("'%s' must be an atomic vector (double, integer, logical, raw, complex or "
-             "integer64), not %s",
-             arg, name);
+    rsimd_error("'%s' must be an atomic vector (double, integer, logical, raw, complex or "
+                "integer64), not %s",
+                arg, name);
   }
   return t;
 }
@@ -101,13 +101,19 @@ void rsimd_warn(const char *fmt, ...) {
   va_end(ap);
 }
 
+static SEXP user_call(void);
+
 void rsimd_warn_flush(void) {
   char msg[RSIMD_WARN_MAX][RSIMD_WARN_LEN];
   int i, n = warn_pending.n;
+  SEXP call;
+  if (n == 0) return;
   /* Taken off the list first: a handler may call rsimd again. */
   memcpy(msg, warn_pending.msg, (size_t) n * sizeof msg[0]);
   warn_pending.n = 0;
-  for (i = 0; i < n; i++) Rf_warning("%s", msg[i]);
+  call = PROTECT(user_call());
+  for (i = 0; i < n; i++) Rf_warningcall(call, "%s", msg[i]);
+  UNPROTECT(1);
 }
 
 SEXP rsimd_exit(SEXP out) {
@@ -151,6 +157,22 @@ static SEXP ns_eval(SEXP call) {
   out = Rf_eval(call, ns);
   UNPROTECT(2);
   return out;
+}
+
+/* .user_call(), evaluated in the namespace. */
+static SEXP user_call(void) {
+  SEXP call = PROTECT(Rf_lang1(Rf_install(".user_call"))), out = ns_eval(call);
+  UNPROTECT(1);
+  return out;
+}
+
+void rsimd_error(const char *fmt, ...) {
+  char buf[512];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof buf, fmt, ap);
+  va_end(ap);
+  Rf_errorcall(PROTECT(user_call()), "%s", buf);
 }
 
 void rsimd_type_error(rsimd_etype t, const char *arg, const char *msg) {
@@ -578,8 +600,8 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y) {
     b->x_scalar = 1;
     b->n = b->y.n;
   } else {
-    Rf_error("lengths of 'x' (%lld) and 'y' (%lld) must be equal or one of them must be 1",
-             (long long) b->x.n, (long long) b->y.n);
+    rsimd_error("lengths of 'x' (%lld) and 'y' (%lld) must be equal or one of them must be 1",
+                (long long) b->x.n, (long long) b->y.n);
   }
   return 0;
 }
@@ -616,12 +638,12 @@ int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names
     n = 0;
   } else if (!ok) {
     if (k == 2) {
-      Rf_error("lengths of '%s' (%lld) and '%s' (%lld) must be equal or one of them must be 1",
-               names[0], (long long) e->in[0].n, names[1], (long long) e->in[1].n);
+      rsimd_error("lengths of '%s' (%lld) and '%s' (%lld) must be equal or one of them must be 1",
+                  names[0], (long long) e->in[0].n, names[1], (long long) e->in[1].n);
     }
-    Rf_error("lengths of '%s' (%lld), '%s' (%lld) and '%s' (%lld) must be equal or 1", names[0],
-             (long long) e->in[0].n, names[1], (long long) e->in[1].n, names[2],
-             (long long) e->in[2].n);
+    rsimd_error("lengths of '%s' (%lld), '%s' (%lld) and '%s' (%lld) must be equal or 1", names[0],
+                (long long) e->in[0].n, names[1], (long long) e->in[1].n, names[2],
+                (long long) e->in[2].n);
   }
   e->n = n;
   for (i = 0; i < k; i++) {
@@ -683,8 +705,8 @@ void rsimd_set_i64_class(SEXP out) {
     UNPROTECT(2);
   }
   if (!bit64_loaded) {
-    Rf_error("integer64 results need package 'bit64'; install it with "
-             "install.packages(\"bit64\")");
+    rsimd_error("integer64 results need package 'bit64'; install it with "
+                "install.packages(\"bit64\")");
   }
   Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("integer64"));
 }
@@ -890,7 +912,7 @@ int rsimd_arg_na_rm(SEXP na_rm) {
 
 int rsimd_arg_lgl1(SEXP x, const char *name) {
   if (TYPEOF(x) != LGLSXP || Rf_xlength(x) != 1 || LOGICAL_ELT(x, 0) == NA_LOGICAL) {
-    Rf_error("'%s' must be TRUE or FALSE", name);
+    rsimd_error("'%s' must be TRUE or FALSE", name);
   }
   return LOGICAL_ELT(x, 0);
 }
@@ -903,7 +925,7 @@ int rsimd_arg_int1(SEXP x, const char *name) {
       if (v > INT_MIN && v <= INT_MAX && v == (double) (int) v) return (int) v;
     }
   }
-  Rf_error("'%s' must be a single integer", name);
+  rsimd_error("'%s' must be a single integer", name);
   return 0; /* not reached */
 }
 
@@ -912,7 +934,7 @@ double rsimd_arg_dbl1(SEXP x, const char *name) {
     if (TYPEOF(x) == REALSXP && !ISNAN(REAL_ELT(x, 0))) return REAL_ELT(x, 0);
     if (TYPEOF(x) == INTSXP && INTEGER_ELT(x, 0) != NA_INTEGER) return INTEGER_ELT(x, 0);
   }
-  Rf_error("'%s' must be a single number", name);
+  rsimd_error("'%s' must be a single number", name);
   return 0; /* not reached */
 }
 
@@ -922,7 +944,7 @@ double rsimd_arg_num1(SEXP x, const char *name) {
     if (TYPEOF(x) == INTSXP) return INTEGER_ELT(x, 0) == NA_INTEGER ? NA_REAL : INTEGER_ELT(x, 0);
     if (TYPEOF(x) == LGLSXP && LOGICAL_ELT(x, 0) == NA_LOGICAL) return NA_REAL;
   }
-  Rf_error("'%s' must be a single number", name);
+  rsimd_error("'%s' must be a single number", name);
   return 0; /* not reached */
 }
 
@@ -938,7 +960,7 @@ int rsimd_str_in(SEXP x, const char *const *names) {
 
 const char *rsimd_arg_str(SEXP x, const char *name) {
   if (TYPEOF(x) != STRSXP || Rf_xlength(x) != 1 || STRING_ELT(x, 0) == NA_STRING) {
-    Rf_error("'%s' must be a single string", name);
+    rsimd_error("'%s' must be a single string", name);
   }
   return CHAR(STRING_ELT(x, 0));
 }
@@ -954,7 +976,7 @@ static int find_name(const char *name, const char *const *table, int count) {
 
 int rsimd_lookup(const char *name, const char *const *table, int count, const char *what) {
   int i = find_name(name, table, count);
-  if (i < 0) Rf_error("unknown %s '%s'", what, name);
+  if (i < 0) rsimd_error("unknown %s '%s'", what, name);
   return i;
 }
 

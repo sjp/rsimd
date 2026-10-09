@@ -3,7 +3,7 @@
 # differs from the common type is converted, so same-type operands are
 # passed through without a copy; two logicals stay logical (their storage
 # is integer). Converting integer64 to double warns, naming the caller.
-.promote_pair <- function(x, y, call = sys.call(-1L)) {
+.promote_pair <- function(x, y, call = .user_call()) {
   types <- .Call(C_simd_promote, x, y)
   to <- types[[1L]]
   if (to == "double" && "integer64" %in% types[2:3]) {
@@ -110,19 +110,70 @@
 
 # The call the user made into rsimd: the innermost call of an rsimd
 # function from outside the package (an exported function, or the simd_vec
-# method a base generic dispatched to). Walks the stack, so only for errors.
-.user_call <- function() {
-  i <- .user_frame()
-  if (i > 0L) sys.call(i) else NULL
+# method a base generic dispatched to, as the generic's call). Walks the
+# stack, so only for errors and warnings.
+.user_call <- function(last = sys.nframe() - 1L) {
+  i <- .user_frame(last)
+  if (i > 0L) .generic_call(sys.call(i), sys.frame(i)) else NULL
+}
+
+# The value of expr, base R code run for the user's call into rsimd, with
+# any error or warning it raises given that call (.user_call()) in place
+# of the internal one. The handlers cost about a microsecond, so hot paths
+# call this only when expr can raise a condition.
+.relay <- function(expr) {
+  # The handlers run in frames above the signal's, so the user's call is
+  # sought below this frame.
+  n <- sys.nframe()
+  withCallingHandlers(expr,
+    error = function(e) {
+      e$call <- .user_call(n)
+      stop(e)
+    },
+    warning = function(w) {
+      w$call <- .user_call(n)
+      warning(w)
+      invokeRestart("muffleWarning")
+    }
+  )
+}
+
+# `call`, of the function whose frame is `frame`, as the user wrote it: a
+# method that a generic dispatched to gets the generic's name (v + 1, not
+# Ops.simd_vec(v, 1)), and a replacement method the assignment
+# (`*tmp*`[i] <- value, `*tmp*` being R's name for the object changed). A
+# group generic such as Summary passes the values of the arguments, not
+# their expressions: a simd_vec among them is shown as its data.
+.generic_call <- function(call, frame) {
+  gen <- get0(".Generic", envir = frame, inherits = FALSE)
+  head <- call[[1L]]
+  if (!is.character(gen) || length(gen) != 1L || !is.symbol(head) ||
+    identical(as.character(head), gen)) {
+    return(call)
+  }
+  # Plain R, not simd_unwrap(): this may run inside a .Call that is raising
+  # an error (rsimd_error()).
+  args <- lapply(as.list(call)[-1L], function(a) {
+    if (!is_simd_vec(a)) return(a)
+    attr(a, "rsimd_impl") <- attr(a, "rsimd_na_token") <- NULL
+    oldClass(a) <- setdiff(oldClass(a), "simd_vec")
+    a
+  })
+  n <- length(args)
+  if (endsWith(gen, "<-") && n >= 2L && identical(names(args)[[n]], "value")) {
+    target <- as.call(c(as.name(substr(gen, 1L, nchar(gen) - 2L)), args[-n]))
+    return(call("<-", target, args[[n]]))
+  }
+  as.call(c(as.name(gen), args))
 }
 
 # The frame number of the call .user_call() returns (0 for none), as seen
-# from the caller of .user_frame().
-.user_frame <- function() {
+# from the caller of .user_frame(), among frames 1 to last.
+.user_frame <- function(last = sys.nframe() - 1L) {
   ns <- topenv()
   parents <- sys.parents()
   frames <- sys.frames()
-  for (i in rev(seq_along(parents))) {
+  for (i in rev(seq_len(min(last, length(parents))))) {
     if (!identical(topenv(environment(sys.function(i))), ns)) next
     p <- parents[[i]]
     if (!identical(topenv(if (p == 0L) globalenv() else frames[[p]]), ns)) return(i)
@@ -142,7 +193,7 @@
   i <- .user_frame()
   call <- if (i > 0L) sys.call(i)
   fun <- if (i > 0L) .simd_fun_name(call, sys.function(i))
-  if (is.null(fun)) stop(simpleError(msg, sys.call(-1L)))
+  if (is.null(fun)) stop(simpleError(msg, if (i > 0L) .generic_call(call, sys.frame(i))))
   if (!is.null(other)) {
     stop(simpleError(paste0(fun, "() cannot combine ", type, " and ", other, " operands"), call))
   }

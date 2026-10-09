@@ -147,7 +147,7 @@ simd_is_pow2_all <- function(x) {
 # error. Operands with a class, complex operands and raw with non-raw ones
 # are converted by .cmp_args() first; the integer64 warning names the
 # user's call.
-.cmp_args <- function(x, y, op, call = sys.call(-1L)) {
+.cmp_args <- function(x, y, op, call = .user_call()) {
   if ((is.complex(x) || is.complex(y)) && !(op %in% c("eq", "ne"))) {
     .stop("invalid comparison with complex values")
   }

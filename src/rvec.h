@@ -50,13 +50,22 @@ rsimd_etype rsimd_etype_of(SEXP x);
    integer64), not <class>". */
 rsimd_etype rsimd_check_atomic(SEXP x, const char *arg);
 
+/* Rf_error() with the user's call into rsimd (.user_call()) rather than
+   the call of the closure that made the .Call(): from a simd_vec method,
+   the generic's call (sum(x), not simd_sum(x, na.rm = na.rm)). */
+void rsimd_error(const char *fmt, ...)
+#ifdef __GNUC__
+  __attribute__((noreturn, format(printf, 1, 2)))
+#endif
+  ;
+
 /* Errors for an operand of type t that the op does not take. From an
    exported simd_* function the message is rsimd's "<fun>() does not
    support '<arg>' of type <type>", naming the argument that has type t in
    the function's frame (`arg` when it does, or none is found; NULL if
    unknown), with the user's call; from anywhere else (a simd_vec method
    of a base generic) it is base R's `msg` (NULL for "invalid 'type'
-   (<type>) of argument"), with the call that made the .Call(). Evaluates
+   (<type>) of argument"), with the generic's call. Evaluates
    .type_error() in the namespace. */
 void rsimd_type_error(rsimd_etype t, const char *arg, const char *msg)
 #ifdef __GNUC__
@@ -424,7 +433,8 @@ void rsimd_impl_selected(void);
    (printf-style; the message is truncated to 255 bytes, and only the first
    8 of a call are kept) records a warning, and every entry point returns
    through rsimd_exit(out), which issues the recorded warnings in order
-   and returns out. A call that records a warning and then errors must
+   and returns out, with the user's call (as rsimd_error()). A call that
+   records a warning and then errors must
    call rsimd_warn_flush() before the error. rsimd_entry() discards any
    warnings left by a previous call. */
 void rsimd_warn(const char *fmt, ...)

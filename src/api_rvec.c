@@ -13,8 +13,8 @@ static SEXP simd_promote_impl(SEXP x, SEXP y) {
   rsimd_etype to = rsimd_promote(tx, ty);
   SEXP out;
   if (to == RSIMD_BAD) {
-    Rf_error("cannot combine 'x' of type %s with 'y' of type %s", rsimd_etype_names[tx],
-             rsimd_etype_names[ty]);
+    rsimd_error("cannot combine 'x' of type %s with 'y' of type %s", rsimd_etype_names[tx],
+                rsimd_etype_names[ty]);
   }
   out = PROTECT(Rf_allocVector(STRSXP, 3));
   SET_STRING_ELT(out, 0, Rf_mkChar(rsimd_etype_names[to]));
@@ -168,7 +168,7 @@ static SEXP simd_debug_bin_impl(SEXP x, SEXP y) {
       }
     });
   } else {
-    Rf_error("debug_bin takes two double or two integer/logical operands");
+    rsimd_error("debug_bin takes two double or two integer/logical operands");
   }
 
   out = PROTECT(Rf_mkNamed(VECSXP, names));
@@ -229,7 +229,7 @@ static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP
   SET_VECTOR_ELT(out, 0, result_fields(&r));
 
   if (TYPEOF(fields) != VECSXP || (Rf_xlength(fields) > 0 && Rf_isNull(fnames))) {
-    Rf_error("'fields' must be a named list");
+    rsimd_error("'fields' must be a named list");
   }
   for (i = 0; i < Rf_xlength(fields); i++) {
     const char *f = CHAR(STRING_ELT(fnames, i));
@@ -244,7 +244,7 @@ static SEXP simd_debug_finish_impl(SEXP op, SEXP type, SEXP n, SEXP fields, SEXP
     else if (strcmp(f, "overflow") == 0) r.overflow = v != 0;
     else if (strcmp(f, "any_true") == 0) r.any_true = v != 0;
     else if (strcmp(f, "any_false") == 0) r.any_false = v != 0;
-    else Rf_error("unknown field '%s'", f);
+    else rsimd_error("unknown field '%s'", f);
   }
   SET_VECTOR_ELT(out, 1, rsimd_reduce_finish(o_idx, t, len, &r, &o));
   UNPROTECT(1);
@@ -284,7 +284,7 @@ SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
 static SEXP simd_debug_warn_impl(SEXP n, SEXP len) {
   int count = rsimd_arg_int1(n, "n"), width = rsimd_arg_int1(len, "len"), i;
   char *pad;
-  if (count < 0 || width < 0) Rf_error("'n' and 'len' must be non-negative");
+  if (count < 0 || width < 0) rsimd_error("'n' and 'len' must be non-negative");
   pad = R_alloc((size_t) width + 1, 1);
   memset(pad, 'x', (size_t) width);
   pad[width] = '\0';

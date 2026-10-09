@@ -312,11 +312,11 @@ test_that("integer64 promotes to integer64, or to double with a warning", {
   expect_identical(out$y, bit64::as.integer64(2L))
   expect_identical(.promote_pair(TRUE, big)$x, bit64::as.integer64(1L))
 
-  caller <- function(x, y) .promote_pair(x, y)
-  w <- tryCatch(caller(big, 0.5), warning = identity)
+  # The warning names the user's call into rsimd.
+  w <- tryCatch(simd_add(big, 0.5), warning = identity)
   expect_identical(conditionMessage(w), "integer64 coerced to double")
-  expect_identical(conditionCall(w), quote(caller(big, 0.5)))
-  out <- suppressWarnings(caller(big, 0.5))
+  expect_identical(conditionCall(w), quote(simd_add(big, 0.5)))
+  out <- suppressWarnings(.promote_pair(big, 0.5))
   expect_identical(out, list(x = 9007199254740992, y = 0.5))
   expect_warning(
     .promote_pair(1, bit64::as.integer64(7L)), "integer64 coerced to double",

@@ -104,9 +104,9 @@ static SEXP simd_log_impl(SEXP x, SEXP base, SEXP accuracy) {
   case REALSXP:
   case INTSXP:
   case LGLSXP: break;
-  default: Rf_error("%s", math_msg);
+  default: rsimd_error("%s", math_msg);
   }
-  if (Rf_xlength(base) != 1) Rf_error("'base' must be a single number");
+  if (Rf_xlength(base) != 1) rsimd_error("'base' must be a single number");
   b = Rf_asReal(base);
   /* log(x) / NaN is NaN, and the input's NaN where x is NA or NaN. */
   if (ISNA(b)) return run_math1(x, RSIMD_MATH_LOGB, b, MATH1_ALL_NA);
@@ -279,7 +279,7 @@ static SEXP simd_ulp_dist_impl(SEXP a, SEXP b) {
   sargs[1] = b;
   rsimd_ew_init(&e, 2, sargs, names);
   if (e.in[0].type != RSIMD_F64 || e.in[1].type != RSIMD_F64) {
-    Rf_error("'a' and 'b' must be double vectors");
+    rsimd_error("'a' and 'b' must be double vectors");
   }
   out = PROTECT(rsimd_alloc_like(RSIMD_F64, e.n));
   po = (double *) rsimd_out_ptr(out);

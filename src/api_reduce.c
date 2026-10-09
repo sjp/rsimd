@@ -855,8 +855,8 @@ static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SE
   if (!is_numeric(b.x.type)) rsimd_type_error(b.x.type, "x", NULL);
   if (!is_numeric(b.y.type)) rsimd_type_error(b.y.type, "y", NULL);
   if (b.x.n != b.y.n) {
-    Rf_error("lengths of 'x' (%lld) and 'y' (%lld) must be equal", (long long) b.x.n,
-             (long long) b.y.n);
+    rsimd_error("lengths of 'x' (%lld) and 'y' (%lld) must be equal", (long long) b.x.n,
+                (long long) b.y.n);
   }
   b.n = b.x.n;
   b.x_scalar = b.y_scalar = 0;
