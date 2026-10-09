@@ -38,7 +38,7 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_prod, 4),
   CALLDEF(C_simd_prod2, 6),
   CALLDEF(C_simd_mean, 4),
-  CALLDEF(C_simd_minmax, 6),
+  CALLDEF(C_simd_minmax, 7),
   CALLDEF(C_simd_which, 4),
   CALLDEF(C_simd_anyall, 3),
   CALLDEF(C_simd_na, 2),

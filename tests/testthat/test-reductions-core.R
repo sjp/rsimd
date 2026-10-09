@@ -603,7 +603,7 @@ test_that("arguments and types are validated", {
 # Expects every function with na.rm to error on an extra positional
 # argument, naming the user's call, rather than read it as na.rm:
 # simd_any(FALSE, TRUE) is not any(FALSE, TRUE).
-test_that("na.rm and na_check must be named", {
+test_that("na.rm, finite and na_check must be named", {
   one <- c(
     "simd_sum", "simd_prod", "simd_mean", "simd_min", "simd_max", "simd_range",
     "simd_max_abs", "simd_min_abs", "simd_sum_sq", "simd_norm", "simd_sum_abs",
@@ -615,7 +615,13 @@ test_that("na.rm and na_check must be named", {
   )
   for (f in c(one, two)) {
     fn <- get(f)
-    named <- if ("na_check" %in% names(formals(fn))) "na.rm and na_check" else "na.rm"
+    named <- if ("finite" %in% names(formals(fn))) {
+      "na.rm, finite and na_check"
+    } else if ("na_check" %in% names(formals(fn))) {
+      "na.rm and na_check"
+    } else {
+      "na.rm"
+    }
     what <- if (f %in% one) {
       "one vector; combine several with c()"
     } else if (f %in% c("simd_pmin", "simd_pmax")) {
@@ -740,6 +746,64 @@ test_that("min and max find NA and NaN anywhere, and Inf + -Inf is not taken for
       }
     }
   }
+})
+
+test_that("finite = TRUE drops infinities and missing values on every tier", {
+  fin <- function(v) v[is.finite(v)]
+  # Base R function of the finite values, rsimd function.
+  fs <- list(
+    list(min, simd_min), list(max, simd_max), list(range, simd_range),
+    list(function(v) max(abs(v)), simd_max_abs),
+    list(function(v) min(abs(v)), simd_min_abs)
+  )
+  for (n in c(6L, 37L, 3e4L + 3L)) {
+    x <- with_seed(n, runif(n, -100, 100))
+    # Infinities at the ends, at a block edge and in the tail; an infinity
+    # of each sign alone; missing values among them; no infinity at all.
+    cases <- list(
+      replace(x, unique(pmin(c(1L, n, 1024:1025, n - 1L), n)), c(Inf, -Inf)),
+      replace(x, n %/% 2L + 1L, Inf), replace(x, 1L, -Inf),
+      replace(x, unique(c(2L, n)), c(NA, NaN)),
+      replace(x, unique(c(1L, 3L, n)), c(Inf, NA, -Inf)), x
+    )
+    for (y in cases) {
+      for (f in fs) {
+        expect_tiers_give(f[[1]](fin(y)), function(v) f[[2]](v, finite = TRUE), y)
+        # finite implies na.rm, as in base R.
+        expect_tiers_give(f[[1]](fin(y)), function(v) f[[2]](v, na.rm = FALSE, finite = TRUE), y)
+      }
+      expect_tiers_give(range(y, finite = TRUE), function(v) simd_range(v, finite = TRUE), y)
+    }
+  }
+  # Nothing finite left: base R's values and warnings.
+  for (y in list(c(Inf, -Inf, NA), c(Inf, Inf), numeric())) {
+    expect_identical(
+      suppressWarnings(simd_range(y, finite = TRUE)),
+      suppressWarnings(range(y, finite = TRUE))
+    )
+  }
+  expect_warning(simd_max(c(Inf, NaN), finite = TRUE), "no non-missing arguments to max")
+  expect_warning(simd_min_abs(-Inf, finite = TRUE), "no non-missing arguments to min")
+  # Integer and logical vectors hold no infinities: finite is na.rm.
+  expect_identical(simd_range(c(4L, NA, -2L), finite = TRUE), c(-2L, 4L))
+  expect_identical(simd_max(c(TRUE, NA), finite = TRUE), 1L)
+  expect_identical(simd_min_abs(c(-5L, NA, 3L), finite = TRUE), 3L)
+  expect_identical(simd_range(1:10, finite = TRUE), c(1L, 10L))
+  # Complex magnitudes: a modulus that is infinite (or missing) goes.
+  z <- complex(real = c(3, Inf, NA, 0, -Inf), imaginary = c(4, 0, 1, 1, NaN))
+  for (tier in tiers_to_test()) {
+    simd_with_impl(tier, {
+      expect_identical(simd_max_abs(z, finite = TRUE), 5)
+      expect_identical(simd_min_abs(z, finite = TRUE), 1)
+    })
+  }
+  expect_error(simd_range(1, finite = NA), "'finite' must be TRUE or FALSE", fixed = TRUE)
+  expect_error(simd_max(1, finite = "yes"), "'finite' must be TRUE or FALSE", fixed = TRUE)
+  expect_error(simd_range(1, 2), "na.rm, finite and na_check must be named", fixed = TRUE)
+  skip_if_not_installed("bit64")
+  x <- bit64::as.integer64(c(7, NA, -3))
+  expect_identical(simd_range(x, finite = TRUE), bit64::as.integer64(c(-3, 7)))
+  expect_identical(simd_max_abs(x, finite = TRUE), bit64::as.integer64(7))
 })
 
 test_that("reductions without na.rm stop at an NA and still give NA on every tier", {

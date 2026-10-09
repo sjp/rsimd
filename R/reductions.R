@@ -57,32 +57,33 @@ simd_mean <- function(x, ..., na.rm = FALSE, na_check = NULL) {
 # min, max and range share one kernel; op is 0, 1 or 2. Complex input is
 # left to the C side, which rejects it. With absval
 # (max_abs and min_abs) the kernel reads abs(x), Mod(x) for complex x (in
-# the math accuracy mode), and raw input is rejected here.
-simd_min <- function(x, ..., na.rm = FALSE, na_check = NULL) {
-  if (...length()) .dots_error("simd_min")
-  .Call(C_simd_minmax, x, 0L, na.rm, na_check, FALSE, 0L)
+# the math accuracy mode), and raw input is rejected here. finite = TRUE
+# drops infinities too and implies na.rm, as range(x, finite = TRUE).
+simd_min <- function(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_min", named = "na.rm, finite and na_check")
+  .Call(C_simd_minmax, x, 0L, na.rm, na_check, FALSE, 0L, finite)
 }
 
-simd_max <- function(x, ..., na.rm = FALSE, na_check = NULL) {
-  if (...length()) .dots_error("simd_max")
-  .Call(C_simd_minmax, x, 1L, na.rm, na_check, FALSE, 0L)
+simd_max <- function(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_max", named = "na.rm, finite and na_check")
+  .Call(C_simd_minmax, x, 1L, na.rm, na_check, FALSE, 0L, finite)
 }
 
-simd_range <- function(x, ..., na.rm = FALSE, na_check = NULL) {
-  if (...length()) .dots_error("simd_range")
-  .Call(C_simd_minmax, x, 2L, na.rm, na_check, FALSE, 0L)
+simd_range <- function(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_range", named = "na.rm, finite and na_check")
+  .Call(C_simd_minmax, x, 2L, na.rm, na_check, FALSE, 0L, finite)
 }
 
-simd_max_abs <- function(x, ..., na.rm = FALSE, na_check = NULL) {
-  if (...length()) .dots_error("simd_max_abs")
+simd_max_abs <- function(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_max_abs", named = "na.rm, finite and na_check")
   if (is.object(x) || is.raw(x)) .check_supported(x, "simd_max_abs", "raw", character())
-  .Call(C_simd_minmax, x, 1L, na.rm, na_check, TRUE, NULL)
+  .Call(C_simd_minmax, x, 1L, na.rm, na_check, TRUE, NULL, finite)
 }
 
-simd_min_abs <- function(x, ..., na.rm = FALSE, na_check = NULL) {
-  if (...length()) .dots_error("simd_min_abs")
+simd_min_abs <- function(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL) {
+  if (...length()) .dots_error("simd_min_abs", named = "na.rm, finite and na_check")
   if (is.object(x) || is.raw(x)) .check_supported(x, "simd_min_abs", "raw", character())
-  .Call(C_simd_minmax, x, 0L, na.rm, na_check, TRUE, NULL)
+  .Call(C_simd_minmax, x, 0L, na.rm, na_check, TRUE, NULL, finite)
 }
 
 simd_which_min <- function(x) {

@@ -193,8 +193,9 @@ functions and their inverses, \code{cumsum}, \code{cumprod},
 unlike in base R. The
 \code{Summary} functions (\code{sum}, \code{prod}, \code{min},
 \code{max}, \code{range}, \code{any}, \code{all}) and \code{mean} call
-theirs with \code{na.rm} passed on; several arguments are combined with
-\code{c()} first. \code{stats::var()} and \code{stats::sd()} are not
+theirs with \code{na.rm} passed on (and \code{range}'s \code{finite}
+when it is \code{TRUE} or \code{FALSE}); several arguments are combined
+with \code{c()} first. \code{stats::var()} and \code{stats::sd()} are not
 generic: use \code{\link{simd_var}} and \code{\link{simd_sd}}, or
 \code{var(x)}, which works on the data as on any numeric vector.
 
@@ -211,7 +212,7 @@ logical results), the \code{Math} functions without a complex kernel, and
 (\code{sqrt}, \code{log}, \code{floor}, \code{round}, \code{cumprod}
 \dots), which need \pkg{bit64};
 \code{mean(x, trim)} with \code{trim} other than 0; \code{range(x,
-finite = TRUE)}; and \code{Re}, \code{Im}, \code{Mod}, \code{Arg} and
+finite)} with \code{finite} other than \code{TRUE} or \code{FALSE}; and \code{Re}, \code{Im}, \code{Mod}, \code{Arg} and
 \code{Conj} of non-complex data. The other \code{Math} functions
 (\code{exp}, \code{log1p}, the trigonometric functions, \code{gamma}
 \dots) convert \code{integer64} data to double first, as \pkg{bit64}'s

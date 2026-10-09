@@ -1089,6 +1089,11 @@ test_that("range(finite = TRUE) follows base R", {
   expect_identical(range(simd_vec(c(1, Inf, NA)), finite = TRUE), c(1, 1))
   expect_identical(range(simd_vec(c(1, NA)), finite = FALSE), c(NA_real_, NA_real_))
   expect_identical(range(simd_vec(c(2, -Inf)), 7, finite = TRUE), c(2, 7))
+  expect_identical(range(simd_vec(c(3L, NA, 1L)), finite = TRUE), c(1L, 3L))
+  # Any value if() takes, as in base R.
+  expect_identical(range(simd_vec(c(5, Inf, NA)), finite = 1), c(5, 5))
+  # min() and max() have no 'finite': it is a value, as in base R.
+  expect_identical(min(simd_vec(c(5, 2)), finite = TRUE), min(c(5, 2), finite = TRUE))
 })
 
 test_that("c(), [ and as_simd_vec() take base R's other arguments", {

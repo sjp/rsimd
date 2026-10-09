@@ -556,24 +556,63 @@ static void minmax_mod(const rsimd_in *in, int fast, rsimd_reduce_result *r, con
   });
 }
 
+/* Refolds into r (with o->na_rm set) the min/max of the finite elements of
+   a double or complex x, of their absolute values with absval (of Mod(x)
+   for complex x, in fast mode with `fast`): each block's finite values are
+   copied into a buffer that the double kernel reads. Only called when the
+   first pass found an infinite extremum, so data without infinities is
+   read once. */
+static void minmax_finite(const rsimd_in *in, int ab, int fast, rsimd_reduce_result *r,
+                          const rsimd_opts *o) {
+  double buf[RSIMD_MOD_BLOCK];
+  rsimd_reduce_result_init(r, RSIMD_RED_MIN);
+  if (in->type == RSIMD_C128) {
+    RSIMD_FOREACH_CHUNK(in, Rcomplex, px, len, off, {
+      R_xlen_t i, j, k;
+      for (i = 0; i < len; i += RSIMD_MOD_BLOCK) {
+        R_xlen_t l = len - i < RSIMD_MOD_BLOCK ? len - i : RSIMD_MOD_BLOCK;
+        rsimd_active->math1_c128(RSIMD_CMATH_MOD | fast, px + i, l, buf);
+        for (j = k = 0; j < l; j++) {
+          if (isfinite(buf[j])) buf[k++] = buf[j];
+        }
+        if (k) rsimd_active->minmax_f64(buf, k, 0, r, o);
+      }
+    });
+    return;
+  }
+  RSIMD_FOREACH_CHUNK(in, double, px, len, off, {
+    R_xlen_t i, j, k;
+    for (i = 0; i < len; i += RSIMD_MOD_BLOCK) {
+      R_xlen_t l = len - i < RSIMD_MOD_BLOCK ? len - i : RSIMD_MOD_BLOCK;
+      for (j = k = 0; j < l; j++) {
+        if (isfinite(px[i + j])) buf[k++] = px[i + j];
+      }
+      if (k) rsimd_active->minmax_f64(buf, k, ab, r, o);
+    }
+  });
+}
+
 /* min (op 0), max (op 1) or range (op 2) of x, or with absval of abs(x)
    (Mod(x) for complex x, a double result, in the accuracy mode
    `accuracy`): both extrema come from one pass. Integer and logical
    results are integer, except for empty input (after na.rm), which gives
    Inf and -Inf with base R's warnings. integer64 results are integer64;
    empty input gives +INT64_MAX and -INT64_MAX with bit64's warnings (one
-   for range). */
+   for range). With `finite`, infinite values are dropped as well as
+   missing ones (na.rm is implied), as by range(x, finite = TRUE). */
 static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval,
-                             SEXP accuracy) {
+                             SEXP accuracy, SEXP finite) {
   rsimd_reduce_result r, rmax;
   rsimd_opts o;
   rsimd_in in;
   int which = rsimd_arg_int1(op, "op"), ab = rsimd_arg_lgl1(absval, "absval");
+  int fin = rsimd_arg_lgl1(finite, "finite");
   SEXP lo, hi, out;
   double a, b;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  if (fin) o.na_rm = 1;
   if (rsimd_in_seq(&in, &a, &b)) {
     if (which < 2) return seq_scalar(in.type, seq_extremum(which, ab, a, b));
     lo = PROTECT(seq_scalar(in.type, seq_extremum(0, ab, a, b)));
@@ -609,10 +648,15 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP ab
   case RSIMD_C128:
     if (!ab) bad_type(in.type);
     minmax_mod(&in, accuracy_bit(accuracy), &r, &o);
-    in.type = RSIMD_F64;
     break;
   default: bad_type(in.type);
   }
+  if (fin && r.count > 0 && (in.type == RSIMD_F64 || in.type == RSIMD_C128) &&
+      (((o.extrema & RSIMD_EXT_MIN) && !isfinite(r.f64)) ||
+       ((o.extrema & RSIMD_EXT_MAX) && !isfinite(r.f64_hi)))) {
+    minmax_finite(&in, ab, in.type == RSIMD_C128 ? accuracy_bit(accuracy) : 0, &r, &o);
+  }
+  if (in.type == RSIMD_C128) in.type = RSIMD_F64;
   rmax = r;
   rmax.f64 = r.f64_hi;
   rmax.i64 = r.i64_hi;
@@ -644,9 +688,10 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP ab
   return out;
 }
 
-SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval, SEXP accuracy) {
+SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval, SEXP accuracy,
+                   SEXP finite) {
   rsimd_entry();
-  return rsimd_exit(simd_minmax_impl(x, op, na_rm, na_check, absval, accuracy));
+  return rsimd_exit(simd_minmax_impl(x, op, na_rm, na_check, absval, accuracy, finite));
 }
 
 /* which.min (dir = 0) or which.max (dir = 1) of Mod(x) for complex x, into

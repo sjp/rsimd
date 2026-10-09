@@ -345,8 +345,11 @@ Summary.simd_vec <- function(..., na.rm = FALSE) {
   }
   x <- if (length(args) == 1L) args[[1L]] else .sv_combine(args)
   k <- .sv_summary_kernels[[gen]]
-  if (isFALSE(finite) && is_simd_vec(x) && !(.sv_type(x) %in% k[[2L]])) {
-    return(k[[1L]](x, na.rm = na.rm))
+  if (is_simd_vec(x) && !(.sv_type(x) %in% k[[2L]])) {
+    if (isFALSE(finite)) return(k[[1L]](x, na.rm = na.rm))
+    # A 'finite' other than TRUE or FALSE (base R's range() takes any
+    # value if() does) goes to base R.
+    if (isTRUE(finite)) return(simd_range(x, na.rm = na.rm, finite = TRUE))
   }
   f <- get(gen, envir = baseenv())
   g <- if (isFALSE(finite)) {

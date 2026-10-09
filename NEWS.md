@@ -24,7 +24,9 @@ First release.
   `simd_which()` and `simd_count()` are `which()` and `sum()` of a logical
   vector; `simd_max_abs()`, `simd_min_abs()`, `simd_which_max_abs()` and
   `simd_which_min_abs()` are `max(abs(x))` and its kin without the vector
-  `abs(x)`, also for complex and integer64 input; `simd_prod_sums()` and
+  `abs(x)`, also for complex and integer64 input; `simd_range()` takes
+  `finite = TRUE` as `range()` does, and so do `simd_min()`, `simd_max()`,
+  `simd_max_abs()` and `simd_min_abs()`; `simd_prod_sums()` and
   `simd_prod_diffs()` are `prod(x + y)` and `prod(x - y)` without the
   vector of sums.
 * **Elementwise arithmetic:** `simd_add()`, `simd_sub()`, `simd_mul()`,

@@ -37,7 +37,8 @@ SEXP C_simd_sum(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_prod(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_prod2(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SEXP precision);
 SEXP C_simd_mean(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision);
-SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval, SEXP accuracy);
+SEXP C_simd_minmax(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP absval, SEXP accuracy,
+                   SEXP finite);
 SEXP C_simd_which(SEXP x, SEXP max, SEXP absval, SEXP accuracy);
 SEXP C_simd_anyall(SEXP x, SEXP all, SEXP na_rm);
 SEXP C_simd_na(SEXP x, SEXP mode);

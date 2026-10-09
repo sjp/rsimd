@@ -120,6 +120,9 @@ The mean of a complex vector is \code{simd_sum()}'s result divided by the
 number of elements, part by part (without base R's second pass in
 \code{long double}), so a missing part makes that part of the mean
 missing, as in base R.
+There is no \code{trim} argument: for a trimmed mean, which needs a
+partial sort, use \code{\link{mean}(x, trim = )}, which a
+\code{\link{simd_vec}} also takes (from base R).
 
 \rsimdSemantics
 

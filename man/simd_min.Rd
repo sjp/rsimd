@@ -6,27 +6,30 @@
 \alias{simd_min_abs}
 \title{Minimum, Maximum and Range of Vector Elements and Magnitudes}
 \usage{
-simd_min(x, ..., na.rm = FALSE, na_check = NULL)
+simd_min(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL)
 
-simd_max(x, ..., na.rm = FALSE, na_check = NULL)
+simd_max(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL)
 
-simd_range(x, ..., na.rm = FALSE, na_check = NULL)
+simd_range(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL)
 
-simd_max_abs(x, ..., na.rm = FALSE, na_check = NULL)
+simd_max_abs(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL)
 
-simd_min_abs(x, ..., na.rm = FALSE, na_check = NULL)
+simd_min_abs(x, ..., na.rm = FALSE, finite = FALSE, na_check = NULL)
 }
 \arguments{
 \item{x}{A double, integer, logical or \pkg{bit64} \code{integer64} vector;
 also complex for \code{simd_max_abs()} and \code{simd_min_abs()}.}
-\item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm}
-and \code{na_check} must be named, so that an extra vector is not read as
+\item{\dots}{Must be empty. Each function takes one vector, and \code{na.rm},
+\code{finite} and \code{na_check} must be named, so that an extra vector is not read as
 \code{na.rm}. Combine several vectors with \code{c()}: unlike
 \code{max(x, y)}, \code{simd_max(x, y)} is an error.}
 \item{na.rm}{\code{TRUE} or \code{FALSE}: remove missing values (\code{NA}
 and \code{NaN}) first?}
 \item{na_check}{\code{TRUE} or \code{FALSE}, or \code{NULL} (the default) for option \code{rsimd.na_check} (\code{\link{rsimd_options}}). \code{FALSE} promises that
 \code{x} has no missing values, so they are not looked for; see Details.}
+\item{finite}{\code{TRUE} or \code{FALSE}: remove infinite values as well as
+missing ones? \code{TRUE} implies \code{na.rm = TRUE}, as for
+\code{\link{range}(x, finite = TRUE)}.}
 }
 \description{
 The smallest or largest element of a vector, or both, like
@@ -51,6 +54,19 @@ returns it twice. When nothing is left after removing missing values (or
 \code{x} is empty), \code{simd_min()} returns \code{Inf} and
 \code{simd_max()} \code{-Inf}, as doubles, with base R's warning;
 \code{simd_range()} returns both, with both warnings.
+
+With \code{finite = TRUE}, \code{Inf} and \code{-Inf} are removed too (and
+missing values, whatever \code{na.rm}), as by
+\code{range(x, finite = TRUE)}; base R's \code{min()} and \code{max()} have
+no such argument, so \code{simd_min(x, finite = TRUE)} stands for
+\code{min(x[is.finite(x)])}. Integer, logical and integer64 vectors hold
+no infinities, so for them it is \code{na.rm = TRUE}. For double and
+complex \code{x} the data is read a second time, without the infinities,
+only when an extremum of the first pass is infinite. For
+\code{simd_max_abs()} and \code{simd_min_abs()} it is the magnitudes that
+must be finite (for complex \code{x}, the moduli). \code{range()} of a
+\code{\link{simd_vec}} with \code{finite = TRUE} uses
+\code{simd_range()}.
 
 \rsimdSemantics
 
@@ -93,6 +109,7 @@ simd_min(c(3, 1, 2))
 simd_max(c(3L, NA, 2L), na.rm = TRUE)
 simd_range(c(TRUE, FALSE))
 simd_min(c(1, NaN, NA)) # NA: NA wins over NaN
+simd_range(c(-Inf, 2, NA, 5), finite = TRUE)
 
 x <- c(-7, 2, NA, 5)
 simd_max_abs(x, na.rm = TRUE)
