@@ -74,27 +74,42 @@ static inline double rsimd_cmul_im_(int v, double a, double b, double c, double 
   }
 }
 
-/* x * y as base R computes it: the selected variant, and base R's own
-   operator (mul1) where that gives a NaN part. */
-static inline Rcomplex rsimd_cmul_1_(const rsimd_c128_arith *a, Rcomplex x, Rcomplex y) {
+/* x * y by base R's operator. Out of line, so that the callers' operands
+   stay in registers instead of having their address taken. */
+static RSIMD_NOINLINE Rcomplex rsimd_cmul_base_(const rsimd_c128_arith *a, Rcomplex x, Rcomplex y) {
   Rcomplex r;
-  if (a->mul_re != RSIMD_CMUL_SCALAR) {
-    r.r = rsimd_cmul_re_(a->mul_re, x.r, x.i, y.r, y.i);
-    r.i = rsimd_cmul_im_(a->mul_im, x.r, x.i, y.r, y.i);
-    if (!isnan(r.r) && !isnan(r.i)) return r;
-  }
   a->mul1(&x, &y, &r);
   return r;
+}
+
+/* x * y as base R computes it: the variants vr and vi, and base R's own
+   operator (mul1) where that gives a NaN part or vr is SCALAR. With the
+   variants constants the switches fold away. */
+RSIMD_ALWAYS_INLINE Rcomplex rsimd_cmul_in_(const int vr, const int vi, const rsimd_c128_arith *a,
+                                            Rcomplex x, Rcomplex y) {
+  Rcomplex r;
+  if (vr != RSIMD_CMUL_SCALAR) {
+    r.r = rsimd_cmul_re_(vr, x.r, x.i, y.r, y.i);
+    r.i = rsimd_cmul_im_(vi, x.r, x.i, y.r, y.i);
+    if (!isnan(r.r) && !isnan(r.i)) return r;
+  }
+  return rsimd_cmul_base_(a, x, y);
+}
+
+/* x * y in the selected variant. */
+static inline Rcomplex rsimd_cmul_1_(const rsimd_c128_arith *a, Rcomplex x, Rcomplex y) {
+  return rsimd_cmul_in_(a->mul_re, a->mul_im, a, x, y);
 }
 
 /* (a + bi) / (c + di) by libgcc's __divdc3 (GCC 12 and later) up to its
    recovery of infinities, with the multiply-adds fused or rounded twice.
    This is the branch-free form the vector tiers use, which gives the same
    results as libgcc's branches. */
-static inline void rsimd_cdiv_formula_(int fused, double a, double b, double c, double d, Rcomplex *out) {
+static inline Rcomplex rsimd_cdiv_formula_(int fused, double a, double b, double c, double d) {
   const int sw = fabs(c) < fabs(d);
   const double abig = sw ? fabs(d) : fabs(c), rmax2 = DBL_MAX / 2 * DBL_EPSILON;
   double big = sw ? d : c, small = sw ? c : d, f = 1.0, u, v, s, t, ratio, denom, x, y;
+  Rcomplex out;
   if (abig >= DBL_MAX / 2) f = 0.5;
   else if (abig < DBL_EPSILON ||
            (abig < rmax2 && ((fabs(a) < DBL_MIN && fabs(b) < rmax2) ||
@@ -118,31 +133,49 @@ static inline void rsimd_cdiv_formula_(int fused, double a, double b, double c, 
     x = fused ? rsimd_fma(small, u / big, v) : small * (u / big) + v;
     y = fused ? rsimd_fma(small, s / big, t) : small * (s / big) + t;
   }
-  out->r = x / denom;
-  out->i = y / denom;
+  out.r = x / denom;
+  out.i = y / denom;
+  return out;
 }
 
 /* x / y as base R computes it: the selected variant of libgcc's
-   algorithm, and base R's own operator (div1) where that gives a NaN
-   part. */
-static inline Rcomplex rsimd_cdiv_1_(const rsimd_c128_arith *a, Rcomplex x, Rcomplex y) {
+   algorithm, and base R's own operator (div1, out of line as for
+   rsimd_cmul_base_) where that gives a NaN part. */
+static RSIMD_NOINLINE Rcomplex rsimd_cdiv_base_(const rsimd_c128_arith *a, Rcomplex x, Rcomplex y) {
   Rcomplex r;
-  if (a->div != RSIMD_CDIV_SCALAR) {
-    rsimd_cdiv_formula_(a->div == RSIMD_CDIV_FMA, x.r, x.i, y.r, y.i, &r);
-    if (!isnan(r.r) && !isnan(r.i)) return r;
-  }
   a->div1(&x, &y, &r);
   return r;
 }
+static inline Rcomplex rsimd_cdiv_1_(const rsimd_c128_arith *a, Rcomplex x, Rcomplex y) {
+  Rcomplex r;
+  if (a->div != RSIMD_CDIV_SCALAR) {
+    r = rsimd_cdiv_formula_(a->div == RSIMD_CDIV_FMA, x.r, x.i, y.r, y.i);
+    if (!isnan(r.r) && !isnan(r.i)) return r;
+  }
+  return rsimd_cdiv_base_(a, x, y);
+}
 
-/* x op y for elements [i, n) one by one (the none tier's kernel and the
-   vector tiers' tail). */
+/* x * y for elements [i, n) one by one in the variants vr and vi
+   (constants where specialised). */
+RSIMD_ALWAYS_INLINE void rsimd_cmul_from_(const int vr, const int vi, const Rcomplex *x,
+                                          const Rcomplex *y, R_xlen_t i, R_xlen_t n, int flags,
+                                          Rcomplex *out, const rsimd_c128_arith *a) {
+  const R_xlen_t sx = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, sy = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
+  if (vr == RSIMD_CMUL_SCALAR) {
+    for (; i < n; i++) a->mul1(x + i * sx, y + i * sy, out + i);
+  } else {
+    for (; i < n; i++) out[i] = rsimd_cmul_in_(vr, vi, a, x[i * sx], y[i * sy]);
+  }
+}
+
+/* x op y for elements [i, n) one by one (the vector tiers' tail and
+   fallback). */
 static inline void rsimd_ew2_c128_from(int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t i,
                                        R_xlen_t n, int flags, Rcomplex *out,
                                        const rsimd_c128_arith *a) {
   const R_xlen_t sx = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, sy = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
   if (op == RSIMD_EW_MUL) {
-    for (; i < n; i++) out[i] = rsimd_cmul_1_(a, x[i * sx], y[i * sy]);
+    rsimd_cmul_from_(a->mul_re, a->mul_im, x, y, i, n, flags, out, a);
   } else {
     for (; i < n; i++) out[i] = rsimd_cdiv_1_(a, x[i * sx], y[i * sy]);
   }
@@ -229,7 +262,15 @@ void RSIMD_KERNEL(ew2_c128)(int op, const Rcomplex *x, const Rcomplex *y, R_xlen
                             Rcomplex *out, const rsimd_c128_arith *a);
 void RSIMD_KERNEL(ew2_c128)(int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
                             Rcomplex *out, const rsimd_c128_arith *a) {
-  rsimd_ew2_c128_from(op, x, y, 0, n, flags, out, a);
+  /* The variants of GCC builds are specialised, as on the vector tiers. */
+  if (op == RSIMD_EW_MUL && a->mul_re == RSIMD_CMUL_FMA1 && a->mul_im == RSIMD_CMUL_FMA1) {
+    rsimd_cmul_from_(RSIMD_CMUL_FMA1, RSIMD_CMUL_FMA1, x, y, 0, n, flags, out, a);
+  } else if (op == RSIMD_EW_MUL && a->mul_re == RSIMD_CMUL_UNFUSED &&
+             a->mul_im == RSIMD_CMUL_UNFUSED) {
+    rsimd_cmul_from_(RSIMD_CMUL_UNFUSED, RSIMD_CMUL_UNFUSED, x, y, 0, n, flags, out, a);
+  } else {
+    rsimd_ew2_c128_from(op, x, y, 0, n, flags, out, a);
+  }
 }
 
 void RSIMD_KERNEL(prod_c128)(const Rcomplex *x, R_xlen_t n, rsimd_cprod_state *s,
@@ -276,7 +317,7 @@ void RSIMD_KERNEL(formula_c128)(int op, int v1, int v2, const Rcomplex *x, const
   R_xlen_t i;
   for (i = 0; i < n; i++) {
     if (op == RSIMD_EW_DIV) {
-      rsimd_cdiv_formula_(v1 == RSIMD_CDIV_FMA, x[i].r, x[i].i, y[i].r, y[i].i, out + i);
+      out[i] = rsimd_cdiv_formula_(v1 == RSIMD_CDIV_FMA, x[i].r, x[i].i, y[i].r, y[i].i);
     } else {
       double re = rsimd_cmul_re_(v1, x[i].r, x[i].i, y[i].r, y[i].i);
       out[i].i = rsimd_cmul_im_(v2, x[i].r, x[i].i, y[i].r, y[i].i);
@@ -721,7 +762,8 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(ew2_c128_)(const int div, const int vr, co
       }
     }
   }
-  rsimd_ew2_c128_from(div ? RSIMD_EW_DIV : RSIMD_EW_MUL, x, y, i, n, flags, out, a);
+  if (div) rsimd_ew2_c128_from(RSIMD_EW_DIV, x, y, i, n, flags, out, a);
+  else rsimd_cmul_from_(vr, vi, x, y, i, n, flags, out, a);
 }
 
 void RSIMD_KERNEL(ew2_c128)(int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,

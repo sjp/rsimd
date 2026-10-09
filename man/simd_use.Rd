@@ -75,8 +75,10 @@ first, always ending with \code{"none"}.
 \code{simd_complex_variants()}: a named character vector (\code{mul},
 \code{div}, \code{cumprod}) describing how complex multiplication,
 division and \code{cumprod()} reproduce the rounding of this R build: the
-formula the kernels use, or \code{"scalar"} when no kernel variant matches and base R's operator is
-used for every element, with \code{" (NA/NaN may differ)"} appended if
+formula the kernels use, or \code{"scalar"} when no kernel variant matches
+and the compiler's operator as compiled into \pkg{rsimd} is used for every
+element (identical to base R only where both were built by the same
+compiler; see \code{\link{simd_mul}()}), with \code{" (NA/NaN may differ)"} appended if
 only the choice between \code{NA} and \code{NaN} could not be
 reproduced.
 

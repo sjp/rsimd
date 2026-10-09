@@ -104,9 +104,11 @@ static inline int rsimd_cm_whole_(Rcomplex y) {
   return y.i == 0 && y.r == trunc(y.r) && fabs(y.r) <= 65536;
 }
 
-/* x^k by base R's R_cpow_n, with the multiply and divide of `a` (each
-   exactly base R's operator). */
-static inline Rcomplex rsimd_cm_ipow_1_(const rsimd_c128_arith *a, Rcomplex x, int k) {
+/* x^k by base R's R_cpow_n, with the multiply (in the variants vr and vi,
+   constants where specialised) and divide of `a`, each exactly base R's
+   operator. */
+RSIMD_ALWAYS_INLINE Rcomplex rsimd_cm_ipow_1_(const int vr, const int vi,
+                                              const rsimd_c128_arith *a, Rcomplex x, int k) {
   Rcomplex z, one;
   int m = k < 0 ? -k : k;
   one.r = 1.0;
@@ -117,10 +119,10 @@ static inline Rcomplex rsimd_cm_ipow_1_(const rsimd_c128_arith *a, Rcomplex x, i
   } else {
     z = one;
     while (m > 0) {
-      if (m & 1) z = rsimd_cmul_1_(a, z, x);
+      if (m & 1) z = rsimd_cmul_in_(vr, vi, a, z, x);
       if (m == 1) break;
       m >>= 1;
-      x = rsimd_cmul_1_(a, x, x);
+      x = rsimd_cmul_in_(vr, vi, a, x, x);
     }
   }
   return k < 0 ? rsimd_cdiv_1_(a, one, z) : z;
@@ -149,25 +151,40 @@ int RSIMD_KERNEL(cmath1_c128)(int op, const Rcomplex *x, R_xlen_t n, Rcomplex *o
   return nan;
 }
 
+/* x^y for every element: whole powers of non-zero bases multiply inline
+   in the variants vr and vi (base R's operators exactly); the rest is base
+   R's power. */
+RSIMD_ALWAYS_INLINE void rsimd_cm_pow_from_(const int vr, const int vi, const Rcomplex *x,
+                                            const Rcomplex *y, R_xlen_t n, int flags,
+                                            Rcomplex *out, const rsimd_cmath_base *b,
+                                            const rsimd_c128_arith *a) {
+  const R_xlen_t sx = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, sy = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
+  R_xlen_t i;
+  for (i = 0; i < n; i++) {
+    const Rcomplex *xi = x + i * sx, *yi = y + i * sy;
+    if (rsimd_cm_whole_(*yi) && !(xi->r == 0 && xi->i == 0)) {
+      out[i] = rsimd_cm_ipow_1_(vr, vi, a, *xi, (int) yi->r);
+    } else {
+      b->f2[RSIMD_CM2_POW](xi, yi, out + i);
+    }
+  }
+}
+
 int RSIMD_KERNEL(cmath2_c128)(int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
                               Rcomplex *out, const rsimd_cmath_base *b,
                               const rsimd_c128_arith *a);
 int RSIMD_KERNEL(cmath2_c128)(int op, const Rcomplex *x, const Rcomplex *y, R_xlen_t n, int flags,
                               Rcomplex *out, const rsimd_cmath_base *b,
                               const rsimd_c128_arith *a) {
-  const R_xlen_t sx = (flags & RSIMD_EW_SCALAR(0)) ? 0 : 1, sy = (flags & RSIMD_EW_SCALAR(1)) ? 0 : 1;
-  R_xlen_t i;
   op &= ~RSIMD_MATH_FAST;
   if (op != RSIMD_CM2_POW) return rsimd_cmath2_from(b, op, x, y, 0, n, flags, out);
-  /* Whole powers of non-zero bases multiply inline (base R's operators
-     exactly); the rest is base R's power. */
-  for (i = 0; i < n; i++) {
-    const Rcomplex xi = x[i * sx], yi = y[i * sy];
-    if (rsimd_cm_whole_(yi) && !(xi.r == 0 && xi.i == 0)) {
-      out[i] = rsimd_cm_ipow_1_(a, xi, (int) yi.r);
-    } else {
-      b->f2[RSIMD_CM2_POW](&xi, &yi, out + i);
-    }
+  /* The multiply variants of GCC builds are specialised, as in ew2_c128. */
+  if (a->mul_re == RSIMD_CMUL_FMA1 && a->mul_im == RSIMD_CMUL_FMA1) {
+    rsimd_cm_pow_from_(RSIMD_CMUL_FMA1, RSIMD_CMUL_FMA1, x, y, n, flags, out, b, a);
+  } else if (a->mul_re == RSIMD_CMUL_UNFUSED && a->mul_im == RSIMD_CMUL_UNFUSED) {
+    rsimd_cm_pow_from_(RSIMD_CMUL_UNFUSED, RSIMD_CMUL_UNFUSED, x, y, n, flags, out, b, a);
+  } else {
+    rsimd_cm_pow_from_(a->mul_re, a->mul_im, x, y, n, flags, out, b, a);
   }
   return 0;
 }

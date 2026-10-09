@@ -70,7 +70,10 @@ GCC's runtime (GCC 12 and later). Elements whose result has a missing part
 (infinite operands, a zero divisor, missing values) are recomputed with
 base R's own operator. Where no variant matches (for example division on
 macOS, whose runtime uses another algorithm), every element is computed with
-base R's operator, which is exact but no faster than base R.
+the C compiler's complex operator as compiled into \pkg{rsimd}, which is
+slower than base R. It is base R's operator only when \pkg{rsimd} was built
+by the same compiler release with the same flags as R, so the results may
+then differ from base R's in the last bit.
 
 \pkg{bit64} \code{integer64} operands (with integer64, integer or logical
 operands) give integer64 results computed exactly in 64 bits, with

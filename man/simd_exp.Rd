@@ -157,7 +157,11 @@ functions where SLEEF has them.
 \strong{Powers.} \code{simd_pow(z, w)} for a whole-number real \code{w}
 with \eqn{|w| \le 65536} multiplies by repeated squaring as base R does,
 with base R's complex multiplication and division, so it is identical to
-base R on every implementation. Other powers are \eqn{\exp(w \log z)}, as
+base R on every implementation, except where
+\code{\link{simd_complex_variants}()} reports \code{"scalar"} for
+multiplication or (for negative \code{w}) division: those use the
+compiler's operator as compiled into \pkg{rsimd}, which may differ from
+base R's in the last bit (see \code{\link{simd_mul}()}). Other powers are \eqn{\exp(w \log z)}, as
 in the C library's \code{cpow}, and their error grows with
 \eqn{|w \log z|}; the sign of a zero part may differ from base R's.
 \code{0^w} is base R's: \code{0^w} for a real \code{w}, \code{NaN} in both

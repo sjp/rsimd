@@ -201,6 +201,60 @@ test_that("every rounding variant's kernels compute its formula", {
   })
 })
 
+# z^k by base R's repeated squaring with the multiply variants vr and vi
+# and, for k < 0, the division `fused` or not.
+cpow_ref <- function(z, k, vr, vi, fused) {
+  one <- rep(1 + 0i, length(z))
+  m <- abs(k)
+  if (m == 0) return(one)
+  if (m == 1) {
+    r <- z
+  } else {
+    r <- one
+    repeat {
+      if (m %% 2 == 1) r <- cmul_ref(r, z, vr, vi)
+      if (m == 1) break
+      m <- m %/% 2
+      z <- cmul_ref(z, z, vr, vi)
+    }
+  }
+  if (k < 0) cdiv_ref(one, r, fused) else r
+}
+
+test_that("whole powers use every rounding variant's multiply and divide", {
+  z <- with_seed(12L, complex(modulus = stats::runif(1003, 0.5, 2), argument = stats::runif(1003, -3, 3)))
+  for (codes in c(lapply(0:8, function(v) c(v %/% 3, v %% 3, 1L, 1L, 1L)), list(c(0L, 0L, 2L, 0L, 0L)))) {
+    with_variants(codes, {
+      for (k in c(0, 1, 2, 3, 7, 64, -1, -2, -5)) {
+        expected <- cpow_ref(z, k, codes[1], codes[2], codes[3] == 1L)
+        expect_tiers_give(expected, simd_pow, z, k)
+        expect_tiers_give(expected[1:7], simd_pow, z[1:7], k)
+      }
+    })
+  }
+})
+
+test_that("without any matching variant the results stay close to base R", {
+  # The compiler's operators as compiled into rsimd: base R's only where R
+  # was built by the same compiler, so not necessarily identical.
+  x <- with_seed(13L, complex(modulus = stats::runif(1003, 0.5, 2), argument = stats::runif(1003, -3, 3)))
+  y <- with_seed(14L, complex(modulus = stats::runif(1003, 0.5, 2), argument = stats::runif(1003, -3, 3)))
+  z <- complex(modulus = 1 + (1:500) * 1e-7, argument = 1:500)
+  with_variants(c(-1L, -1L, 0L, -1L, -1L), {
+    for (tier in tiers_to_test()) {
+      simd_with_impl(tier, {
+        expect_equal(simd_mul(x, y), x * y, tolerance = 1e-14, label = tier)
+        expect_equal(simd_mul(x, y[1]), x * y[1], tolerance = 1e-14, label = tier)
+        expect_equal(simd_div(x, y), x / y, tolerance = 1e-14, label = tier)
+        expect_equal(simd_cumprod(z), cumprod(z), tolerance = 1e-12, label = tier)
+        expect_equal(simd_pow(x, 3), x^3, tolerance = 1e-14, label = tier)
+        expect_equal(simd_pow(x, -2L), x^-2, tolerance = 1e-14, label = tier)
+        expect_equal(simd_prod(z), prod(z), tolerance = 1e-12, label = tier)
+      })
+    }
+  })
+})
+
 test_that("cumsum and cumprod are identical to base R, NA/NaN fix-up included", {
   for (n in c(0:9, 17, 100, 1000)) {
     x <- rand_z(n, seed = n + 20L)
