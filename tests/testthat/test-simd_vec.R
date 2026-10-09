@@ -62,7 +62,7 @@ test_that("simd_vec() rejects unsupported input", {
   expect_error(simd_vec(factor("a")), msg)
   expect_error(simd_vec(list(1)), msg)
   expect_error(simd_vec(data.frame(a = 1)), msg)
-  expect_error(simd_vec(NULL), msg)
+  expect_error(simd_vec(NULL), "'x' is NULL", fixed = TRUE)
   expect_error(simd_vec(Sys.Date()), msg)
   expect_error(simd_vec(1, check_na = NA), "'check_na' must be TRUE or FALSE")
 })
@@ -442,7 +442,7 @@ test_that("an operand of another class is rejected on either side", {
   # Other types too, on either side.
   expect_error(sv + "a", msg("y", "character"))
   expect_error(list(1) * sv, msg("x", "list"))
-  expect_error(sv == NULL, msg("y", "NULL"))
+  expect_error(sv == NULL, "'y' is NULL", fixed = TRUE)
   expect_error(sv & sum, msg("y", "builtin"))
   # integer64 and simd_vec operands are taken.
   expect_sv(sv + simd_vec(2), 3)

@@ -62,7 +62,8 @@ returns plain vectors.
 dimensions, dimnames). Given a \code{simd_vec}, it replaces the pin only
 when \code{impl} is supplied and the flag only when \code{check_na} is
 \code{TRUE}. Character vectors, lists and data with any other class (dates,
-times, \code{difftime}, factors, data frames) are errors. Making an
+times, \code{difftime}, factors, data frames) are errors, and so is
+\code{NULL}. Making an
 \code{integer64} \code{simd_vec} loads \pkg{bit64} (see
 \link{rsimd-integer64}).
 \code{simd_na_free()} returns the flag (\code{TRUE}, \code{FALSE} or

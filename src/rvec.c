@@ -36,6 +36,8 @@ rsimd_etype rsimd_etype_of(SEXP x) {
 rsimd_etype rsimd_check_atomic(SEXP x, const char *arg) {
   rsimd_etype t = rsimd_etype_of(x);
   if (t == RSIMD_BAD) {
+    /* NULL is rejected, not taken as a zero-length vector. */
+    if (Rf_isNull(x)) Rf_error("'%s' is NULL", arg);
     /* The first class, or the type for an object without one (R_data_class
        is not part of R's API). */
     SEXP cls = Rf_getAttrib(x, R_ClassSymbol);

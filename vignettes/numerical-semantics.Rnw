@@ -253,6 +253,9 @@ elementwise and cumulative functions & a zero-length vector \\
 \end{tabular}
 \end{center}
 
+\noindent \code{NULL} is not an empty input: \code{simd\_sum(NULL)} is the
+error \code{'x' is NULL}, where base R's \code{sum(NULL)} is \code{0}.
+
 Results are bare vectors: names, dimensions and other attributes are
 dropped, where base R's operators keep them. The exceptions are the
 \code{integer64} class, which is kept, and \code{simd\_vec} operands, whose
@@ -330,6 +333,12 @@ Recycling &
   error. &
   Avoids silent mistakes. Use \code{rep\_len()} if recycling is
   intended. \\
+\code{NULL} input &
+  An error; base R takes \code{NULL} as a zero-length vector in
+  \code{sum()}, arithmetic, comparisons, \code{is.na()} and
+  \code{anyNA()}, though not in \code{exp()} or \code{abs()}. &
+  A \code{NULL} is usually a missing list element or column, not
+  data. \code{as.double(NULL)} is \code{numeric(0)}. \\
 Attributes &
   Names, dimensions and other attributes are dropped. &
   Keeps results simple and fast. Copy them back, as in the example

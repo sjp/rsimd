@@ -37,10 +37,20 @@ test_that("unsupported inputs error with the class or type", {
   expect_error(.debug_regions(data.frame(a = 1)), type_msg("x", "data.frame"), fixed = TRUE)
   expect_error(.debug_regions(list(1)), type_msg("x", "list"), fixed = TRUE)
   expect_error(.debug_regions("a"), type_msg("x", "character"), fixed = TRUE)
-  expect_error(.debug_regions(NULL), type_msg("x", "NULL"), fixed = TRUE)
+  expect_error(.debug_regions(NULL), "'x' is NULL", fixed = TRUE)
   expect_error(.debug_regions(sum), type_msg("x", "builtin"), fixed = TRUE)
   expect_error(.debug_regions(asS4(1)), "'x' must be an atomic vector", fixed = TRUE)
   expect_error(.debug_bin(1, factor("a")), type_msg("y", "factor"), fixed = TRUE)
+})
+
+test_that("NULL is an error, not a zero-length vector", {
+  # Base R gives 0, numeric(0), logical(0) and FALSE here.
+  expect_error(simd_sum(NULL), "'x' is NULL", fixed = TRUE)
+  expect_error(simd_add(NULL, 1), "'x' is NULL", fixed = TRUE)
+  expect_error(simd_add(1, NULL), "'y' is NULL", fixed = TRUE)
+  expect_error(simd_is_na(NULL), "'x' is NULL", fixed = TRUE)
+  expect_error(simd_any_na(NULL), "'x' is NULL", fixed = TRUE)
+  expect_error(simd_vec(1) + NULL, "'y' is NULL", fixed = TRUE)
 })
 
 test_that("errors report the R call that made the .Call", {

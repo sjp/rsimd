@@ -67,13 +67,15 @@
 }
 
 # Errors unless x is data rsimd takes: an atomic vector of a supported type
-# without a class, an integer64 or a simd_vec. The message is the one
-# rsimd_check_atomic() in src/rvec.c gives, naming the argument `arg`.
+# without a class, an integer64 or a simd_vec (NULL is an error). The message
+# is the one rsimd_check_atomic() in src/rvec.c gives, naming the argument
+# `arg`.
 .check_data <- function(x, arg = "x") {
   types <- c("double", "integer", "logical", "raw", "complex")
   ok <- inherits(x, c("integer64", "simd_vec")) ||
     (is.atomic(x) && !is.object(x) && typeof(x) %in% types)
   if (!ok) {
+    if (is.null(x)) .stop("'", arg, "' is NULL")
     what <- if (is.object(x)) class(x)[[1L]] else if (is.list(x)) "list" else typeof(x)
     .stop("'", arg, "' must be an atomic vector (double, integer, logical, raw, complex or ",
       "integer64), not ", what)
