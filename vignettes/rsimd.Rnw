@@ -243,7 +243,7 @@ their missing-value checks on it, and results that cannot have gained a
 missing value keep the flag:
 
 <<vec-na>>=
-f <- simd_vec(runif(10), check_na = TRUE)
+f <- simd_vec(runif(10), scan_na = TRUE)
 simd_na_free(f)
 simd_na_free(abs(f))
 simd_na_free(f / 0)

@@ -265,8 +265,8 @@ test_that("results are bare except for the integer64 and simd_vec classes", {
     structure(c(1, 2), class = "simd_vec", rsimd_impl = "none")
   )
   expect_null(simd_na_free(.debug_copy(sv, no_na = TRUE)))
-  flagged <- .debug_copy(simd_vec(c(1, 2), impl = "none", check_na = TRUE), no_na = TRUE)
-  expect_true(all.equal(flagged, simd_vec(c(1, 2), impl = "none", check_na = TRUE)))
+  flagged <- .debug_copy(simd_vec(c(1, 2), impl = "none", scan_na = TRUE), no_na = TRUE)
+  expect_true(all.equal(flagged, simd_vec(c(1, 2), impl = "none", scan_na = TRUE)))
 })
 
 test_that("integer64 class is kept when bit64 is loaded", {

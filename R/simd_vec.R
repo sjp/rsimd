@@ -19,21 +19,21 @@
 
 # ---- Construction and accessors -------------------------------------------
 
-simd_vec <- function(x, impl = NULL, check_na = FALSE) {
-  if (!is.logical(check_na) || length(check_na) != 1L || is.na(check_na)) {
-    .stop("'check_na' must be TRUE or FALSE")
+simd_vec <- function(x, impl = NULL, scan_na = FALSE) {
+  if (!is.logical(scan_na) || length(scan_na) != 1L || is.na(scan_na)) {
+    .stop("'scan_na' must be TRUE or FALSE")
   }
   if (is_simd_vec(x)) {
-    if (missing(impl) && !check_na) {
+    if (missing(impl) && !scan_na) {
       return(x)
     }
     impl <- if (missing(impl)) attr(x, "rsimd_impl", exact = TRUE) else .sv_check_impl(impl)
-    na_free <- if (check_na) !simd_any_na(x) else .sv_flag(x)
+    na_free <- if (scan_na) !simd_any_na(x) else .sv_flag(x)
     return(.sv_new(.sv_strip(x), impl, na_free))
   }
   data <- .sv_strip(x)
   impl <- .sv_check_impl(impl)
-  na_free <- if (check_na) !simd_any_na(data) else NULL
+  na_free <- if (scan_na) !simd_any_na(data) else NULL
   .sv_new(data, impl, na_free)
 }
 
@@ -113,15 +113,15 @@ simd_na_free <- function(x) {
 }
 
 # data (bare, or of class integer64) as a simd_vec, with NA-free flag
-# na_free or, with check_na, the one a scan finds. The attributes are set by
+# na_free or, with scan_na, the one a scan finds. The attributes are set by
 # one call of the replacement function, not bound to a name in between: a
 # second replacement, or C_simd_sv_stamp on a bound value, would see data as
 # shared and copy it. A fresh result is so changed in place, and a shared
 # one is copied by R (lazily, through an ALTREP wrapper, for a long vector).
-.sv_new <- function(data, impl = NULL, na_free = NULL, check_na = FALSE) {
+.sv_new <- function(data, impl = NULL, na_free = NULL, scan_na = FALSE) {
   i64 <- inherits(data, "integer64")
   if (i64) .need_bit64()
-  if (check_na) na_free <- !simd_any_na(data)
+  if (scan_na) na_free <- !simd_any_na(data)
   cls <- if (i64) c("simd_vec", "integer64") else "simd_vec"
   .Call(
     C_simd_sv_stamp, `attributes<-`(data, list(class = cls, rsimd_impl = impl)),
@@ -427,7 +427,7 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
   # never looked at.
   check <- isTRUE(.sv_flag(x))
   if (!inherits(x, "integer64")) {
-    return(.sv_new(.subset(x, i), impl, check_na = check))
+    return(.sv_new(.subset(x, i), impl, scan_na = check))
   }
   j <- seq_along(x)[i]
   .sv_new(.sv_take(x, j), impl, if (check) !anyNA(j))

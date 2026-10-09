@@ -75,8 +75,8 @@ test_that("errors from the R side name the user's call", {
   )
   expect_identical(condition_call(simd_use("bogus")), quote(simd_use("bogus")))
   expect_identical(
-    condition_call(simd_vec(1, check_na = NA)),
-    quote(simd_vec(1, check_na = NA))
+    condition_call(simd_vec(1, scan_na = NA)),
+    quote(simd_vec(1, scan_na = NA))
   )
   # Through simd_with_impl() and lapply(), the call into rsimd is named.
   expect_identical(

@@ -64,17 +64,17 @@ test_that("simd_vec() rejects unsupported input", {
   expect_error(simd_vec(data.frame(a = 1)), msg)
   expect_error(simd_vec(NULL), "'x' is NULL", fixed = TRUE)
   expect_error(simd_vec(Sys.Date()), msg)
-  expect_error(simd_vec(1, check_na = NA), "'check_na' must be TRUE or FALSE")
+  expect_error(simd_vec(1, scan_na = NA), "'scan_na' must be TRUE or FALSE")
 })
 
-test_that("check_na records the NA-free flag", {
-  expect_identical(simd_na_free(simd_vec(c(1, 2), check_na = TRUE)), TRUE)
-  expect_identical(simd_na_free(simd_vec(c(1, NA), check_na = TRUE)), FALSE)
-  expect_identical(simd_na_free(simd_vec(c(1, NaN), check_na = TRUE)), FALSE)
-  expect_identical(simd_na_free(simd_vec(c(1L, NA), check_na = TRUE)), FALSE)
+test_that("scan_na records the NA-free flag", {
+  expect_identical(simd_na_free(simd_vec(c(1, 2), scan_na = TRUE)), TRUE)
+  expect_identical(simd_na_free(simd_vec(c(1, NA), scan_na = TRUE)), FALSE)
+  expect_identical(simd_na_free(simd_vec(c(1, NaN), scan_na = TRUE)), FALSE)
+  expect_identical(simd_na_free(simd_vec(c(1L, NA), scan_na = TRUE)), FALSE)
   expect_identical(simd_na_free(simd_vec(c(1, NA))), NULL)
   skip_if_not(has_bit64(), "bit64 is not installed")
-  expect_identical(simd_na_free(simd_vec(simd_as_integer64(c(1, NA)), check_na = TRUE)), FALSE)
+  expect_identical(simd_na_free(simd_vec(simd_as_integer64(c(1, NA)), scan_na = TRUE)), FALSE)
 })
 
 test_that("pins are validated", {
@@ -91,10 +91,10 @@ test_that("pins are validated", {
 })
 
 test_that("simd_vec() of a simd_vec replaces only what is asked", {
-  x <- simd_vec(c(1, 2), impl = "none", check_na = TRUE)
+  x <- simd_vec(c(1, 2), impl = "none", scan_na = TRUE)
   expect_identical(simd_vec(x), x)
   expect_sv(simd_vec(x, impl = NULL), c(1, 2), NULL, TRUE)
-  y <- simd_vec(simd_vec(c(1, NA)), check_na = TRUE)
+  y <- simd_vec(simd_vec(c(1, NA)), scan_na = TRUE)
   expect_identical(simd_na_free(y), FALSE)
 })
 
@@ -308,7 +308,7 @@ test_that("value results of simd_ functions are simd_vecs, others are plain", {
 })
 
 test_that("the input is not modified", {
-  x <- simd_vec(c(1, 2), check_na = TRUE)
+  x <- simd_vec(c(1, 2), scan_na = TRUE)
   before <- x
   y <- simd_floor(x)
   simd_impl(y) <- "none"
@@ -368,7 +368,7 @@ test_that("operators follow base R's types and warnings", {
 
 test_that("unary + follows base R", {
   expect_sv(+simd_vec(c(1, 2)), c(1, 2))
-  expect_sv(+simd_vec(TRUE, check_na = TRUE), 1L, na_free = TRUE)
+  expect_sv(+simd_vec(TRUE, scan_na = TRUE), 1L, na_free = TRUE)
   expect_error(+simd_vec(as.raw(1)), "invalid argument to unary operator")
 })
 
@@ -494,7 +494,7 @@ test_that("Math functions with a kernel equal the simd_ functions", {
 test_that("Math functions without a kernel fall back to base R", {
   x <- c(0.5, 2.5, NA)
   for (f in c("gamma", "lgamma", "digamma", "trigamma")) {
-    expect_sv(get(f)(simd_vec(x, impl = "none", check_na = TRUE)), get(f)(x), "none")
+    expect_sv(get(f)(simd_vec(x, impl = "none", scan_na = TRUE)), get(f)(x), "none")
   }
   expect_sv(signif(simd_vec(pi * 100)), signif(pi * 100))
   expect_sv(signif(simd_vec(pi * 100), 2), signif(pi * 100, 2))
@@ -559,8 +559,8 @@ test_that("anyNA() answers from a known flag without reading the data", {
     calls <<- calls + 1L
     anyNA(unclass(x))
   })
-  expect_false(anyNA(simd_vec(c(1, 2), check_na = TRUE)))
-  expect_true(anyNA(simd_vec(c(1, NA), check_na = TRUE)))
+  expect_false(anyNA(simd_vec(c(1, 2), scan_na = TRUE)))
+  expect_true(anyNA(simd_vec(c(1, NA), scan_na = TRUE)))
   expect_identical(calls, 2L) # the two checks made by simd_vec()
   expect_true(anyNA(simd_vec(c(1, NA))))
   expect_false(anyNA(simd_vec(c(1, 2))))
@@ -570,41 +570,41 @@ test_that("anyNA() answers from a known flag without reading the data", {
 # ---- The NA-free flag -----------------------------------------------------
 
 test_that("the flag is kept by ops that cannot make a missing value", {
-  x <- simd_vec(c(-1.5, 2.25, Inf), check_na = TRUE)
+  x <- simd_vec(c(-1.5, 2.25, Inf), scan_na = TRUE)
   for (f in list(
     abs, sign, floor, ceiling, trunc, round, function(v) -v,
     function(v) round(v, 1), cummax, cummin, simd_conj, simd_re, simd_im
   )) {
     expect_identical(simd_na_free(f(x)), TRUE)
   }
-  i <- simd_vec(c(-3L, 5L), check_na = TRUE)
+  i <- simd_vec(c(-3L, 5L), scan_na = TRUE)
   for (f in list(
     abs, function(v) -v, simd_abs_wrap, simd_neg_wrap, simd_popcount,
     simd_lzcnt, simd_tzcnt, cummax
   )) {
     expect_identical(simd_na_free(f(i)), TRUE)
   }
-  expect_identical(simd_na_free(simd_pmin(x, simd_vec(0, check_na = TRUE))), TRUE)
+  expect_identical(simd_na_free(simd_pmin(x, simd_vec(0, scan_na = TRUE))), TRUE)
   expect_identical(simd_na_free(simd_pmax(x, 0)), TRUE)
   expect_identical(simd_na_free(simd_pmin(x, c(0, 1, 2))), NULL)
   expect_identical(simd_na_free(simd_clamp(x, -1, 1)), TRUE)
   # 1/0 is Inf and 1/Inf is 0; copysign only moves a sign bit.
-  z <- simd_vec(c(0, -0, Inf, 2), check_na = TRUE)
+  z <- simd_vec(c(0, -0, Inf, 2), scan_na = TRUE)
   expect_identical(simd_na_free(simd_recip(z)), TRUE)
   expect_identical(simd_na_free(simd_recip(i)), TRUE)
   expect_identical(simd_na_free(simd_copysign(z, -1)), TRUE)
   expect_identical(simd_na_free(simd_copysign(z, x[c(1, 2, 3, 1)])), TRUE)
   expect_identical(simd_na_free(simd_copysign(z, NaN)), NULL)
   expect_identical(simd_na_free(simd_copysign(z, c(1, NA, 1, 1))), NULL)
-  expect_identical(simd_na_free(simd_recip(simd_vec(c(1, NaN), check_na = TRUE))), NULL)
+  expect_identical(simd_na_free(simd_recip(simd_vec(c(1, NaN), scan_na = TRUE))), NULL)
   expect_identical(simd_na_free(simd_recip(simd_vec(c(1, 2)))), NULL)
   # FALSE and unknown are not kept.
-  expect_identical(simd_na_free(abs(simd_vec(c(1, NA), check_na = TRUE))), NULL)
+  expect_identical(simd_na_free(abs(simd_vec(c(1, NA), scan_na = TRUE))), NULL)
   expect_identical(simd_na_free(abs(simd_vec(c(1, 2)))), NULL)
 })
 
 test_that("the flag is dropped by ops that can make a missing value", {
-  x <- simd_vec(c(-1.5, 2.25, Inf), check_na = TRUE)
+  x <- simd_vec(c(-1.5, 2.25, Inf), scan_na = TRUE)
   for (f in list(
     function(v) v + v, function(v) v - 1, function(v) v * 2, function(v) v / v,
     function(v) v^2, function(v) v %% 2, function(v) v %/% 2, exp, sqrt, log, sin,
@@ -612,7 +612,7 @@ test_that("the flag is dropped by ops that can make a missing value", {
   )) {
     expect_identical(simd_na_free(suppressWarnings(f(x))), NULL)
   }
-  i <- simd_vec(c(-3L, 5L), check_na = TRUE)
+  i <- simd_vec(c(-3L, 5L), scan_na = TRUE)
   for (f in list(
     function(v) v + 1L, function(v) v * v, function(v) v %/% 2L,
     function(v) v %% 2L, function(v) simd_add_wrap(v, 1L), function(v) simd_mul_wrap(v, v),
@@ -621,7 +621,7 @@ test_that("the flag is dropped by ops that can make a missing value", {
     expect_identical(simd_na_free(f(i)), NULL)
   }
   # A wrapped result of -2^31 reads as NA.
-  big <- simd_vec(-.Machine$integer.max, check_na = TRUE)
+  big <- simd_vec(-.Machine$integer.max, scan_na = TRUE)
   expect_identical(bare(simd_sub_wrap(big, 1L)), NA_integer_)
 })
 
@@ -630,8 +630,8 @@ test_that("round with a missing digits drops the flag", {
   # missing, so the result must not be stamped NA-free.
   d <- c(1, 2.5, 3, -7.25, 1e300)
   for (t in simd_available()) {
-    x <- simd_vec(d, check_na = TRUE, impl = t)
-    i <- simd_vec(c(1L, -2L, 3L), check_na = TRUE, impl = t)
+    x <- simd_vec(d, scan_na = TRUE, impl = t)
+    i <- simd_vec(c(1L, -2L, 3L), scan_na = TRUE, impl = t)
     cases <- list(
       list(r = simd_round(x, NA), n = 5),
       list(r = simd_round(x, NaN), n = 5),
@@ -653,9 +653,9 @@ test_that("round with a missing digits drops the flag", {
 })
 
 test_that("conversions keep the flag only when they cannot overflow", {
-  d <- simd_vec(c(1.5, -3e9), check_na = TRUE)
-  i <- simd_vec(c(1L, -5L), check_na = TRUE)
-  l <- simd_vec(c(TRUE, FALSE), check_na = TRUE)
+  d <- simd_vec(c(1.5, -3e9), scan_na = TRUE)
+  i <- simd_vec(c(1L, -5L), scan_na = TRUE)
+  l <- simd_vec(c(TRUE, FALSE), scan_na = TRUE)
   expect_identical(simd_na_free(simd_as_double(i)), TRUE)
   expect_identical(simd_na_free(simd_as_logical(d)), TRUE)
   expect_identical(simd_na_free(simd_as_integer(l)), TRUE)
@@ -667,7 +667,7 @@ test_that("conversions keep the flag only when they cannot overflow", {
 })
 
 test_that("subsetting keeps TRUE unless a missing element is selected, then FALSE", {
-  x <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  x <- simd_vec(c(1, 2, 3), impl = "none", scan_na = TRUE)
   expect_sv(x[2:3], c(2, 3), "none", TRUE)
   expect_sv(x[-1], c(2, 3), "none", TRUE)
   expect_sv(x[c(TRUE, FALSE, TRUE)], c(1, 3), "none", TRUE)
@@ -676,7 +676,7 @@ test_that("subsetting keeps TRUE unless a missing element is selected, then FALS
   expect_sv(x[5], NA_real_, "none", FALSE)
   expect_sv(x[c(TRUE, NA, FALSE)], c(1, NA), "none", FALSE)
   expect_identical(x[], x)
-  y <- simd_vec(c(1, NA), check_na = TRUE)
+  y <- simd_vec(c(1, NA), scan_na = TRUE)
   expect_sv(y[1], 1)
   expect_sv(simd_vec(c(1, 2))[1], 1)
   expect_error(x[1, 2], "incorrect number of dimensions")
@@ -696,9 +696,9 @@ test_that("indexing with more than one subscript errors as on a plain vector", {
 })
 
 test_that("c() is TRUE only when every part is known NA-free", {
-  a <- simd_vec(c(1, 2), check_na = TRUE)
-  b <- simd_vec(3, check_na = TRUE)
-  f <- simd_vec(c(NA, 1), check_na = TRUE)
+  a <- simd_vec(c(1, 2), scan_na = TRUE)
+  b <- simd_vec(3, scan_na = TRUE)
+  f <- simd_vec(c(NA, 1), scan_na = TRUE)
   expect_sv(c(a, b), c(1, 2, 3), na_free = TRUE)
   expect_sv(c(a, 4, 5L), c(1, 2, 4, 5), na_free = TRUE)
   expect_sv(c(a, c(4, NA)), c(1, 2, 4, NA))
@@ -712,8 +712,8 @@ test_that("c() is TRUE only when every part is known NA-free", {
   # Long parts: a simd_vec of a shared vector (which R wraps) and computed
   # ones, the parts keeping their flags.
   d <- as.double(seq_len(1000))
-  w <- simd_vec(d, check_na = TRUE)
-  expect_sv(c(w, simd_vec(-d, check_na = TRUE), 1), c(d, -d, 1), na_free = TRUE)
+  w <- simd_vec(d, scan_na = TRUE)
+  expect_sv(c(w, simd_vec(-d, scan_na = TRUE), 1), c(d, -d, 1), na_free = TRUE)
   expect_sv(c(w, w + 1, simd_vec(1:2)), c(d, d + 1, 1, 2))
   expect_sv(c(simd_vec(1:3), d), c(1, 2, 3, d))
   expect_true(simd_na_free(w))
@@ -729,7 +729,7 @@ test_that("c() uses the simd_vec method only when a simd_vec comes first", {
 })
 
 test_that("assignment and length<- keep the class and pin", {
-  x <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  x <- simd_vec(c(1, 2, 3), impl = "none", scan_na = TRUE)
   x[2] <- 10
   expect_sv(x, c(1, 10, 3), "none")
   x[] <- 0
@@ -740,7 +740,7 @@ test_that("assignment and length<- keep the class and pin", {
   y[4] <- simd_vec(9)
   expect_sv(y, c(1, 2.5, 3, 9))
 
-  z <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  z <- simd_vec(c(1, 2, 3), impl = "none", scan_na = TRUE)
   length(z) <- 2
   expect_sv(z, c(1, 2), "none", TRUE)
   length(z) <- 4
@@ -749,7 +749,7 @@ test_that("assignment and length<- keep the class and pin", {
 
 test_that("[ with a logical or non-negative index keeps base R's values and the flag", {
   d <- c(1.5, 2.5, 3.5, 4.5)
-  x <- simd_vec(d, check_na = TRUE)
+  x <- simd_vec(d, scan_na = TRUE)
   for (i in list(
     c(TRUE, FALSE), c(TRUE, FALSE, TRUE, TRUE), logical(), c(3, 1), c(0, 2), 2.9,
     integer(), c(4L, 4L), matrix(c(3, 1)), c(1.999, 0.5)
@@ -782,10 +782,10 @@ test_that("[[ returns a plain element", {
 })
 
 test_that("the flag lets the functions skip their missing-value checks", {
-  x <- simd_vec(c(1, 2, 3), check_na = TRUE)
+  x <- simd_vec(c(1, 2, 3), scan_na = TRUE)
   expect_false(.debug_opts(x)$na_check)
   expect_true(.debug_opts(simd_vec(c(1, 2, 3)))$na_check)
-  expect_true(.debug_opts(simd_vec(c(1, NA), check_na = TRUE))$na_check)
+  expect_true(.debug_opts(simd_vec(c(1, NA), scan_na = TRUE))$na_check)
   expect_identical(sum(x), 6)
   expect_identical(bare(x + 1), c(2, 3, 4))
 })
@@ -793,7 +793,7 @@ test_that("the flag lets the functions skip their missing-value checks", {
 # ---- A stale flag can never be read ---------------------------------------
 
 test_that("the flag belongs to the object it was set on", {
-  x <- simd_vec(c(1, 2, 3), check_na = TRUE)
+  x <- simd_vec(c(1, 2, 3), scan_na = TRUE)
   expect_identical(simd_na_free(x), TRUE)
   # A base function that copies the attributes onto new data shares the
   # token: the copy and the original both read as unknown.
@@ -807,14 +807,14 @@ test_that("the flag belongs to the object it was set on", {
   f <- structure(c(1, NA), class = "simd_vec", rsimd_na_free = TRUE)
   expect_null(simd_na_free(f))
   expect_identical(sum(f), NA_real_)
-  x <- simd_vec(c(1, 2, 3), check_na = TRUE)
+  x <- simd_vec(c(1, 2, 3), scan_na = TRUE)
   g <- c(NA, 2, 3)
   attributes(g) <- attributes(x)
   expect_null(simd_na_free(g))
   expect_identical(sum(g), NA_real_)
   # Setting the old flag attribute on an object with a valid token of its
   # own changes nothing.
-  f <- simd_vec(c(1L, NA, 3L), check_na = TRUE)
+  f <- simd_vec(c(1L, NA, 3L), scan_na = TRUE)
   attr(f, "rsimd_na_free") <- TRUE
   expect_false(simd_na_free(f))
   expect_identical(sum(f), NA_integer_)
@@ -822,7 +822,7 @@ test_that("the flag belongs to the object it was set on", {
 
   # Any change of class voids the flag: without one, [<- can change the
   # data in place.
-  g <- simd_vec(1:3, check_na = TRUE)
+  g <- simd_vec(1:3, scan_na = TRUE)
   class(g) <- NULL
   g[2] <- NA
   class(g) <- "simd_vec"
@@ -832,14 +832,14 @@ test_that("the flag belongs to the object it was set on", {
   expect_identical(min(g), NA_integer_)
   expect_identical(mean(g), NA_real_)
   expect_identical(simd_count_na(g), 1)
-  g <- simd_vec(1:3, check_na = TRUE)
+  g <- simd_vec(1:3, scan_na = TRUE)
   oldClass(g) <- c("foo", oldClass(g))
   expect_null(simd_na_free(g))
   # Nor does putting back the class vector of another simd_vec, made in R
   # or in C, flagged or not: a flagged object has a class vector of its own.
-  k <- simd_vec(c(1, 2), check_na = TRUE)
+  k <- simd_vec(c(1, 2), scan_na = TRUE)
   for (other in list(simd_vec(1), simd_vec(1) + 1, k, k + k, simd_vec(1L) + 1L)) {
-    for (g in list(simd_vec(1:3, check_na = TRUE), simd_add(k, k))) {
+    for (g in list(simd_vec(1:3, scan_na = TRUE), simd_add(k, k))) {
       class(g) <- NULL
       g[2] <- NA
       class(g) <- class(other)
@@ -849,10 +849,10 @@ test_that("the flag belongs to the object it was set on", {
   expect_true(simd_na_free(k))
 
   # A reloaded flag is unknown (the token's pointer is not saved).
-  x <- simd_vec(c(1, 2, 3), check_na = TRUE)
+  x <- simd_vec(c(1, 2, 3), scan_na = TRUE)
   expect_null(simd_na_free(unserialize(serialize(x, NULL))))
   path <- tempfile(fileext = ".rds")
-  saveRDS(simd_vec(c(1, 2), check_na = TRUE), path)
+  saveRDS(simd_vec(c(1, 2), scan_na = TRUE), path)
   expect_null(simd_na_free(readRDS(path)))
   unlink(path)
 
@@ -863,7 +863,7 @@ test_that("the flag belongs to the object it was set on", {
 })
 
 test_that("ordinary use keeps the flag", {
-  x <- simd_vec(c(3, 1, 2), check_na = TRUE)
+  x <- simd_vec(c(3, 1, 2), scan_na = TRUE)
   f <- function(v) sum(v)
   f(x)
   l <- list(x)
@@ -897,24 +897,24 @@ test_that("ordinary use keeps the flag", {
   expect_identical(sum(h(x)), NA_real_)
   expect_identical(simd_na_free(x), TRUE)
   # A function that returns its input copies it, token and all.
-  i <- simd_vec(1:3, check_na = TRUE)
+  i <- simd_vec(1:3, scan_na = TRUE)
   expect_sv(simd_as_integer(i), 1:3, NULL, TRUE)
   expect_identical(simd_na_free(i), TRUE)
   # simd_impl<- and simd_vec(impl =) keep the flag of an unshared object.
-  u <- simd_vec(c(1, 2), check_na = TRUE)
+  u <- simd_vec(c(1, 2), scan_na = TRUE)
   simd_impl(u) <- "none"
   expect_sv(u, c(1, 2), "none", TRUE)
-  expect_sv(simd_vec(simd_vec(c(1, 2), check_na = TRUE), impl = "none"), c(1, 2), "none", TRUE)
+  expect_sv(simd_vec(simd_vec(c(1, 2), scan_na = TRUE), impl = "none"), c(1, 2), "none", TRUE)
 })
 
 test_that("[[<- assigns one element and drops the flag", {
-  w <- simd_vec(c(1L, 2L, 3L), check_na = TRUE)
+  w <- simd_vec(c(1L, 2L, 3L), scan_na = TRUE)
   w[[2]] <- NA
   expect_sv(w, c(1L, NA, 3L))
   expect_identical(sum(w), NA_integer_)
   expect_true(anyNA(w))
   expect_identical(simd_which_na(w), 2L)
-  w2 <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  w2 <- simd_vec(c(1, 2, 3), impl = "none", scan_na = TRUE)
   w2[[2]] <- NA
   expect_sv(w2, c(1, NA, 3), "none")
   expect_identical(max(w2), NA_real_)
@@ -926,7 +926,7 @@ test_that("[[<- assigns one element and drops the flag", {
   expect_error(w2[[1]] <- numeric(), "replacement has length zero")
 
   skip_if_not(has_bit64(), "bit64 is not installed")
-  v <- simd_vec(simd_as_integer64(c(1, 2, 3)), check_na = TRUE)
+  v <- simd_vec(simd_as_integer64(c(1, 2, 3)), scan_na = TRUE)
   v[[2]] <- 5L
   expect_identical(bare(v), simd_as_integer64(c(1, 5, 3)))
   v[[5]] <- 7L
@@ -952,7 +952,7 @@ test_that("[<- and [[<- reject a value of a type rsimd does not take, naming 'va
   for (d in data) {
     for (what in names(values)) {
       msg <- paste0("^'value' must be an atomic vector .*, not ", what, "$")
-      x <- simd_vec(d, check_na = TRUE)
+      x <- simd_vec(d, scan_na = TRUE)
       expect_error(x[2] <- values[[what]], msg)
       expect_error(x[] <- values[[what]], msg)
       expect_error(x[[2]] <- values[[what]], msg)
@@ -1055,7 +1055,7 @@ test_that("base functions on a flagged simd_vec agree with plain data", {
         label <- paste(f, "on", type)
         want <- tryCatch(suppressWarnings(fns[[f]](data[[type]])), error = function(e) NULL)
         if (is.null(want) || !is.atomic(unclass(want))) next
-        x <- simd_vec(data[[type]], check_na = TRUE)
+        x <- simd_vec(data[[type]], scan_na = TRUE)
         got <- tryCatch(suppressWarnings(fns[[f]](x)), error = function(e) NULL)
         if (is.null(got)) next
         # The core property: a TRUE flag is never on data with a missing value.
@@ -1098,12 +1098,12 @@ test_that("c(), [ and as_simd_vec() take base R's other arguments", {
   expect_sv(w[1, drop = FALSE], 4, "none")
   expect_sv(w[2:3, drop = TRUE], c(5, 6), "none")
   x <- simd_vec(c(1, NA))
-  expect_sv(as_simd_vec(x, impl = "none", check_na = TRUE), c(1, NA), "none", FALSE)
+  expect_sv(as_simd_vec(x, impl = "none", scan_na = TRUE), c(1, NA), "none", FALSE)
   expect_identical(as_simd_vec(x), x)
 })
 
 test_that("setting names, dimensions or dimnames unwraps", {
-  z <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  z <- simd_vec(c(1, 2, 3), impl = "none", scan_na = TRUE)
   y <- z
   names(y) <- c("a", "b", "c")
   expect_identical(y, c(a = 1, b = 2, c = 3))
@@ -1116,7 +1116,7 @@ test_that("setting names, dimensions or dimnames unwraps", {
   # The original keeps its flag.
   expect_sv(z, c(1, 2, 3), "none", TRUE)
   # NULL leaves the simd_vec as it is.
-  y <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
+  y <- simd_vec(c(1, 2, 3), impl = "none", scan_na = TRUE)
   names(y) <- NULL
   dim(y) <- NULL
   dimnames(y) <- NULL
@@ -1179,18 +1179,18 @@ test_that("complex simd_vecs use the complex kernels", {
   expect_sv(Conj(simd_vec(1:2)), c(1, 2))
   expect_sv(Mod(simd_vec(-1L)), 1)
   expect_sv(Arg(simd_vec(-1)), pi)
-  expect_identical(Re(simd_vec(complex(real = 1, imaginary = NA), check_na = TRUE))[[1]], 1)
-  expect_false(anyNA(Re(simd_vec(complex(real = 1, imaginary = NA), check_na = TRUE))))
+  expect_identical(Re(simd_vec(complex(real = 1, imaginary = NA), scan_na = TRUE))[[1]], 1)
+  expect_false(anyNA(Re(simd_vec(complex(real = 1, imaginary = NA), scan_na = TRUE))))
 })
 
 test_that("all.equal() compares data, pin and flag, not the token", {
-  a <- simd_vec(c(1, 2), impl = "none", check_na = TRUE)
-  b <- simd_vec(c(1, 2), impl = "none", check_na = TRUE)
+  a <- simd_vec(c(1, 2), impl = "none", scan_na = TRUE)
+  b <- simd_vec(c(1, 2), impl = "none", scan_na = TRUE)
   expect_false(identical(a, b))
   expect_true(all.equal(a, b))
-  expect_true(all.equal(a, simd_vec(c(1, 2 + 1e-12), impl = "none", check_na = TRUE)))
-  expect_match(all.equal(a, simd_vec(c(1, 3), impl = "none", check_na = TRUE)), "Mean relative")
-  expect_match(all.equal(a, simd_vec(c(1, 2), check_na = TRUE)), "pins differ: none vs auto")
+  expect_true(all.equal(a, simd_vec(c(1, 2 + 1e-12), impl = "none", scan_na = TRUE)))
+  expect_match(all.equal(a, simd_vec(c(1, 3), impl = "none", scan_na = TRUE)), "Mean relative")
+  expect_match(all.equal(a, simd_vec(c(1, 2), scan_na = TRUE)), "pins differ: none vs auto")
   expect_match(all.equal(a, simd_vec(c(1, 2), impl = "none")), "flags differ: TRUE vs unknown")
   expect_match(all.equal(a, c(1, 2)), "target is simd_vec, current is numeric")
 })
@@ -1198,7 +1198,7 @@ test_that("all.equal() compares data, pin and flag, not the token", {
 # ---- Base functions, unwrapping, printing ---------------------------------
 
 test_that("rev, sort, head and tail keep the class; rep and unique do not", {
-  x <- simd_vec(c(3, 1, 2), impl = "none", check_na = TRUE)
+  x <- simd_vec(c(3, 1, 2), impl = "none", scan_na = TRUE)
   expect_sv(rev(x), c(2, 1, 3), "none", TRUE)
   expect_sv(sort(x), c(1, 2, 3), "none", TRUE)
   expect_sv(head(x, 2), c(3, 1), "none", TRUE)
@@ -1210,7 +1210,7 @@ test_that("rev, sort, head and tail keep the class; rep and unique do not", {
 test_that("match and %in% compare the data, not its 15-digit strings", {
   d <- c(0.1 + 0.2, 1/3, 1e15 + 1)
   tab <- c(0.3, 0.333333333333333, 1e15 + 2)
-  x <- simd_vec(d, impl = "none", check_na = TRUE)
+  x <- simd_vec(d, impl = "none", scan_na = TRUE)
   expect_identical(match(x, tab), match(d, tab))
   expect_identical(match(tab, x), match(tab, d))
   expect_identical(match(x, x), 1:3)
@@ -1251,11 +1251,11 @@ test_that("print, format and str", {
   expect_false(res$visible)
   expect_identical(res$value, x)
   expect_output(
-    print(simd_vec(1:2, check_na = TRUE)), "<simd_vec[2] integer impl=auto na_free=TRUE>\n[1] 1 2",
+    print(simd_vec(1:2, scan_na = TRUE)), "<simd_vec[2] integer impl=auto na_free=TRUE>\n[1] 1 2",
     fixed = TRUE
   )
   expect_output(
-    print(simd_vec(c(TRUE, NA), check_na = TRUE)),
+    print(simd_vec(c(TRUE, NA), scan_na = TRUE)),
     "<simd_vec[2] logical impl=auto na_free=FALSE>",
     fixed = TRUE
   )
@@ -1282,7 +1282,7 @@ test_that("print and str give the full length of a long simd_vec", {
     "RSIMD_EXTENDED_TESTS is not true"
   )
   skip_if(.Machine$sizeof.pointer < 8, "no long vectors on 32-bit platforms")
-  x <- simd_vec(raw(2^31 + 1), check_na = TRUE)
+  x <- simd_vec(raw(2^31 + 1), scan_na = TRUE)
   out <- capture.output(print(x, max = 3))
   expect_identical(out[1L], "<simd_vec[2147483649] raw impl=auto na_free=TRUE>")
   expect_output(str(x), "simd_vec [1:2147483649] raw impl=auto na_free=TRUE 00 00", fixed = TRUE)
@@ -1367,7 +1367,7 @@ test_that("Math functions bit64 lacks take integer64 simd_vecs as double", {
 test_that("an invalid rsimd.impl option makes simd_vec methods errors until it is repaired", {
   old <- options(rsimd.impl = "auto")
   on.exit(options(old))
-  v <- simd_vec(1:3, check_na = TRUE)
+  v <- simd_vec(1:3, scan_na = TRUE)
   options(rsimd.impl = "bogus")
   msg <- "invalid option rsimd.impl: unknown implementation 'bogus'"
   expect_error(print(v), msg, fixed = TRUE)

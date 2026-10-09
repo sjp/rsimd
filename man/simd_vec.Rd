@@ -8,7 +8,7 @@
 \alias{simd_unwrap}
 \title{SIMD Vectors with a Pinned Implementation}
 \usage{
-simd_vec(x, impl = NULL, check_na = FALSE)
+simd_vec(x, impl = NULL, scan_na = FALSE)
 
 as_simd_vec(x, ...)
 
@@ -30,8 +30,11 @@ simd_unwrap(x)
   \code{\link{simd_use}}) or the name of an implementation in
   \code{\link{simd_available}()} to pin the object to. \code{"auto"} is
   not allowed: a pin names a concrete implementation.}
-\item{check_na}{If \code{TRUE}, scan \code{x} once for \code{NA} and
-  \code{NaN} and record the answer in the object's NA-free flag.}
+\item{scan_na}{If \code{TRUE}, scan \code{x} once for \code{NA} and
+  \code{NaN} and record the answer in the object's NA-free flag. This
+  is unrelated to the \code{na_check} argument of the \code{simd_}
+  functions, which says whether one call looks for missing values
+  (\code{\link{rsimd_options}}).}
 \item{...}{Passed to \code{simd_vec()}.}
 }
 \description{
@@ -60,7 +63,7 @@ returns plain vectors.
 }
 \code{simd_vec()} drops every other attribute of \code{x} (names,
 dimensions, dimnames). Given a \code{simd_vec}, it replaces the pin only
-when \code{impl} is supplied and the flag only when \code{check_na} is
+when \code{impl} is supplied and the flag only when \code{scan_na} is
 \code{TRUE}. Character vectors, lists and data with any other class (dates,
 times, \code{difftime}, factors, data frames) are errors, and so is
 \code{NULL}. Making an
@@ -112,7 +115,7 @@ FALSE}), for reductions and elementwise operations alike. The flag is only
 set on objects a function returns, since R cannot change an argument in
 place. It is \code{TRUE} only when a missing value is impossible:
 \tabular{ll}{
-\code{simd_vec(x, check_na = TRUE)} \tab \code{!simd_any_na(x)} \cr
+\code{simd_vec(x, scan_na = TRUE)} \tab \code{!simd_any_na(x)} \cr
 \code{abs}, \code{sign}, \code{floor}, \code{ceiling}, \code{trunc}, \code{round}, unary \code{-} \tab kept when \code{TRUE} \cr
 \code{simd_pmin}, \code{simd_pmax} (and \code{_num}), \code{simd_clamp}, \code{cummax}, \code{cummin} \tab kept when every operand is \code{TRUE} \cr
 \code{simd_conj}, \code{simd_re}, \code{simd_im}, \code{simd_popcount}, \code{simd_lzcnt}, \code{simd_tzcnt} \tab kept \cr
@@ -154,7 +157,7 @@ reference; take the data out with \code{simd_unwrap()} instead. Assigning into a
 a list, subsetting, sorting and printing leave the flag of \code{x}
 alone; \code{attributes(x)}, \code{saveRDS(x)} and \code{serialize(x)}
 void it. A lost flag only costs speed:
-\code{simd_vec(x, check_na = TRUE)} sets it again. Raw data is always
+\code{simd_vec(x, scan_na = TRUE)} sets it again. Raw data is always
 NA-free.
 
 \strong{Operators.} \code{+}, \code{-}, \code{*}, \code{/}, \code{^},
@@ -286,7 +289,7 @@ differences.
 \code{\link{simd_any_na}}, \link{rsimd_options}, \link{rsimd-integer64}.
 }
 \examples{
-x <- simd_vec(c(1.5, -2, 4), check_na = TRUE)
+x <- simd_vec(c(1.5, -2, 4), scan_na = TRUE)
 x
 x * 2 + 1
 sum(abs(x))
