@@ -80,7 +80,7 @@ rsimd_etype rsimd_promote(rsimd_etype a, rsimd_etype b) {
 /* ---- simd_vec operands ---------------------------------------------- */
 
 /* What the current .Call has seen of its simd_vec operands. */
-static struct {
+static struct sv_state {
   int seen;        /* an operand is a simd_vec */
   rsimd_tier pin;  /* their common pinned tier, or RSIMD_TIER_COUNT */
   int na_free;     /* every operand is known NA-free */
@@ -89,7 +89,7 @@ static struct {
 /* The current .Call's deferred warnings. */
 #define RSIMD_WARN_MAX 8
 #define RSIMD_WARN_LEN 256
-static struct {
+static struct warn_list {
   int n;
   char msg[RSIMD_WARN_MAX][RSIMD_WARN_LEN];
 } warn_pending;
@@ -731,19 +731,31 @@ SEXP C_simd_bit64_unloaded(void) {
   return R_NilValue;
 }
 
+/* Loads bit64's namespace; 1 if it is loaded. A hook on bit64's loading
+   may call rsimd, whose rsimd_entry() resets the current .Call's state, so
+   that state is kept aside while R code runs. */
+static int load_bit64(void) {
+  const struct rsimd_kernels *active = rsimd_active;
+  struct sv_state sv = sv_call;
+  struct warn_list warn = warn_pending;
+  SEXP pkg = PROTECT(Rf_mkString("bit64"));
+  SEXP call = PROTECT(Rf_lang3(Rf_install("requireNamespace"), pkg, Rf_ScalarLogical(1)));
+  int loaded;
+  SET_TAG(CDDR(call), Rf_install("quietly"));
+  loaded = Rf_asLogical(Rf_eval(call, R_BaseEnv)) == 1;
+  UNPROTECT(2);
+  rsimd_active = active;
+  sv_call = sv;
+  warn_pending = warn;
+  return loaded;
+}
+
 void rsimd_set_i64_class(SEXP out) {
   /* An integer64 object without bit64's methods registered sorts, prints
      and compares as the doubles its bits make, so bit64 is loaded first.
      Evaluating R code here is safe where allocating is: out is protected
      by the caller. */
-  if (!bit64_loaded) {
-    SEXP pkg = PROTECT(Rf_mkString("bit64"));
-    SEXP call = PROTECT(Rf_lang3(Rf_install("requireNamespace"), pkg,
-                                 Rf_ScalarLogical(1)));
-    SET_TAG(CDDR(call), Rf_install("quietly"));
-    bit64_loaded = Rf_asLogical(Rf_eval(call, R_BaseEnv)) == 1;
-    UNPROTECT(2);
-  }
+  if (!bit64_loaded) bit64_loaded = load_bit64();
   if (!bit64_loaded) {
     rsimd_error("integer64 results need package 'bit64'; install it with "
                 "install.packages(\"bit64\")");

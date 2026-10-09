@@ -111,11 +111,13 @@ SEXP C_simd_available(void) {
 
 /* Selects "auto" or a tier; returns 0, -1 (unknown) or -2 (unavailable). */
 SEXP C_simd_select(SEXP name) {
+  int status;
   if (!Rf_isString(name) || XLENGTH(name) != 1 || STRING_ELT(name, 0) == NA_STRING) {
     rsimd_error("'impl' must be a single string");
   }
-  rsimd_impl_selected();
-  return Rf_ScalarInteger(rsimd_select(CHAR(STRING_ELT(name, 0))));
+  status = rsimd_select(CHAR(STRING_ELT(name, 0)));
+  if (status == 0) rsimd_impl_selected();
+  return Rf_ScalarInteger(status);
 }
 
 /* The active tier. */

@@ -89,3 +89,41 @@ test_that("without bit64 only integer64 results error, with an install hint", {
   expect_identical(res$eq, TRUE)
   expect_identical(res$which_max, 1L)
 })
+
+test_that("an rsimd call from a hook on bit64's loading leaves the outer call intact", {
+  skip_if_not_installed("bit64")
+  skip_if_not_installed("callr")
+  child <- function() {
+    library(rsimd)
+    raw64 <- structure(unclass(simd_as_integer64(c(3, -1))), class = "integer64")
+    nas <- structure(unclass(simd_as_integer64(c(NA, NA))), class = "integer64")
+    # The hook makes a warning of its own and runs unpinned.
+    setHook(packageEvent("bit64", "onLoad"), function(...) simd_as_integer(1e10))
+    run <- function(f) {
+      unloadNamespace("bit64")
+      warnings <- character()
+      value <- withCallingHandlers(f(), warning = function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      })
+      list(class = class(value), impl = attr(value, "rsimd_impl"), warnings = warnings,
+           loaded = isNamespaceLoaded("bit64"))
+    }
+    v <- simd_vec(raw64, impl = "none")
+    s <- simd_vec(nas)
+    list(
+      add = run(function() v + 1L),
+      range = run(function() simd_range(s, na.rm = TRUE))
+    )
+  }
+  res <- callr::r(child)
+  inner <- "NAs introduced by coercion to integer range"
+  expect_identical(res$add$class, c("simd_vec", "integer64"))
+  expect_identical(res$add$impl, "none")
+  expect_identical(res$add$warnings, inner)
+  expect_true(res$add$loaded)
+  expect_identical(res$range$class, "integer64")
+  expect_identical(res$range$warnings, c(
+    inner, "no non-NA value, returning c(+9223372036854775807, -9223372036854775807)"
+  ))
+})
