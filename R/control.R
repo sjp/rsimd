@@ -43,6 +43,10 @@ simd_complex_variants <- function() {
 }
 
 simd_use <- function(impl) {
+  if (missing(impl)) {
+    .sync_impl()
+    return(.impl_state$requested)
+  }
   problem <- .impl_problem(impl)
   if (!is.null(problem)) {
     .stop(problem)
@@ -102,12 +106,41 @@ simd_precision <- function(mode) {
   mode
 }
 
+simd_na_check <- function(value) {
+  if (missing(value)) {
+    return(.na_check_option())
+  }
+  problem <- .na_check_problem(value)
+  if (!is.null(problem)) {
+    .stop("'value' ", problem)
+  }
+  # As in simd_precision(): replace an invalid current value.
+  old <- getOption("rsimd.na_check", TRUE)
+  if (!is.null(.na_check_problem(old))) old <- TRUE
+  options(rsimd.na_check = value)
+  invisible(old)
+}
+
 # For a candidate value of rsimd.na_check: NULL if valid, else the error.
 .na_check_problem <- function(value) {
   if (!is.logical(value) || length(value) != 1L || is.na(value)) {
     return("must be TRUE or FALSE")
   }
   NULL
+}
+
+# The rsimd.na_check option, which the user may have set directly,
+# validated.
+.na_check_option <- function() {
+  value <- getOption("rsimd.na_check", TRUE)
+  problem <- .na_check_problem(value)
+  if (!is.null(problem)) {
+    .stop(
+      "invalid option rsimd.na_check: ", problem,
+      "; reset it with simd_na_check()"
+    )
+  }
+  value
 }
 
 simd_math_accuracy <- function(mode) {
@@ -152,6 +185,34 @@ simd_math_accuracy <- function(mode) {
     )
   }
   mode
+}
+
+simd_options <- function() {
+  impl <- simd_use()
+  structure(
+    list(
+      impl = impl,
+      current = simd_current(),
+      precision = simd_precision(),
+      math_accuracy = simd_math_accuracy(),
+      na_check = simd_na_check()
+    ),
+    class = "simd_options"
+  )
+}
+
+print.simd_options <- function(x, ...) {
+  impl <- x$impl
+  if (!identical(impl, x$current)) impl <- paste0(impl, " (running ", x$current, ")")
+  cat(
+    "rsimd options:\n",
+    "  impl:          ", impl, "\n",
+    "  precision:     ", x$precision, "\n",
+    "  math_accuracy: ", x$math_accuracy, "\n",
+    "  na_check:      ", x$na_check, "\n",
+    sep = ""
+  )
+  invisible(x)
 }
 
 simd_with_impl <- function(impl, expr) {

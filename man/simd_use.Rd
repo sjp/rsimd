@@ -15,7 +15,8 @@ simd_use(impl)
 simd_with_impl(impl, expr)
 }
 \arguments{
-\item{impl}{\code{"auto"} or one of the ids returned by \code{simd_tiers()}.}
+\item{impl}{\code{"auto"} or one of the ids returned by \code{simd_tiers()}.
+Omit it to get the current request.}
 \item{expr}{An expression to evaluate with \code{impl} selected.}
 }
 \description{
@@ -56,7 +57,10 @@ set, else from the environment variable \env{RSIMD_IMPL}, else it is
 also when \code{expr} signals an error.
 
 The implementation asked for, \code{"auto"} or a tier id, is the value of
-the option \code{rsimd.impl}, which \code{simd_use()} keeps up to date.
+the option \code{rsimd.impl}, which \code{simd_use()} keeps up to date, and
+is what \code{simd_use()} without \code{impl} returns; \code{simd_current()}
+gives the tier it resolves to. \code{\link{simd_options}()} shows both
+together with the other options.
 
 \code{simd_complex_variants()} reports how complex multiplication, division
 and \code{cumprod()} were matched to base R's rounding when the package was
@@ -82,19 +86,21 @@ compiler; see \code{\link{simd_mul}()}), with \code{" (NA/NaN may differ)"} appe
 only the choice between \code{NA} and \code{NaN} could not be
 reproduced.
 
-\code{simd_use()}: the previously requested value, invisibly. It signals an
-error, leaving the selection unchanged, if \code{impl} is unknown or not
-available.
+\code{simd_use()}: without \code{impl}, the requested value (\code{"auto"}
+or a tier id). With \code{impl}, the previously requested value, invisibly.
+It signals an error, leaving the selection unchanged, if \code{impl} is
+unknown or not available.
 
 \code{simd_with_impl()}: the value of \code{expr}.
 }
 \seealso{
-\code{\link{simd_cpu_features}} for the CPU features behind availability.
+\code{\link{simd_cpu_features}} for the CPU features behind availability;
+\code{\link{rsimd_options}} for all options.
 }
 \examples{
 simd_available()
 simd_current()
-getOption("rsimd.impl")
+simd_use()
 simd_complex_variants()
 
 old <- simd_use("none")

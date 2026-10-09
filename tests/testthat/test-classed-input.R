@@ -4,7 +4,8 @@
 # Exports that take no data argument, or only a simd_vec.
 no_data <- c(
   "simd_available", "simd_complex_variants", "simd_cpu_features", "simd_current",
-  "simd_math_accuracy", "simd_precision", "simd_tiers", "simd_use", "simd_version",
+  "simd_math_accuracy", "simd_na_check", "simd_options", "simd_precision", "simd_tiers",
+  "simd_use", "simd_version",
   "simd_with_impl",
   "simd_impl", "simd_impl<-", "simd_na_free", "is_simd_vec"
 )

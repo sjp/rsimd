@@ -63,7 +63,7 @@ sum(v, na.rm = TRUE)                 # 4.5
 | Complex vectors | arithmetic, sums, scans and elementary functions, plus `simd_conj()`, `simd_re()`, `simd_arg()` | `?simd_conj` |
 | 64-bit integers | `bit64::integer64` input to sums, extremes, arithmetic, comparisons and bit operations | `?rsimd-integer64` |
 | `simd_vec` class | operators, `Math` and `Summary` call the `simd_*()` functions; `simd_unwrap()`, `simd_na_free()` | `?simd_vec` |
-| Implementation selection | `simd_available()`, `simd_use()`, `simd_with_impl()`, `simd_precision()`, `simd_cpu_features()` | `?simd_use`, `?simd_precision` |
+| Implementation and options | `simd_available()`, `simd_use()`, `simd_with_impl()`, `simd_precision()`, `simd_na_check()`, `simd_options()`, `simd_cpu_features()` | `?simd_use`, `?simd_precision`, `?rsimd_options` |
 
 ## Implementation tiers
 

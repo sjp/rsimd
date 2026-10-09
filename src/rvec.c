@@ -299,7 +299,7 @@ static int na_check_option(void) {
   if (v == R_NilValue) return 1;
   if (TYPEOF(v) != LGLSXP || XLENGTH(v) != 1 || LOGICAL_ELT(v, 0) == NA_LOGICAL) {
     Rf_errorcall(R_NilValue, "invalid option rsimd.na_check: must be TRUE or FALSE; reset it "
-                             "with options(rsimd.na_check = TRUE)");
+                             "with simd_na_check()");
   }
   return LOGICAL_ELT(v, 0);
 }

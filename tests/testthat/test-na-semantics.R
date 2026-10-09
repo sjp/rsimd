@@ -131,6 +131,32 @@ test_that("integer and logical sums: NA unless na.rm, exact 64-bit accumulation"
   expect_identical(fold(numeric(0)), 0)
 })
 
+test_that("simd_na_check() gets, sets and validates the option", {
+  old <- options(rsimd.na_check = TRUE)
+  on.exit(options(old))
+  expect_identical(simd_na_check(), TRUE)
+  expect_invisible(prev <- simd_na_check(FALSE))
+  expect_identical(prev, TRUE)
+  expect_identical(simd_na_check(), FALSE)
+  expect_identical(getOption("rsimd.na_check"), FALSE)
+  expect_false(.debug_opts(1)$na_check)
+  options(rsimd.na_check = NULL)
+  expect_identical(simd_na_check(), TRUE)
+  for (bad in list("yes", NA, c(TRUE, FALSE), 1, NULL)) {
+    expect_error(simd_na_check(bad), "'value' must be TRUE or FALSE", info = deparse(bad))
+  }
+  expect_identical(simd_na_check(), TRUE)
+  # An invalid option is reported, and the setter repairs it, returning the
+  # default as the previous value.
+  options(rsimd.na_check = "yes")
+  expect_error(simd_na_check(), "invalid option rsimd.na_check: must be TRUE or FALSE",
+    fixed = TRUE
+  )
+  expect_error(simd_na_check(), "; reset it with simd_na_check()", fixed = TRUE)
+  expect_identical(withVisible(simd_na_check(FALSE)), list(value = TRUE, visible = FALSE))
+  expect_identical(simd_na_check(), FALSE)
+})
+
 test_that("na_check = NULL reads option rsimd.na_check on every call", {
   old <- options(rsimd.na_check = TRUE)
   on.exit(options(old))
@@ -151,7 +177,7 @@ test_that("na_check = NULL reads option rsimd.na_check on every call", {
       fixed = TRUE, info = deparse(bad)
     )
     expect_error(simd_add(x, 1), "invalid option rsimd.na_check", info = deparse(bad))
-    expect_error(simd_add(x, 1), "; reset it with options(rsimd.na_check = TRUE)",
+    expect_error(simd_add(x, 1), "; reset it with simd_na_check()",
       fixed = TRUE, info = deparse(bad)
     )
     # An explicit argument does not read the option; nor do functions

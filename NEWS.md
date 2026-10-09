@@ -9,7 +9,8 @@ First release.
   `sve` and `sve2` on arm), each in its own file with its own flags, and
   always the scalar `none` tier. `simd_tiers()` lists every tier id,
   `simd_available()` the tiers this machine can run, `simd_current()` the
-  one in use, `simd_use()` selects one by name or `"auto"`,
+  one in use, `simd_use()` selects one by name or `"auto"` (and without an
+  argument returns the request), `simd_options()` shows every option at once,
   `simd_with_impl()` selects one temporarily, and the `rsimd.impl` option
   and `RSIMD_IMPL` environment variable set it too (`?rsimd_options`). `simd_version()` reports the version of the native
   interface.
@@ -140,14 +141,15 @@ First release.
   `rsimd.math_accuracy` and `rsimd.na_check` are read in C and each function
   makes its own call into C, so a call on a short vector costs well under a
   microsecond more than the C code itself. The `na_check` argument defaults
-  to `NULL`, meaning option `rsimd.na_check`. Warnings and errors name the
+  to `NULL`, meaning option `rsimd.na_check`, which `simd_na_check()` gets
+  and sets. Warnings and errors name the
   user's call (`simd_log(-1)`), and an input type a function does not take
   is reported as `simd_var() does not support 'x' of type raw` (the
   `simd_vec` methods of base generics keep base R's messages). An invalid value of one of the four options
   set before loading gives a warning naming the option, and the default is
   used; one set after loading makes the next call that reads it an error
   naming the option and how to reset it, and `simd_use()`,
-  `simd_precision()` and `simd_math_accuracy()` replace it
+  `simd_precision()`, `simd_math_accuracy()` and `simd_na_check()` replace it
   (`?rsimd_options`).
 * Results follow base R's types, warnings and missing-value rules; `NA` and
   `NaN` stay distinct. Where a result can differ from base R's (the last

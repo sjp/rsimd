@@ -51,7 +51,8 @@ specific implementation, or a plain scalar one, can be selected by name.
 \section{Options}{
 The options that control the package (\code{rsimd.impl},
 \code{rsimd.precision}, \code{rsimd.na_check} and
-\code{rsimd.math_accuracy}) are described in \link{rsimd_options}.
+\code{rsimd.math_accuracy}) are described in \link{rsimd_options};
+\code{\link{simd_options}()} shows their current values.
 }
 \seealso{
 \code{\link{simd_version}}

@@ -78,6 +78,58 @@ test_that("simd_use() returns the previous request invisibly", {
   expect_identical(simd_use("auto"), "auto")
 })
 
+test_that("simd_use() without impl returns the current request", {
+  old_impl <- getOption("rsimd.impl")
+  on.exit(simd_use(old_impl), add = TRUE)
+  simd_use("auto")
+  expect_visible(simd_use())
+  expect_identical(simd_use(), "auto")
+  simd_use("none")
+  expect_identical(simd_use(), "none")
+  # A value set through the option is the request too.
+  options(rsimd.impl = "auto")
+  expect_identical(simd_use(), "auto")
+  expect_identical(as.vector(simd_current()), simd_available()[1])
+  # An invalid option is reported as by the compute functions.
+  options(rsimd.impl = "bogus")
+  expect_error(simd_use(), "invalid option rsimd.impl: unknown implementation 'bogus'",
+    fixed = TRUE
+  )
+  expect_error(simd_use(), "; reset it with simd_use()", fixed = TRUE)
+  expect_identical(simd_use("none"), "auto")
+  expect_identical(simd_use(), "none")
+})
+
+test_that("simd_options() reports every option", {
+  old_impl <- getOption("rsimd.impl")
+  on.exit(simd_use(old_impl), add = TRUE)
+  old <- options(
+    rsimd.precision = "pairwise", rsimd.math_accuracy = "fast", rsimd.na_check = FALSE
+  )
+  on.exit(options(old), add = TRUE)
+  simd_use("auto")
+  opts <- simd_options()
+  expect_s3_class(opts, "simd_options")
+  expect_identical(unclass(opts), list(
+    impl = "auto", current = simd_available()[1], precision = "pairwise",
+    math_accuracy = "fast", na_check = FALSE
+  ))
+  expect_output(print(opts), "impl: +auto \\(running [a-z0-9]+\\)")
+  expect_output(print(opts), "precision: +pairwise")
+  expect_output(print(opts), "math_accuracy: +fast")
+  expect_output(print(opts), "na_check: +FALSE")
+  expect_invisible(print(opts))
+  # A tier asked for by name is shown once.
+  simd_use("none")
+  expect_identical(simd_options()$current, "none")
+  expect_output(print(simd_options()), "impl: +none\n")
+  # An invalid option is an error, as for the function that reads it.
+  options(rsimd.precision = "bogus")
+  expect_error(simd_options(), "invalid option rsimd.precision")
+  options(rsimd.precision = "fast", rsimd.na_check = "yes")
+  expect_error(simd_options(), "; reset it with simd_na_check()", fixed = TRUE)
+})
+
 test_that("simd_use() rejects an unavailable tier and keeps the selection", {
   old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
