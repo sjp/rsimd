@@ -158,6 +158,36 @@ test_that("different pins are an error, and the next call is unaffected", {
   expect_sv(a + b, c(2, 4), tiers[[1L]])
 })
 
+test_that("[<- and [[<- reject a value pinned to another tier, as c() does", {
+  tiers <- simd_available()
+  skip_if(length(tiers) < 2L, "only one tier available")
+  a <- simd_vec(c(1, 2), impl = tiers[[1L]])
+  b <- simd_vec(5, impl = tiers[[2L]])
+  msg <- sprintf("operands pinned to different implementations ('%s' vs '%s')", tiers[[1L]], tiers[[2L]])
+  expect_error(a[2] <- b, msg, fixed = TRUE)
+  expect_error(a[[2]] <- b, msg, fixed = TRUE)
+  i <- simd_vec(c(1L, 2L), impl = tiers[[1L]])
+  expect_error(i[2] <- simd_vec(5L, impl = tiers[[2L]]), msg, fixed = TRUE)
+  expect_sv(a, c(1, 2), tiers[[1L]])
+  # The same pin, or one side unpinned, keeps x's pin (or lack of one).
+  a[2] <- simd_vec(5, impl = tiers[[1L]])
+  expect_sv(a, c(1, 5), tiers[[1L]])
+  a[[1]] <- simd_vec(4)
+  expect_sv(a, c(4, 5), tiers[[1L]])
+  u <- simd_vec(c(1, 2))
+  u[2] <- b
+  expect_sv(u, c(1, 5), NULL)
+})
+
+test_that("[<- does not check that the pins are available", {
+  t_na <- unavailable_tier()
+  skip_if(is.null(t_na), "every tier is available")
+  x <- structure(c(1, 2), class = "simd_vec", rsimd_impl = t_na)
+  x[2] <- structure(5, class = "simd_vec", rsimd_impl = t_na)
+  expect_identical(attr(x, "rsimd_impl"), t_na)
+  expect_identical(.subset(x, 1:2), c(1, 5))
+})
+
 test_that("a nested call from a warning handler leaves the outer call intact", {
   # Warnings are issued when the call has finished, so a handler that calls
   # rsimd cannot overwrite the outer call's simd_vec state or pin.

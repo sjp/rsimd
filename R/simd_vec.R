@@ -150,6 +150,12 @@ simd_na_free <- function(x) {
   .sv_new(out, attr(x, "rsimd_impl", exact = TRUE), na_free)
 }
 
+# The error for operands pinned to different tiers a and b.
+.sv_pin_clash <- function(a, b) {
+  .stop("operands pinned to different implementations ('", a, "' vs '", b,
+    "'); unpin one with simd_impl(x) <- NULL")
+}
+
 # The pin shared by the simd_vec arguments (NULL when none is pinned), with
 # the same rules and messages as the C side (src/rvec.c): different pins
 # and pins to unavailable tiers are errors.
@@ -159,10 +165,7 @@ simd_na_free <- function(x) {
     if (!is_simd_vec(a)) next
     p <- attr(a, "rsimd_impl", exact = TRUE)
     if (is.null(p)) next
-    if (!is.null(pin) && !identical(pin, p)) {
-      .stop("operands pinned to different implementations ('", pin, "' vs '", p,
-        "'); unpin one with simd_impl(x) <- NULL")
-    }
+    if (!is.null(pin) && !identical(pin, p)) .sv_pin_clash(pin, p)
     if (!p %in% simd_available()) {
       .stop("'x' is pinned to implementation '", p,
         "', which is not available on this machine; unpin it with simd_impl(x) <- NULL")
@@ -433,8 +436,15 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
   # then be blamed on x. NULL keeps base R's "replacement has length zero".
   if (!is.null(value)) .check_data(value, "value")
   .sv_release(x)
+  # value's pin must match a pin of x, as in c(); an unpinned x stays
+  # unpinned, and no pin is checked for availability (no kernel runs).
+  if (is_simd_vec(value)) {
+    pin <- attr(x, "rsimd_impl", exact = TRUE)
+    p <- attr(value, "rsimd_impl", exact = TRUE)
+    if (!is.null(pin) && !is.null(p) && !identical(pin, p)) .sv_pin_clash(pin, p)
+    value <- .sv_strip(value)
+  }
   data <- .sv_data_own(x)
-  if (is_simd_vec(value)) value <- .sv_strip(value)
   if (inherits(data, "integer64")) {
     if (!is.null(value) && !inherits(value, "integer64")) value <- simd_as_integer64(value)
     data <- unclass(data)

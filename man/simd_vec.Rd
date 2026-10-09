@@ -207,7 +207,9 @@ too (an \code{integer64} object converts \code{value} to
 \code{integer64}). \code{value} must be data \pkg{rsimd} takes, as for an
 operand: a character, list, factor, \code{Date} or other classed
 \code{value} is an error rather than being stored as its codes or
-numbers. \code{x[[i]]} returns a plain element.
+numbers. A \code{simd_vec} \code{value} pinned to another implementation
+than \code{x} is an error, as in \code{c()}; one pinned while \code{x} is
+not leaves \code{x} unpinned. \code{x[[i]]} returns a plain element.
 \code{is.na(x)} calls \code{\link{simd_is_na}} and returns a plain
 logical vector.
 \code{match()}, \code{\%in\%} and so \code{setdiff()}, \code{union()}
