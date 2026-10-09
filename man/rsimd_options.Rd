@@ -40,13 +40,21 @@ unavailable value gives a warning and \code{"auto"} is used.}
 \item{\env{RSIMD_CPU_FEATURES_MASK}}{For testing: a comma-separated list of
 CPU feature names (see \code{\link{simd_cpu_features}()}) to treat as
 absent, read when the package is loaded.}
-\item{\env{RSIMD_DISABLE_TIERS}}{Read when the package is installed: a
-comma-separated list of tiers not to compile.}
 \item{\env{RSIMD_DEBUG_STRIDE}}{For testing: the number of elements
 processed between checks for user interrupts (rounded up to a multiple of
 128), read when the package is loaded. Long inputs are processed in pieces
 of this size, so a small value exercises that splitting. The default is
 \eqn{2^{20}}{2^20}.}
+\item{\env{RSIMD_DISABLE_TIERS}}{Read when the package is installed: a
+comma-separated list of tiers not to compile, such as
+\code{"avx512,sve2"}. The \code{"none"} tier cannot be disabled: naming it,
+or a tier that does not exist, gives a warning and is ignored.}
+\item{\env{RSIMD_DISABLE_SLEEF}}{Read when the package is installed: set to
+\code{1} to build no tier with the SLEEF elementary functions; they then
+come from the C library through \code{"none"}.}
+\item{\env{RSIMD_CONFIGURE_VERBOSE}}{Read when the package is installed: set
+to \code{1} to show the compiler output of the tests that fail, to see why
+a tier was not built.}
 }
 }
 \section{Missing values and integer overflow}{
