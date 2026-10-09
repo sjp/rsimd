@@ -16,3 +16,4 @@
 ^\.sde$
 ^\.claude$
 ^config\.log$
+^[^/]*\.(txt|log|Rout|csv|out)$
