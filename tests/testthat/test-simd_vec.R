@@ -727,14 +727,14 @@ test_that("[ with a logical or non-negative index keeps base R's values and the 
   x <- simd_vec(d, check_na = TRUE)
   for (i in list(
     c(TRUE, FALSE), c(TRUE, FALSE, TRUE, TRUE), logical(), c(3, 1), c(0, 2), 2.9,
-    integer(), c(4L, 4L)
+    integer(), c(4L, 4L), matrix(c(3, 1)), c(1.999, 0.5)
   )) {
     out <- x[i]
     expect_identical(simd_unwrap(out), d[i], info = deparse(i))
     expect_true(simd_na_free(out), info = deparse(i))
   }
   # Past the end, NA or a name in the index: NA elements, found by the scan.
-  for (i in list(c(TRUE, FALSE, TRUE, TRUE, TRUE), c(TRUE, NA), 5, c(1, NA), 2^40, "a")) {
+  for (i in list(c(TRUE, FALSE, TRUE, TRUE, TRUE), c(TRUE, NA), 5, c(1, NA), 2^40, Inf, "a")) {
     out <- x[i]
     expect_identical(simd_unwrap(out), d[i], info = deparse(i))
     expect_false(simd_na_free(out), info = deparse(i))
@@ -908,6 +908,16 @@ test_that("[[<- assigns one element and drops the flag", {
   expect_identical(bare(v), simd_as_integer64(c(1, 5, 3, NA, 7)))
   v[7] <- 1L
   expect_identical(bare(v), simd_as_integer64(c(1, 5, 3, NA, 7, NA, 1)))
+  # A double value is truncated toward zero without a warning, as bit64's
+  # [[<- does.
+  expect_silent(v[[1]] <- 2.5)
+  expect_silent(v[2] <- -2.5)
+  expect_identical(bare(v), simd_as_integer64(c(2, -2, 3, NA, 7, NA, 1)))
+  skip_if_not_installed("bit64")
+  w <- bit64::as.integer64(c(1, 5, 3))
+  w[[1]] <- 2.5
+  w[2] <- -2.5
+  expect_identical(bare(v)[1:3], w)
 })
 
 test_that("[<- and [[<- reject a value of a type rsimd does not take, naming 'value'", {

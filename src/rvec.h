@@ -391,7 +391,7 @@ void rsimd_warn_i64_overflow(void);
    does not stop an NA-free call from skipping its checks. */
 void rsimd_entry(void);
 /* rsimd_entry() first honours a change to option rsimd.impl made without
-   simd_use() (by evaluating .sync_impl() when the option differs from the
+   simd_use() (by evaluating .sync_option() when the option differs from the
    value it last synced with); a selection (C_simd_select) calls
    rsimd_impl_selected() so that the next call checks again. */
 void rsimd_impl_selected(void);

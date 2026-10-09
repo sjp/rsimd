@@ -159,5 +159,5 @@ SEXP C_simd_probe_slots(void) {
   SET_STRING_ELT(out, 0, Rf_mkChar(rsimd_active->tier_name()));
   SET_STRING_ELT(out, 1, Rf_mkChar(rsimd_active->fill_probe()));
   UNPROTECT(1);
-  return out;
+  return rsimd_exit(out);
 }

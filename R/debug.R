@@ -30,6 +30,10 @@
   .Call(C_simd_debug_opts, x, na_rm, na_check, precision)
 }
 
+# Records n deferred warnings, "<i>:" followed by len x's, and returns n:
+# at most the first 8 are issued, each cut to 255 bytes.
+.debug_warn <- function(n, len) .Call(C_simd_debug_warn, n, len)
+
 # Self-test kernels: the NA, precision and overflow rules run through the
 # active implementation.
 

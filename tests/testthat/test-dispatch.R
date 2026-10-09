@@ -215,6 +215,105 @@ test_that("compute functions honour rsimd.impl set directly, without simd_curren
   expect_identical(.debug_active(1), best)
 })
 
+test_that("an option set in a calling handler of an rsimd call is honoured inside it", {
+  old_impl <- getOption("rsimd.impl")
+  on.exit(simd_use(old_impl), add = TRUE)
+  old <- options(rsimd.impl = "auto")
+  on.exit(options(old), add = TRUE)
+  simd_use("auto")
+  best <- simd_available()[1]
+
+  # A warning handler runs once the call has finished.
+  inside <- NULL
+  res <- withCallingHandlers(simd_as_integer(c(1e10, 2)), warning = function(w) {
+    options(rsimd.impl = "none")
+    inside <<- .debug_active(1)
+    invokeRestart("muffleWarning")
+  })
+  expect_identical(res, c(NA, 2L))
+  expect_identical(inside, "none")
+  expect_identical(.debug_active(1), "none")
+
+  # A handler of the invalid-option error runs after the sync, so a call
+  # it makes syncs again.
+  options(rsimd.impl = "auto")
+  expect_identical(.debug_active(1), best)
+  options(rsimd.impl = "bogus")
+  inside <- NULL
+  expect_error(
+    withCallingHandlers(simd_sum(1), error = function(e) {
+      options(rsimd.impl = "none")
+      inside <<- list(.debug_active(1), simd_sum(c(1, 2)))
+    }),
+    "invalid option rsimd.impl: unknown implementation 'bogus'"
+  )
+  expect_identical(inside, list("none", 3))
+  expect_identical(.debug_active(1), "none")
+  # The error still names the user's call.
+  options(rsimd.impl = "bogus")
+  err <- tryCatch(simd_sum(1), error = identity)
+  expect_identical(conditionCall(err), quote(simd_sum(1)))
+  options(rsimd.impl = "auto")
+  expect_identical(.debug_active(1), best)
+})
+
+test_that("an interrupt between chunks leaves the next call's state clean", {
+  skip_on_cran()
+  skip_on_os("windows")
+  skip_if_not_installed("callr")
+  rs <- callr::r_session$new()
+  on.exit(rs$close(), add = TRUE)
+  rs$call(function() {
+    tiers <- rsimd::simd_available()
+    # A pinned operand switches the table for the call; the interrupt
+    # leaves the call with it still switched.
+    x <- rsimd::simd_vec(as.double(seq_len(5e7)), impl = tiers[[length(tiers)]])
+    tryCatch(repeat rsimd::simd_sum(x), interrupt = function(e) "interrupted")
+  })
+  Sys.sleep(1)
+  rs$interrupt()
+  expect_identical(rs$poll_process(10000), "ready")
+  expect_identical(rs$read()$result, "interrupted")
+  res <- rs$run(function() {
+    list(
+      selected = rsimd::simd_current(), active = rsimd:::.debug_active(1),
+      sum = rsimd::simd_sum(c(1, 2, NA), na.rm = TRUE),
+      warning = tryCatch(rsimd::simd_as_integer(1e10), warning = conditionMessage)
+    )
+  })
+  expect_identical(res$active, res$selected)
+  expect_identical(res$sum, 3)
+  expect_identical(res$warning, "NAs introduced by coercion to integer range")
+})
+
+test_that("forked workers inherit the selection; callr sessions start from RSIMD_IMPL", {
+  skip_on_cran()
+  skip_on_os("windows")
+  skip_if_not_installed("callr")
+  old_impl <- getOption("rsimd.impl")
+  on.exit(simd_use(old_impl), add = TRUE)
+  child <- function() list(rsimd::simd_current(), rsimd:::.debug_active(1))
+
+  simd_use("none")
+  res <- parallel::mclapply(1:2, function(i) child(), mc.cores = 2)
+  expect_identical(res, rep(list(list("none", "none")), 2))
+  # A selection made in the worker stays there.
+  res <- parallel::mclapply(1:2, function(i) {
+    simd_use("auto")
+    child()
+  }, mc.cores = 2)
+  best <- simd_available()[1]
+  expect_identical(res, rep(list(list(best, best)), 2))
+  expect_identical(.debug_active(1), "none")
+
+  # A callr session is a fresh process: RSIMD_IMPL, not the parent's
+  # selection.
+  env <- function(impl) c(callr::rcmd_safe_env(), RSIMD_IMPL = impl)
+  expect_identical(callr::r(child, env = env("")), list(best, best))
+  simd_use("auto")
+  expect_identical(callr::r(child, env = env("none")), list("none", "none"))
+})
+
 test_that("simd_with_impl() restores the selection when a compute call errors", {
   old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)

@@ -143,14 +143,20 @@ static SEXP impl_option(void) {
   return v == R_NilValue ? R_NilValue : R_UnboundValue;
 }
 
+/* Evaluates call (protected by the caller) in the namespace. */
+static SEXP ns_eval(SEXP call) {
+  SEXP ns = PROTECT(R_FindNamespace(PROTECT(Rf_mkString("rsimd")))), out;
+  out = Rf_eval(call, ns);
+  UNPROTECT(2);
+  return out;
+}
+
 static SEXP impl_sync_eval(void *data) {
-  SEXP ns, call;
+  SEXP call = PROTECT(Rf_lang1(Rf_install(".sync_option"))), problem;
   (void) data;
-  ns = PROTECT(R_FindNamespace(PROTECT(Rf_mkString("rsimd"))));
-  call = PROTECT(Rf_lang1(Rf_install(".sync_impl")));
-  Rf_eval(call, ns);
-  UNPROTECT(3);
-  return R_NilValue;
+  problem = ns_eval(call);
+  UNPROTECT(1);
+  return problem;
 }
 
 static void impl_sync_done(void *data, Rboolean jump) {
@@ -160,18 +166,23 @@ static void impl_sync_done(void *data, Rboolean jump) {
 }
 
 /* Honours a change to option rsimd.impl made without simd_use(): when the
-   option differs from the value last synced, evaluates .sync_impl() in the
-   namespace, which selects it (or errors, naming the option, for a value
-   that cannot be selected). One option lookup when nothing changed. R code
-   run by the sync cannot sync again, and an error leaves nothing set, so
-   the next call tries again. */
+   option differs from the value last synced, evaluates .sync_option() in
+   the namespace, which selects it, or returns why it cannot be selected,
+   and then raises that error, naming the option, through .sync_error().
+   One option lookup when nothing changed. R code run by the sync cannot
+   sync again; the error comes after it, so its calling handlers can. An
+   error leaves nothing set, so the next call tries again. */
 static void impl_sync(void) {
-  SEXP c = impl_option(), cont;
+  SEXP c = impl_option(), cont, problem;
   if (impl_syncing || (impl_synced && c == impl_seen)) return;
   impl_syncing = 1;
   cont = PROTECT(R_MakeUnwindCont());
-  R_UnwindProtect(impl_sync_eval, NULL, impl_sync_done, NULL, cont);
-  UNPROTECT(1);
+  problem = PROTECT(R_UnwindProtect(impl_sync_eval, NULL, impl_sync_done, NULL, cont));
+  if (problem != R_NilValue) {
+    ns_eval(PROTECT(Rf_lang2(Rf_install(".sync_error"), problem)));
+    UNPROTECT(1); /* not reached: .sync_error() always errors */
+  }
+  UNPROTECT(2);
   c = impl_option();
   if (c == R_UnboundValue) return;
   if (impl_seen != NULL && impl_seen != R_NilValue) R_ReleaseObject(impl_seen);

@@ -424,6 +424,31 @@ test_that("reading a compact sequence does not allocate it", {
   }
 })
 
+test_that("deferred warnings are capped at 8 a call and cut to 255 bytes", {
+  issued <- function(n, len) {
+    msgs <- character(0)
+    res <- withCallingHandlers(.debug_warn(n, len), warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+    expect_identical(res, as.integer(n))
+    msgs
+  }
+  want <- function(i, len) substr(paste0(i, ":", strrep("x", len)), 1L, 255L)
+  expect_identical(issued(0, 10), character(0))
+  expect_identical(issued(3, 10), want(1:3, 10))
+  # The first 8, in order; the rest are dropped.
+  expect_identical(issued(8, 10), want(1:8, 10))
+  expect_identical(issued(20, 10), want(1:8, 10))
+  # 255 bytes fit; a longer message is cut.
+  expect_identical(issued(1, 253), paste0("1:", strrep("x", 253)))
+  expect_identical(issued(2, 254), want(1:2, 254))
+  expect_identical(issued(10, 1000), want(1:8, 1000))
+  expect_identical(unique(nchar(issued(10, 1000))), 255L)
+  # A call that warns nothing issues nothing left over from the last one.
+  expect_silent(simd_sum(1:3))
+})
+
 test_that("long vectors are read with R_xlen_t indices", {
   skip_on_cran()
   skip_if_not(
@@ -438,4 +463,23 @@ test_that("long vectors are read with R_xlen_t indices", {
   expect_identical(r$regions, ceiling(n / 4096))
   # A plain running sum of 2^31 doubles drifts by about 1e-9 relative.
   expect_equal(r$sum, n * (n + 1) / 2, tolerance = 1e-6)
+})
+
+test_that("an index into a long vector is a double", {
+  skip_on_cran()
+  skip_if_not(
+    identical(Sys.getenv("RSIMD_EXTENDED_TESTS"), "true"),
+    "RSIMD_EXTENDED_TESTS is not true"
+  )
+  skip_if(.Machine$sizeof.pointer < 8, "no long vectors on 32-bit platforms")
+  n <- 2^31 + 10
+  x <- seq_len(n) # compact: long, but takes no memory
+  expect_identical(simd_which_max(x), n)
+  expect_identical(simd_which_min(x), 1)
+  expect_identical(simd_which_max(simd_vec(x)), n)
+  # A materialised long vector (2 GB) with its maximum past 2^31.
+  r <- raw(n)
+  r[n - 1] <- as.raw(7)
+  expect_identical(simd_which_max(r), n - 1)
+  expect_identical(simd_which_min(r), 1)
 })

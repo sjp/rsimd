@@ -194,21 +194,29 @@ simd_with_impl <- function(impl, expr) {
 }
 
 # Honours a change to the rsimd.impl option made without simd_use(). The C
-# side (rsimd_entry() in src/rvec.c) evaluates this at the start of a call
+# side (rsimd_entry() in src/rvec.c) does the same at the start of a call
 # when the option differs from the value it last saw, so the R wrappers
 # need not.
 .sync_impl <- function() {
-  impl <- getOption("rsimd.impl", "auto")
-  if (!identical(impl, .impl_state$requested)) {
-    problem <- .impl_problem(impl)
-    if (!is.null(problem)) {
-      .stop(
-        "invalid option rsimd.impl: ", problem, "; reset it with simd_use()"
-      )
-    }
-    simd_use(impl)
-  }
+  problem <- .sync_option()
+  if (!is.null(problem)) .sync_error(problem)
   invisible()
+}
+
+# Selects the rsimd.impl option if it differs from the request, or returns
+# why it cannot be selected (NULL when it was). The C side evaluates this
+# and raises the error itself once its sync is over, so that a calling
+# handler of the error can call rsimd and sync again.
+.sync_option <- function() {
+  impl <- getOption("rsimd.impl", "auto")
+  if (identical(impl, .impl_state$requested)) return(NULL)
+  problem <- .impl_problem(impl)
+  if (is.null(problem)) simd_use(impl)
+  problem
+}
+
+.sync_error <- function(problem) {
+  .stop("invalid option rsimd.impl: ", problem, "; reset it with simd_use()")
 }
 
 # Internal, for tests: for an available tier (default: the active one), the

@@ -279,6 +279,24 @@ SEXP C_simd_debug_opts(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   return rsimd_exit(simd_debug_opts_impl(x, na_rm, na_check, precision));
 }
 
+/* Records n warnings "<i>:" followed by len x's and returns n, so the
+   tests see the cap and truncation of the deferred warnings. */
+static SEXP simd_debug_warn_impl(SEXP n, SEXP len) {
+  int count = rsimd_arg_int1(n, "n"), width = rsimd_arg_int1(len, "len"), i;
+  char *pad;
+  if (count < 0 || width < 0) Rf_error("'n' and 'len' must be non-negative");
+  pad = R_alloc((size_t) width + 1, 1);
+  memset(pad, 'x', (size_t) width);
+  pad[width] = '\0';
+  for (i = 0; i < count; i++) rsimd_warn("%d:%s", i + 1, pad);
+  return Rf_ScalarInteger(count);
+}
+
+SEXP C_simd_debug_warn(SEXP n, SEXP len) {
+  rsimd_entry();
+  return rsimd_exit(simd_debug_warn_impl(n, len));
+}
+
 /* The tier whose resolved table a call with operands x and y (y may be
    NULL) runs on: the selected tier, or the operands' pinned one. */
 SEXP C_simd_debug_active(SEXP x, SEXP y) {
