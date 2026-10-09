@@ -193,8 +193,9 @@ static inline int32_t rsimd_mul_wrap_i32(int32_t x, int32_t y, int check) {
 }
 
 /* x %/% y (mod = 0) or x %% y (mod = 1) as in base R: floor division, the
-   remainder takes the sign of y; NA for y == 0 or an NA operand (or, with
-   check = 0, a quotient outside the int32 range). */
+   remainder takes the sign of y; NA for y == 0, an NA operand, or a
+   quotient outside [-INT32_MAX, INT32_MAX], which only an INT32_MIN operand
+   can produce (INT32_MIN is NA, so only with check = 0). */
 static inline int32_t rsimd_intdiv_i32(int32_t x, int32_t y, int mod, int check) {
   double xd = x, yd = y, q;
   if (y == 0 || (check && rsimd_na2_i32(x, y))) return RSIMD_NA_I32;
@@ -375,7 +376,9 @@ static inline double rsimd_sign_f64(double x) {
    and up to d places, xd = floor(|x| * p10) / p10 and
    xu = ceil(|x| * p10) / p10, and the closer one wins, xu on a tie when
    floor(|x| * p10) is odd. Zero, infinities and NaN are returned as they
-   are. */
+   are. This is a copy of fround() as R has had it since 4.0.0, not a call
+   to it, so it has to be updated if R changes that algorithm; the tests
+   compare it with round() bit for bit. */
 static inline double rsimd_round_digits_f64(double x, double p10, double big) {
   double a = fabs(x), x10, i10, xd, xu, du, dd, r;
   if (!(a > 0 && a < big)) return x;
@@ -761,9 +764,10 @@ RSIMD_INLINE rsimd_vf64 rsimd_vf64_intdiv(rsimd_vf64 x, rsimd_vf64 y, int mod, i
   rsimd_vf64 q = rsimd_vf64_floor(rsimd_vf64_div(x, y));
   rsimd_vf64 r = mod ? rsimd_vf64_sub(x, rsimd_vf64_mul(q, y)) : q;
   rsimd_mf64 bad = rsimd_vf64_cmp_eq(y, rsimd_vf64_zero());
-  /* Only an INT32_MIN operand can put a quotient out of the int32 range
-     (INT32_MIN %/% -1, or INT32_MIN %/% 1, which is -2^31), so with the NA
-     check that range test is not needed. */
+  /* Only an INT32_MIN operand can put a quotient outside [-INT32_MAX,
+     INT32_MAX] (INT32_MIN %/% -1, which is 2^31, or INT32_MIN %/% 1, which
+     is -2^31, the NA pattern), so with the NA check that range test is not
+     needed. */
   if (check) {
     bad = rsimd_mf64_or(bad, rsimd_mf64_or(rsimd_vf64_cmp_eq(x, na), rsimd_vf64_cmp_eq(y, na)));
   } else {

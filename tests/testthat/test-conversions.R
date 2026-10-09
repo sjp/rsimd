@@ -141,6 +141,7 @@ test_that("argument and type errors", {
   expect_error(simd_as_integer(2.5, c("checked", "saturating")), "'mode' must be a single string")
   expect_error(simd_as_integer64(1, mode = 1), "'mode' must be a single string")
   expect_error(simd_as_raw(1, mode = character(0)), "'mode' must be a single string")
+  expect_error(simd_as_integer(1, NA), "'mode' must be a single string")
   e <- tryCatch(simd_as_integer(1, mode = "wrap"), error = identity)
   expect_identical(conditionCall(e), quote(simd_as_integer(1, mode = "wrap")))
   expect_identical(simd_as_integer(1e10, "sat"), .Machine$integer.max)

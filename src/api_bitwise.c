@@ -99,7 +99,7 @@ static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
                                       "sar", "rotl", "rotr", "popcount", "lzcnt", "tzcnt"};
   int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
   /* NA (a shift count out of range) is allowed. */
-  double kd = Rf_isNull(k) ? 0.0 : rsimd_arg_num1(k, "k");
+  double kd = Rf_isNull(k) ? 0.0 : rsimd_arg_num1(k, "n");
   int count = isnan(kd) ? NA_INTEGER : (int) kd;
   int counts = code >= RSIMD_BIT_POPCNT;
   SEXP out;
