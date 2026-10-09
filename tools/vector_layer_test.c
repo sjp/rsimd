@@ -2141,6 +2141,8 @@ static void test_reduce(ptrdiff_t n) {
   if (want.saw_na && !narm) {                                                    \
     check_stopped(what, n, &r);                                                  \
   } else {                                                                       \
+    /* With a NaN and no na.rm the count is not defined (the result is NaN). */  \
+    if (want.saw_nan && !narm) r.count = want.count;                             \
     check_flags(what, n, &r, &want);                                             \
     n_checks += 2;                                                               \
     if (bits(r.f64) != bits(want.f64)) fail(what, n, 3, "minimum differs");      \

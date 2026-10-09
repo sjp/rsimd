@@ -640,7 +640,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_f64_)(const double *x, R_xlen_t n, co
   rsimd_vf64 a0 = one, a1 = one, a2 = one, a3 = one;
   rsimd_mf64 mnan = rsimd_mf64_none();
   rsimd_vi64 rcnt = rsimd_vi64_zero();
-  R_xlen_t i = 0, from;
+  R_xlen_t i = 0, from, tail;
   int nan = 0;
   while (i + 4 * W <= n) {
     const R_xlen_t end = stop && n - i > RSIMD_FOLD_BLOCK ? i + RSIMD_FOLD_BLOCK : n;
@@ -658,13 +658,17 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod_f64_)(const double *x, R_xlen_t n, co
       nan = 1;
     }
   }
+  tail = stop ? i : 0; /* the NA scan of rsimd_vfold_done_() starts here */
   for (; i < n; i += W) {
     rsimd_vf64 v = rsimd_vf64_loadu_p(rsimd_p64_while(i, n), x + i, 1.0);
     RSIMD_PROD_STEP_(a0, v, rsimd_vf64_is_nan(v));
   }
-  if (nan) mnan = rsimd_vf64_cmp_eq(one, one); /* a NaN was seen */
-  if (check) rsimd_vfold_done_(mnan, rsimd_vi64_reduce_add(rcnt), x, 0, x, 0, n, RSIMD_TERM_X, r);
-  else r->count += n;
+  if (check) {
+    rsimd_vfold_done_(mnan, nan, tail, rsimd_vi64_reduce_add(rcnt), x, 0, x, 0, n, RSIMD_TERM_X,
+                      r);
+  } else {
+    r->count += n;
+  }
   r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(rsimd_vf64_mul(a0, a1),
                                                     rsimd_vf64_mul(a2, a3)));
 }
@@ -766,7 +770,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod2_f64_)(int op, const void *x, const v
   rsimd_vf64 a0 = one, a1 = one, a2 = one, a3 = one;
   rsimd_mf64 mnan = rsimd_mf64_none();
   rsimd_vi64 rcnt = rsimd_vi64_zero();
-  R_xlen_t i = 0, from, removed = 0;
+  R_xlen_t i = 0, from, removed = 0, tail;
   double p = 1.0;
   int tail_nan = 0, nan = 0;
 #define RSIMD_PROD2_LD_(j)                                                               \
@@ -788,6 +792,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod2_f64_)(int op, const void *x, const v
       nan = 1;
     }
   }
+  tail = stop ? i : 0; /* the pairs before tail hold no NA operand */
   for (; i + W <= n; i += W) {
     rsimd_vf64 v = RSIMD_PROD2_LD_(0);
     RSIMD_PROD_STEP_(a0, v, rsimd_vf64_is_nan(v));
@@ -805,11 +810,11 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(prod2_f64_)(int op, const void *x, const v
     }
     p *= v;
   }
-  if (check && (nan || tail_nan || rsimd_mf64_any(mnan))) {
-    r->saw_nan = 1;
-    if (rsimd_any_na_elt_(x, xi, xs ? n : 1) || rsimd_any_na_elt_(y, yi, ys ? n : 1)) {
-      r->saw_na = 1;
-    }
+  if (check && (nan || tail_nan || rsimd_mf64_any(mnan))) r->saw_nan = 1;
+  if (check && (tail_nan || rsimd_mf64_any(mnan)) &&
+      (rsimd_any_na_elt_(xs ? rsimd_elt_ptr_(x, xi, tail) : x, xi, xs ? n - tail : 1) ||
+       rsimd_any_na_elt_(ys ? rsimd_elt_ptr_(y, yi, tail) : y, yi, ys ? n - tail : 1))) {
+    r->saw_na = 1;
   }
   r->count += n - removed - rsimd_vi64_reduce_add(rcnt);
   r->f64 *= RSIMD_KERNEL(prod_tree_)(rsimd_vf64_mul(rsimd_vf64_mul(a0, a1),
@@ -884,10 +889,11 @@ RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_nan_f64_)(const double *x, R_xlen_t n) 
 
 /* Minimum and/or maximum (ext) of the n doubles, or of their absolute
    values, into r, in four accumulator pairs. NaN lanes cannot win
-   (RSIMD_MIN_ACC_); they are counted afterwards when the NaN mask is set.
-   With stop (na_check without na.rm) a block of RSIMD_FOLD_BLOCK elements
-   with an NA ends the scan, as the result is then NA. The sign of a zero extremum is that of the
-   first zero in x, as in base R, found by a second scan. */
+   (RSIMD_MIN_ACC_); without stop they are counted afterwards when the NaN
+   mask is set. With stop (na_check without na.rm) a block of
+   RSIMD_FOLD_BLOCK elements with an NA ends the scan, as the result is
+   then NA, and the count does not matter. The sign of a zero extremum is
+   that of the first zero in x, as in base R, found by a second scan. */
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, const int check,
                                                   const int stop, const int absval,
                                                   const int ext, rsimd_reduce_result *r) {
@@ -896,7 +902,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
   rsimd_vf64 lo0 = rsimd_vf64_set1(HUGE_VAL), lo1 = lo0, lo2 = lo0, lo3 = lo0;
   rsimd_vf64 hi0 = rsimd_vf64_set1(-HUGE_VAL), hi1 = hi0, hi2 = hi0, hi3 = hi0;
   rsimd_mf64 mnan = rsimd_mf64_none();
-  R_xlen_t i = 0, missing = 0, from;
+  R_xlen_t i = 0, missing = 0, from, tail;
   int nan = 0;
   double lo, hi;
 #define RSIMD_MINMAX_F64_(lo, hi, v0)                                                    \
@@ -927,6 +933,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
       nan = 1;
     }
   }
+  tail = stop ? i : 0; /* the blocks before tail hold no NA */
   for (; i < n; i += W) {
     /* The tail repeats element i in the inactive lanes. */
     rsimd_vf64 v = rsimd_vf64_loadu_p(rsimd_p64_while(i, n), x + i, x[i]);
@@ -935,8 +942,9 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
 #undef RSIMD_MINMAX_F64_
   if (check && (nan || rsimd_mf64_any(mnan))) {
     r->saw_nan = 1;
-    missing = RSIMD_KERNEL(count_nan_f64_)(x, n);
-    if (rsimd_vf64_any_na(x, n)) r->saw_na = 1;
+    /* Under stop the result is NA or NaN, whatever the count. */
+    if (!stop) missing = RSIMD_KERNEL(count_nan_f64_)(x, n);
+    if (rsimd_mf64_any(mnan) && rsimd_vf64_any_na(x + tail, n - tail)) r->saw_na = 1;
   }
   r->count += n - missing;
   /* The accumulators hold no NaN, so the lane order of the reduction does

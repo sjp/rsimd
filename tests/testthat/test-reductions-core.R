@@ -701,6 +701,55 @@ test_that("reductions without na.rm stop at an NA and still give NA on every tie
   for (f in list(simd_prod_sums, simd_dot, simd_dist)) expect_tiers_give(NaN, f, y, x)
 })
 
+test_that("NaN in rescanned blocks still lets a later NA decide, and alone gives NaN", {
+  # Blocks with a NaN are rescanned for NA as they end; the final scan
+  # covers only the vectors after the last block, so the NA positions are
+  # in the tail, the last block, at a block edge and in a later block.
+  n <- 3e4 + 3
+  x <- runif(n)
+  nan_at <- list(every_64 = seq(1, n - 40, by = 64), first = 1, block_2 = 4100)
+  old <- options(rsimd.precision = "fast")
+  on.exit(options(old))
+  for (prec in c("fast", "compensated", "pairwise")) {
+    options(rsimd.precision = prec)
+    for (where in names(nan_at)) {
+      y <- x
+      y[nan_at[[where]]] <- NaN
+      for (f in list(simd_sum, simd_mean, simd_prod, simd_min, simd_max, simd_sum_sq)) {
+        expect_tiers_give(NaN, f, y)
+      }
+      for (f in list(simd_prod_sums, simd_prod_diffs, simd_dot, simd_dist)) {
+        expect_tiers_give(NaN, f, y, x)
+        expect_tiers_give(NaN, f, x, y)
+      }
+      expect_tiers_give(NaN, simd_prod_sums, y, 0.5)
+      for (pos in c(n, n - 2, n - 100, 8193, 20000)) {
+        z <- y
+        z[pos] <- NA
+        for (f in list(simd_sum, simd_mean, simd_prod, simd_min, simd_max, simd_sum_sq)) {
+          expect_tiers_give(NA_real_, f, z)
+        }
+        for (f in list(simd_prod_sums, simd_prod_diffs, simd_dot, simd_dist)) {
+          expect_tiers_give(NA_real_, f, z, x)
+        }
+        # The NaN in x, the NA in y.
+        w <- x
+        w[pos] <- NA
+        for (f in list(simd_prod_sums, simd_dot, simd_dist)) {
+          expect_tiers_give(NA_real_, f, y, w)
+        }
+        expect_tiers_give(NA_real_, simd_prod_diffs, z, 0.5)
+      }
+    }
+  }
+  # With na.rm the NaN are still counted out (whole numbers: exact sums).
+  y <- as.double(sample.int(1000L, n, TRUE))
+  y[nan_at$every_64] <- NaN
+  expect_tiers_give(mean(y, na.rm = TRUE), function(v) simd_mean(v, na.rm = TRUE), y)
+  expect_tiers_give(min(y, na.rm = TRUE), function(v) simd_min(v, na.rm = TRUE), y)
+  expect_tiers_give(which.max(y), simd_which_max, y)
+})
+
 test_that("an NA past the first chunk, or before it, gives NA on every tier", {
   skip_unless_extended()
   n <- 2^21 + 37
