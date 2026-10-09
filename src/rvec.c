@@ -315,7 +315,9 @@ static void sv_note(rsimd_in *v, const char *arg) {
 
 /* Attribute `name` of x without Rf_getAttrib(), which marks the value it
    returns as shared (ENSURE_NAMEDMAX) and so would void every token it
-   read. R_mapAttrib() is new in R 4.6.0; ATTRIB() was the way before. */
+   read. R_mapAttrib() is new in R 4.6.0; ATTRIB() was the way before.
+   R CMD check reports ATTRIB() as non-API only from R 4.6.0 on, which
+   never compiles that branch, so no supported R version flags it. */
 #if R_VERSION >= R_Version(4, 6, 0)
 struct sv_attr_find {
   SEXP name, value;
