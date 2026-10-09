@@ -453,7 +453,8 @@ test_that("other integer64 combinations and functions are rejected", {
   expect_error(simd_copysign(x, 1), "does not support 'x' of type integer64", fixed = TRUE)
   expect_error(simd_prod(x), "simd_prod() does not support 'x' of type integer64 yet", fixed = TRUE)
   expect_error(simd_mean(x), "simd_mean() does not support 'x' of type integer64 yet", fixed = TRUE)
-  expect_error(simd_and(x, TRUE), "simd_and() does not support 'x' of type integer64", fixed = TRUE)
+  expect_error(simd_and(x, as.raw(1)), "simd_and() cannot combine integer64 and raw operands", fixed = TRUE)
+  expect_error(simd_or(1i, x), "simd_or() does not support 'x' of type complex", fixed = TRUE)
   expect_error(simd_bit_and(x, 1), "does not support 'y' of type double", fixed = TRUE)
 })
 

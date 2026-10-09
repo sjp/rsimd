@@ -41,8 +41,10 @@ static int init_operands(rsimd_ew *e, SEXP x, SEXP y) {
 }
 
 /* Three-valued logic by name: "and", "or", "xor" or "not" (y NULL).
-   Double, integer and logical operands are read as logical values and
-   give a logical result; two raw operands give raw (bytewise). */
+   Double, integer, logical and integer64 operands are read as logical
+   values and give a logical result; two raw operands give raw (bytewise).
+   An integer64 operand is converted to logical (non-zero TRUE, NA NA) a
+   block at a time for the int32 or double kernel. */
 static SEXP simd_logic_impl(SEXP x, SEXP y, SEXP op) {
   static const char *const names[] = {"and", "or", "xor", "not"};
   int code = rsimd_arg_choice(op, names, (int) (sizeof names / sizeof names[0]));
@@ -53,7 +55,7 @@ static SEXP simd_logic_impl(SEXP x, SEXP y, SEXP op) {
     Rf_error("internal error: operands of '%s'", names[code]);
   }
   init_operands(&e, x, y);
-  if (all_raw(&e, 1, 0)) {
+  if (all_raw(&e, 1, 1)) {
     /* The logic and bit op codes of and, or, xor and not agree. */
     Rbyte *po;
     out = PROTECT(rsimd_alloc_like(RSIMD_U8, e.n));
@@ -63,14 +65,40 @@ static SEXP simd_logic_impl(SEXP x, SEXP y, SEXP op) {
                            po + off);
     });
   } else {
-    int *po, i, dbl = 0, flags = e.flags;
+    int *po, i, dbl = 0, i64 = 0, flags = e.flags;
     for (i = 0; i < e.k; i++) {
       if (e.in[i].type == RSIMD_F64) dbl = 1;
       else flags |= RSIMD_EW_I32(i);
+      if (e.in[i].type == RSIMD_I64) i64 = 1;
     }
     out = PROTECT(rsimd_alloc_like(RSIMD_LGL, e.n));
     po = (int *) rsimd_out_ptr(out);
-    if (dbl) {
+    if (i64) {
+      int lbuf[2][RSIMD_CHUNK];
+      RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
+        R_xlen_t s, m;
+        for (s = 0; s < len; s += m) {
+          const void *q[2];
+          m = len - s < RSIMD_CHUNK ? len - s : RSIMD_CHUNK;
+          for (i = 0; i < e.k; i++) {
+            int sc = (e.flags & RSIMD_EW_SCALAR(i)) != 0;
+            if (e.in[i].type == RSIMD_I64) {
+              rsimd_active->convert(RSIMD_CVT_I64_LGL, 0, (const int64_t *) p[i] + (sc ? 0 : s),
+                                    sc ? 1 : m, lbuf[i]);
+              q[i] = lbuf[i];
+            } else {
+              q[i] = sc ? p[i] : (const char *) p[i] + s * rsimd_etype_size(e.in[i].type);
+            }
+          }
+          if (e.k == 1) q[1] = NULL;
+          if (dbl) rsimd_active->logic_f64(code, q[0], q[1], m, flags, po + off + s);
+          else {
+            rsimd_active->logic_i32(code, (const int *) q[0], (const int *) q[1], m, e.flags,
+                                    po + off + s);
+          }
+        }
+      });
+    } else if (dbl) {
       RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
         rsimd_active->logic_f64(code, p[0], p[1], len, flags, po + off);
       });

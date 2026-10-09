@@ -54,6 +54,11 @@ forms; \code{\link{simd_eq}}, \code{\link{simd_ne}}, \code{\link{simd_lt}},
 \code{\link{simd_le}}, \code{\link{simd_gt}} and \code{\link{simd_ge}}
 (logical); \code{\link{simd_hamming}} and \code{\link{simd_hamming_bits}}
 (double).}
+\item{Logic}{\code{\link{simd_and}}, \code{\link{simd_or}},
+\code{\link{simd_xor}} and \code{\link{simd_not}} (logical; non-zero is
+\code{TRUE}, as \pkg{bit64}'s \code{&}, \code{|}, \code{xor} and
+\code{!}). A double operand is read as a logical value, without a
+warning.}
 \item{Bit operations}{\code{\link{simd_bit_and}}, \code{\link{simd_bit_or}},
 \code{\link{simd_bit_xor}}, \code{\link{simd_bit_not}}, \code{\link{simd_shl}},
 \code{\link{simd_shr}}, \code{\link{simd_sar}}, \code{\link{simd_rotl}},
@@ -69,13 +74,12 @@ Other functions reject integer64 with an error. \code{simd_prod} and
 \code{simd_mean} are not available for integer64 yet; transcendental and
 statistical functions (\code{simd_exp}, \code{simd_sqrt}, \code{simd_var},
 \code{simd_dot} \ldots), \code{simd_fma}, \code{simd_lerp},
-\code{simd_copysign}, the rounding functions, \code{simd_cumprod}, the
-three-valued logic of \code{simd_and} \ldots and the complex functions do
-not take it.
+\code{simd_copysign}, the rounding functions, \code{simd_cumprod} and the
+complex functions do not take it.
 
 \strong{Mixed operands.} An integer or logical operand combined with an
 integer64 one is converted to integer64 (exactly; \code{NA} stays
-\code{NA}). A double operand makes the integer64 operands convert to double:
+\code{NA}). A double operand of an arithmetic or comparison function makes the integer64 operands convert to double:
 the result is double, with the warning \code{"integer64 coerced to double"}
 (\pkg{bit64} instead converts the double to integer64; \pkg{rsimd} keeps the
 double's fraction but loses integer64 precision beyond \eqn{2^{53}}, so

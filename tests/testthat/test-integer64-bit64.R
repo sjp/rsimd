@@ -190,6 +190,30 @@ test_that("comparisons and predicates match bit64", {
     simd_is_pow2, p2)
 })
 
+test_that("logic ops match bit64's &, |, xor and !", {
+  # 2^32 and -2^32 have all-zero low words; 2^63 - 1 is the largest value.
+  edge <- as.integer64(c("0", "1", "-1", "4294967296", "-4294967296", "9223372036854775807", NA))
+  for (n in c(1, 7, 33, 4096 * 2 + 5)) {
+    x <- c(edge, rand_b64(n, seed = n + 40, na_frac = 0.2, bound = 3) * as.integer64(2)^32L)
+    y <- c(rev(edge), rand_b64(n, seed = n + 41, na_frac = 0.2, bound = 3))
+    expect_like_bit64(`!`, simd_not, x)
+    for (op in list(list(`&`, simd_and), list(`|`, simd_or), list(xor, simd_xor))) {
+      expect_like_bit64(op[[1L]], op[[2L]], x, y)
+      for (s in list(TRUE, FALSE, NA, edge[4L], edge[7L])) {
+        expect_like_bit64(op[[1L]], op[[2L]], x, s)
+        expect_like_bit64(op[[1L]], op[[2L]], s, x)
+      }
+      d <- c(0, 0.5, NaN, -2, 0, NA, 1)
+      expect_like_bit64(op[[1L]], op[[2L]], edge, d)
+      expect_like_bit64(op[[1L]], op[[2L]], c(1L, NA, 0L, 5L, 0L, 1L, NA), edge)
+    }
+  }
+  v <- simd_vec(edge)
+  expect_identical(!v, !edge)
+  expect_identical(v & TRUE, edge & TRUE)
+  expect_identical(v | edge, edge | edge)
+})
+
 test_that("Hamming distances match bit64's sum(x != y)", {
   x <- rand_b64(1000, seed = 22, bound = 3)
   y <- rand_b64(1000, seed = 23, bound = 3)

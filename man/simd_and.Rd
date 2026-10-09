@@ -14,7 +14,8 @@ simd_xor(x, y)
 simd_not(x)
 }
 \arguments{
-\item{x, y}{Logical, integer or double vectors, or two raw vectors.}
+\item{x, y}{Logical, integer, double or \pkg{bit64} \code{integer64}
+vectors, or two raw vectors.}
 }
 \description{
 \code{x & y}, \code{x | y}, \code{xor(x, y)} and \code{!x} computed with
@@ -27,7 +28,8 @@ Each element is read as a logical value: non-zero is \code{TRUE}, zero
 either is \code{NA}, else \code{TRUE}; \code{x | y} is \code{TRUE} if either
 is \code{TRUE}, else \code{NA} if either is \code{NA}, else \code{FALSE};
 \code{xor} is \code{NA} if either is \code{NA}; \code{!NA} is \code{NA}.
-Integer and double operands give a logical result, like base R's operators.
+Integer and double operands give a logical result, like base R's operators,
+and so do \code{integer64} ones, like \pkg{bit64}'s.
 
 Two raw vectors are combined bit by bit and give a raw vector, as base R
 does (\code{simd_not()} of raw flips every bit). Mixing raw with another
@@ -39,8 +41,9 @@ see \code{\link{simd_bit_and}}.
 \rsimdAttributes
 
 All implementations have their own kernels for these functions, except that
-on 32-bit ARM double operands use the scalar \code{"none"} code. Complex and
-\pkg{bit64} \code{integer64} operands are not supported.
+on 32-bit ARM double operands use the scalar \code{"none"} code.
+\code{integer64} operands are first converted to logical a block at a time.
+Complex operands are not supported.
 }
 \value{
 A logical vector of the length of the longer operand, or a raw vector for

@@ -4,10 +4,10 @@
 # checked here. The regular ones are made by .logic2(), .bit2(), .bit1() and
 # .bit_count() (see .wrapper()).
 
-# The logic ops take neither integer64 nor complex operands.
+# The logic ops do not take complex operands.
 .logic_check <- function(fun, x, y = NULL) {
-  .check_supported(x, fun, c("integer64", "complex"), character(0))
-  if (!is.null(y)) .check_supported(y, fun, c("integer64", "complex"), character(0), "y")
+  .check_supported(x, fun, c("complex"), character(0))
+  if (!is.null(y)) .check_supported(y, fun, c("complex"), character(0), "y")
   invisible()
 }
 
