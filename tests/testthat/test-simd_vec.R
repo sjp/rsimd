@@ -1328,6 +1328,27 @@ test_that("integer64 simd_vecs work with bit64 loaded", {
   expect_output(print(x), "<NA>", fixed = TRUE)
 })
 
+test_that("Math functions bit64 lacks take integer64 simd_vecs as double", {
+  skip_if_not_installed("bit64")
+  v <- bit64::as.integer64(c(1, -2, NA, 4))
+  x <- simd_vec(v, impl = "none")
+  d <- simd_vec(c(1, -2, NA, 4), impl = "none")
+  for (f in c("exp", "expm1", "log1p", "sin", "cos", "tan", "sinpi", "atan", "tanh",
+              "gamma", "lgamma", "digamma")) {
+    fun <- get(f, envir = baseenv())
+    r <- suppressWarnings(fun(x))
+    expect_identical(class(r), "simd_vec", info = f)
+    expect_identical(simd_impl(r), "none", info = f)
+    expect_identical(bare(r), bare(suppressWarnings(fun(d))), info = f)
+  }
+  # Those with a bit64 method still reach it.
+  v <- bit64::as.integer64(c(1, 2, NA, 4))
+  x <- simd_vec(v)
+  expect_identical(bare(sqrt(x)), sqrt(v))
+  expect_identical(bare(floor(x)), floor(v))
+  expect_identical(bare(round(x)), round(v))
+})
+
 test_that("an invalid rsimd.impl option makes simd_vec methods errors until it is repaired", {
   old <- options(rsimd.impl = "auto")
   on.exit(options(old))

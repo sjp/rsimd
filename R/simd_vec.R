@@ -311,6 +311,14 @@ Math.simd_vec <- function(x, ...) {
   if (kernel && !is.null(f <- .sv_math_kernels[[gen]])) {
     return(f(x))
   }
+  # Without a bit64 method the primitive would read the integer64 bits as
+  # doubles, so such data goes to double first, as bit64's sqrt() and log().
+  if (type == "integer64") {
+    .need_bit64()
+    if (is.null(getS3method(gen, "integer64", optional = TRUE))) {
+      return(get(gen, envir = baseenv())(simd_as_double(x), ...))
+    }
+  }
   f <- get(gen, envir = baseenv())
   .sv_fallback(function(x) f(x, ...), list(x))
 }

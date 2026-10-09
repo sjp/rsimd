@@ -204,10 +204,16 @@ logical results), the \code{Math} functions without a complex kernel, and
 \code{min}, \code{max}, \code{range}, \code{any} and \code{all}; for
 \code{integer64} data \code{^}, \code{prod}, \code{mean} and the
 \code{Math} functions other than \code{abs}, \code{sign}, \code{cumsum},
-\code{cummax} and \code{cummin}, which need \pkg{bit64};
+\code{cummax} and \code{cummin} that \pkg{bit64} has a method for
+(\code{sqrt}, \code{log}, \code{floor}, \code{round}, \code{cumprod}
+\dots), which need \pkg{bit64};
 \code{mean(x, trim)} with \code{trim} other than 0; \code{range(x,
 finite = TRUE)}; and \code{Re}, \code{Im}, \code{Mod}, \code{Arg} and
-\code{Conj} of non-complex data. For complex data \code{Re}, \code{Im},
+\code{Conj} of non-complex data. The other \code{Math} functions
+(\code{exp}, \code{log1p}, the trigonometric functions, \code{gamma}
+\dots) convert \code{integer64} data to double first, as \pkg{bit64}'s
+\code{sqrt} does, since base R alone would read the 64-bit integers as
+doubles. For complex data \code{Re}, \code{Im},
 \code{Mod}, \code{Arg} and \code{Conj} call \code{\link{simd_re}},
 \code{\link{simd_im}}, \code{\link{simd_abs}}, \code{\link{simd_arg}}
 and \code{\link{simd_conj}}.
