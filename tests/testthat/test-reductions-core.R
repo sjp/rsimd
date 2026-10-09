@@ -334,6 +334,45 @@ test_that("compact sequences give the same results as expanded vectors", {
   })
 })
 
+test_that("compact sequences of every sign and direction reduce as expanded vectors", {
+  fns <- list(
+    simd_sum, simd_mean, simd_min, simd_max, simd_range, simd_which_min, simd_which_max,
+    simd_min_abs, simd_max_abs, simd_which_min_abs, simd_which_max_abs, simd_sum_sq,
+    simd_norm, simd_sum_abs
+  )
+  seqs <- list(
+    1:10, 10:1, -5:5, 5:-5, -3:3, 3:-3, -7:2, 2:-7, -10:-1, -1:-10, 0:5, -5:0, 5:0,
+    -50000:49999, -2147483647:-2147480000, 2147480000:2147483647
+  )
+  seqs <- c(seqs, lapply(seqs, as.double))
+  batch_expectations({
+    for (x in seqs) {
+      expanded <- x + if (is.integer(x)) 0L else 0
+      for (k in seq_along(fns)) {
+        check_identical(fns[[k]](x), fns[[k]](expanded), info = c(k, x[1], length(x)))
+      }
+    }
+  })
+})
+
+test_that("compact sequences are reduced from their endpoints, sums rounded once", {
+  skip_if(getRversion() < "4.6.0", "R_altrep_class_name() is new in R 4.6.0")
+  # 1:3e9 is a double sequence; reading its 3e9 elements would take seconds.
+  x <- 1:3e9
+  expect_identical(simd_sum(x), 0x1.f399b14655518p+61)
+  expect_identical(simd_sum_sq(x), 0x1.d14a021dcc7b8p+92)
+  expect_identical(simd_mean(x), 1500000000.5)
+  expect_identical(simd_range(x), c(1, 3e9))
+  expect_identical(simd_which_max(x), 3e9)
+  expect_identical(simd_which_min_abs(-3e9:5), 3e9 + 1)
+  expect_identical(simd_sum(-1e15:1e15), 0)
+  expect_identical(simd_sum_abs(-1e15:1e15), 0x1.93e5939a08cf1p+99)
+  # Squares near 2^62, whose running sum rounds.
+  x <- 2147483000:2147483647
+  expect_identical(simd_sum_sq(x), 0x1.43fff995380adp+71)
+  expect_identical(simd_norm(x), 0x1.974b1f2c64b9dp+35)
+})
+
 test_that("na.rm = TRUE on all-missing input follows base R", {
   for (x in list(NA_real_, c(NA, NaN), rep(NA_integer_, 20), c(NA, NA))) {
     res <- with_each_tier(function() {

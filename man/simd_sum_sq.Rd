@@ -30,6 +30,10 @@ without forming \code{x^2} or \code{abs(x)}.
 Integer and logical elements are converted to double as they are read,
 except in \code{simd_sum_abs()}, which sums them exactly as integers.
 
+From R 4.6.0 on, a compact sequence such as \code{1:n} or
+\code{seq_len(n)} is not read: its sum of squares or of absolute values
+is computed from its first and last elements, exactly and rounded once.
+
 \code{simd_norm()} takes the square root of the sum of squares, so it
 overflows to \code{Inf} (or underflows to 0) when the squares do, even
 where the norm itself is representable: \code{simd_norm(c(1e200, 1e200))}

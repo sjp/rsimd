@@ -2,6 +2,7 @@
    raw vector accessors and R_CheckUserInterrupt (tools/lint_c.sh). */
 
 #include <limits.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +130,7 @@ SEXP rsimd_exit(SEXP out) {
 /* Option and attribute symbols, installed by rsimd_rvec_init(). */
 static SEXP sym_impl, sym_precision, sym_math_accuracy, sym_na_check;
 static SEXP sym_sv_impl, sym_sv_na_token;
+static SEXP sym_base, sym_intseq, sym_realseq;
 
 /* The class attributes of a simd_vec result, and the values of its
    rsimd_impl attribute by tier: made once (preserved) and shared by every
@@ -548,6 +550,41 @@ const void *rsimd_in_region(const rsimd_in *v, R_xlen_t i, R_xlen_t *len, void *
   return buf;
 }
 
+int rsimd_in_seq(const rsimd_in *v, double *first, double *last) {
+#if R_VERSION >= R_Version(4, 6, 0)
+  SEXP cls;
+  double a, b;
+  if (v->ptr != NULL || v->n < 1 || !ALTREP(v->sx)) return 0;
+  if (v->type != RSIMD_I32 && v->type != RSIMD_F64) return 0;
+  cls = R_altrep_class_name(v->sx);
+  if (cls != (v->type == RSIMD_I32 ? sym_intseq : sym_realseq) ||
+      R_altrep_class_package(v->sx) != sym_base) {
+    return 0;
+  }
+  if (v->type == RSIMD_I32) {
+    a = INTEGER_ELT(v->sx, 0);
+    b = INTEGER_ELT(v->sx, v->n - 1);
+  } else {
+    a = REAL_ELT(v->sx, 0);
+    b = REAL_ELT(v->sx, v->n - 1);
+  }
+  /* The class takes any start, so a sequence restored by unserialize()
+     need not be integral: such sequences take the general path. */
+  if (!(fabs(a) < 0x1p53 && fabs(b) < 0x1p53) || a != floor(a) || b != floor(b) ||
+      fabs(b - a) != (double) (v->n - 1)) {
+    return 0;
+  }
+  *first = a;
+  *last = b;
+  return 1;
+#else
+  (void) v;
+  (void) first;
+  (void) last;
+  return 0;
+#endif
+}
+
 /* ---- Chunk loop --------------------------------------------------------- */
 
 R_xlen_t rsimd_stride = RSIMD_INTERRUPT_STRIDE;
@@ -562,6 +599,9 @@ void rsimd_rvec_init(void) {
   sym_na_check = Rf_install("rsimd.na_check");
   sym_sv_impl = Rf_install("rsimd_impl");
   sym_sv_na_token = Rf_install("rsimd_na_token");
+  sym_base = Rf_install("base");
+  sym_intseq = Rf_install("compact_intseq");
+  sym_realseq = Rf_install("compact_realseq");
   sv_cls = Rf_mkString("simd_vec");
   R_PreserveObject(sv_cls);
   sv_cls_i64 = Rf_allocVector(STRSXP, 2);

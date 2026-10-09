@@ -163,7 +163,7 @@ test_that("cancellation: compensated gives 1, fast depends only on the lane widt
   }
 })
 
-test_that("compact sequences are summed in regions and equal the expanded vector", {
+test_that("compact sequences are summed as the expanded vector is", {
   batch_expectations({
     check_true(takes_region_path(1:1e6))
     expect_simd_matches_base(simd_sum, sum, 1:1e6)

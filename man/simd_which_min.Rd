@@ -31,6 +31,10 @@ first of several equal extremes is returned, \code{0} and \code{-0} are
 equal (\code{simd_which_max(c(0, -0))} is 1), and logical values count as 0
 and 1. The results are exact and the same for every implementation.
 
+From R 4.6.0 on, the index for a compact sequence such as \code{1:n} or
+\code{seq_len(n)} is computed from its first and last elements, without
+reading the others.
+
 The minimum or maximum is found first and then the first element equal to
 it, so the data are read up to twice. The precision mode does not apply.
 All implementations have their own kernels, except for raw vectors, and on

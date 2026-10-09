@@ -121,6 +121,14 @@ int rsimd_in_init(rsimd_in *v, SEXP x, const char *arg);
    materialised: the data pointer comes from DATAPTR_OR_NULL. */
 const void *rsimd_in_region(const rsimd_in *v, R_xlen_t i, R_xlen_t *len, void *buf);
 
+/* The endpoints of a compact sequence of base R (1:n, seq_len(n) and the
+   like, integer or double, step 1 or -1) that is not expanded: its
+   elements are first, first + step, ..., last, integers of magnitude
+   below 2^53. Returns 1 and fills *first and *last for such an input of
+   type RSIMD_I32 or RSIMD_F64, 0 for any other (always 0 before R 4.6.0,
+   which has no API naming an ALTREP class). */
+int rsimd_in_seq(const rsimd_in *v, double *first, double *last);
+
 /* ---- Chunk loop with interrupts ----------------------------------------- */
 
 /* Default number of elements between interrupt checks. */

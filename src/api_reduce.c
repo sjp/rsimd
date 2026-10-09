@@ -32,6 +32,160 @@ static int accuracy_bit(SEXP accuracy) {
   return rsimd_arg_accuracy(accuracy) ? RSIMD_MATH_FAST : 0;
 }
 
+/* ---- Compact sequences --------------------------------------------------
+   Reductions of an unexpanded compact sequence (rsimd_in_seq(): integers
+   from first to last in steps of 1 or -1) come from its endpoints in
+   closed form, without reading the elements, as base R's sum, min and max
+   do. Sums are exact and rounded once: the terms are integers below 2^53
+   in magnitude and there are at most 2^52 of them, so even a sum of
+   squares stays below 2^160, which seq_big holds. */
+
+/* A non-negative integer in 32-bit limbs, least significant first. */
+typedef struct {
+  uint32_t w[6];
+} seq_big;
+
+/* x *= m, with m below 2^32; the product must fit. */
+static void big_mul32(uint32_t *x, uint64_t m) {
+  uint64_t carry = 0;
+  int i;
+  for (i = 0; i < 6; i++) {
+    uint64_t t = x[i] * m + carry;
+    x[i] = (uint32_t) t;
+    carry = t >> 32;
+  }
+}
+
+/* s += a * b * c. */
+static void big_add_mul(seq_big *s, uint64_t a, uint64_t b, uint64_t c) {
+  uint32_t p[6] = {(uint32_t) a, (uint32_t) (a >> 32)}, hi[6];
+  uint64_t f[2], carry = 0;
+  int i, k;
+  f[0] = b;
+  f[1] = c;
+  for (k = 0; k < 2; k++) {
+    /* p *= f[k], as p * low half + (p * high half) << 32. */
+    memcpy(hi, p, sizeof hi);
+    big_mul32(p, f[k] & 0xffffffffu);
+    big_mul32(hi, f[k] >> 32);
+    for (i = 1; i < 6; i++) {
+      uint64_t t = (uint64_t) p[i] + hi[i - 1] + carry;
+      p[i] = (uint32_t) t;
+      carry = t >> 32;
+    }
+    carry = 0;
+  }
+  for (i = 0; i < 6; i++) {
+    uint64_t t = (uint64_t) s->w[i] + p[i] + carry;
+    s->w[i] = (uint32_t) t;
+    carry = t >> 32;
+  }
+}
+
+static int big_bit(const seq_big *s, int i) {
+  return (int) (s->w[i >> 5] >> (i & 31)) & 1;
+}
+
+/* s rounded to the nearest double: its top 64 bits, with the bits below
+   them OR-ed into the lowest one (which lies below the rounding bit), then
+   scaled. */
+static double big_value(const seq_big *s) {
+  int top = 191, e, i;
+  uint64_t m = 0;
+  while (top >= 64 && !big_bit(s, top)) top--;
+  if (top < 64) return (double) ((uint64_t) s->w[1] << 32 | s->w[0]);
+  e = top - 63;
+  for (i = top; i >= e; i--) m = m << 1 | (uint64_t) big_bit(s, i);
+  for (i = 0; i < e; i++) {
+    if (big_bit(s, i)) {
+      m |= 1;
+      break;
+    }
+  }
+  return ldexp((double) m, e);
+}
+
+/* s += lo + (lo + 1) + ... + hi, for 0 <= lo <= hi: (hi - lo + 1)(lo + hi)
+   / 2, one factor of which is even. */
+static void big_add_range(seq_big *s, uint64_t lo, uint64_t hi) {
+  uint64_t cnt = hi - lo + 1, t = lo + hi;
+  if (cnt % 2 == 0) cnt /= 2;
+  else t /= 2;
+  big_add_mul(s, cnt, t, 1);
+}
+
+/* s += lo^2 + (lo + 1)^2 + ... + hi^2, for 0 <= lo <= hi: with k = lo + j,
+   cnt lo^2 + 2 lo (0 + ... + (cnt - 1)) + (0^2 + ... + (cnt - 1)^2), the
+   last (cnt - 1) cnt (2 cnt - 1) / 6, whose factors divide by 2 and 3. */
+static void big_add_range_sq(seq_big *s, uint64_t lo, uint64_t hi) {
+  uint64_t cnt = hi - lo + 1, f[3];
+  int i;
+  big_add_mul(s, cnt, lo, lo);
+  big_add_mul(s, lo, cnt, cnt - 1);
+  f[0] = cnt - 1;
+  f[1] = cnt;
+  f[2] = 2 * cnt - 1;
+  f[f[0] % 2 == 0 ? 0 : 1] /= 2;
+  for (i = 0; i < 3; i++) {
+    if (f[i] % 3 == 0) {
+      f[i] /= 3;
+      break;
+    }
+  }
+  big_add_mul(s, f[0], f[1], f[2]);
+}
+
+/* sum (RSIMD_RED_SUM), sum of absolute values (RSIMD_RED_SUM_ABS) or sum
+   of squares (RSIMD_RED_SUM_SQ) of the sequence from a to b, rounded. */
+static double seq_sum(int op, double a, double b) {
+  int64_t lo = (int64_t) (a < b ? a : b), hi = (int64_t) (a < b ? b : a);
+  seq_big s = {{0}};
+  if (op == RSIMD_RED_SUM) {
+    /* (hi - lo + 1)(lo + hi) / 2, with its sign. */
+    int64_t t = lo + hi;
+    if (t != 0) {
+      uint64_t cnt = (uint64_t) (hi - lo) + 1, m = (uint64_t) (t < 0 ? -t : t);
+      if (cnt % 2 == 0) cnt /= 2;
+      else m /= 2;
+      big_add_mul(&s, cnt, m, 1);
+    }
+    return t < 0 ? -big_value(&s) : big_value(&s);
+  }
+  /* The absolute values: 1 .. -lo and 0 .. hi when the sequence crosses
+     zero, otherwise one run. */
+  if (lo < 0 && hi > 0) {
+    if (op == RSIMD_RED_SUM_SQ) {
+      big_add_range_sq(&s, 0, (uint64_t) -lo);
+      big_add_range_sq(&s, 0, (uint64_t) hi);
+    } else {
+      big_add_range(&s, 0, (uint64_t) -lo);
+      big_add_range(&s, 0, (uint64_t) hi);
+    }
+  } else {
+    uint64_t l = (uint64_t) (lo < 0 ? -hi : lo), h = (uint64_t) (lo < 0 ? -lo : hi);
+    if (op == RSIMD_RED_SUM_SQ) big_add_range_sq(&s, l, h);
+    else big_add_range(&s, l, h);
+  }
+  return big_value(&s);
+}
+
+/* A sum or extremum v of a sequence of type t: integer for an integer
+   sequence when it fits, as rsimd_reduce_finish() gives it. */
+static SEXP seq_scalar(rsimd_etype t, double v) {
+  if (t == RSIMD_I32 && fabs(v) <= INT_MAX) return Rf_ScalarInteger((int) v);
+  return Rf_ScalarReal(v);
+}
+
+/* The minimum (ext 0) or maximum (ext 1) of the sequence from a to b, or
+   of its absolute values with ab. */
+static double seq_extremum(int ext, int ab, double a, double b) {
+  double lo = a < b ? a : b, hi = a < b ? b : a;
+  if (!ab) return ext ? hi : lo;
+  if (ext) return fmax(fabs(a), fabs(b));
+  if (lo <= 0 && hi >= 0) return 0;
+  return fmin(fabs(a), fabs(b));
+}
+
 /* sum(x, na.rm): double for double x; integer for integer and logical x,
    or double when the total does not fit in an integer; integer64 for
    integer64 x, exact, or NA with bit64's warning when the total does not
@@ -42,10 +196,12 @@ static SEXP simd_sum_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
+  double a, b;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
   o.precision = rsimd_arg_precision(precision);
+  if (rsimd_in_seq(&in, &a, &b)) return seq_scalar(in.type, seq_sum(RSIMD_RED_SUM, a, b));
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:
@@ -338,11 +494,13 @@ static SEXP simd_mean_impl(SEXP x, SEXP na_rm, SEXP na_check, SEXP precision) {
   rsimd_reduce_result r;
   rsimd_opts o;
   rsimd_in in;
-  double m;
+  double m, a, b;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
   o.precision = rsimd_arg_precision(precision);
+  /* Halved before adding (exactly), so a + b cannot round. */
+  if (rsimd_in_seq(&in, &a, &b)) return Rf_ScalarReal(a / 2 + b / 2);
   rsimd_reduce_result_init(&r, RSIMD_RED_MEAN);
   switch (in.type) {
   case RSIMD_C128: return rsimd_c128_mean(&in, &o);
@@ -403,9 +561,18 @@ static SEXP simd_minmax_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP ab
   rsimd_in in;
   int which = rsimd_arg_int1(op, "op"), ab = rsimd_arg_lgl1(absval, "absval");
   SEXP lo, hi, out;
+  double a, b;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
+  if (rsimd_in_seq(&in, &a, &b)) {
+    if (which < 2) return seq_scalar(in.type, seq_extremum(which, ab, a, b));
+    lo = PROTECT(seq_scalar(in.type, seq_extremum(0, ab, a, b)));
+    hi = PROTECT(seq_scalar(in.type, seq_extremum(1, ab, a, b)));
+    out = rsimd_range_pair(lo, hi);
+    UNPROTECT(2);
+    return out;
+  }
   o.extrema = which == 0 ? RSIMD_EXT_MIN : which == 1 ? RSIMD_EXT_MAX : RSIMD_EXT_BOTH;
   rsimd_reduce_result_init(&r, RSIMD_RED_MIN);
   switch (in.type) {
@@ -510,11 +677,21 @@ static SEXP simd_which_impl(SEXP x, SEXP max, SEXP absval, SEXP accuracy) {
   rsimd_in in;
   int dir = rsimd_arg_lgl1(max, "max"), ab = rsimd_arg_lgl1(absval, "absval");
   int op = dir ? RSIMD_RED_WHICH_MAX : RSIMD_RED_WHICH_MIN;
+  double a, b;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init_fixed(&o, 1, 1, in.no_na_hint);
   o.extrema = dir ? RSIMD_EXT_MAX : RSIMD_EXT_MIN;
   rsimd_reduce_result_init(&r, op);
+  if (rsimd_in_seq(&in, &a, &b)) {
+    /* The elements are distinct, and their absolute values tie only in
+       pairs around zero, where the first of a pair is the first endpoint
+       or comes before the zero. */
+    double v = seq_extremum(dir, ab, a, b);
+    if (!ab || v == 0) r.idx = (R_xlen_t) fabs(v - a);
+    else r.idx = fabs(a) == v ? 0 : in.n - 1;
+    return rsimd_reduce_finish(op, in.type, in.n, &r, &o);
+  }
   switch (in.type) {
   case RSIMD_F64: {
     double v;
@@ -788,10 +965,16 @@ static SEXP simd_sum_sq_impl(SEXP x, SEXP op, SEXP na_rm, SEXP na_check, SEXP pr
   rsimd_opts o;
   rsimd_in in;
   int which = rsimd_arg_int1(op, "op");
+  double a, b;
 
   rsimd_in_init(&in, x, "x");
   rsimd_opts_init(&o, na_rm, na_check, in.no_na_hint);
   o.precision = rsimd_arg_precision(precision);
+  if (rsimd_in_seq(&in, &a, &b)) {
+    if (which == 2) return seq_scalar(in.type, seq_sum(RSIMD_RED_SUM_ABS, a, b));
+    a = seq_sum(RSIMD_RED_SUM_SQ, a, b);
+    return Rf_ScalarReal(which == 1 ? sqrt(a) : a);
+  }
   rsimd_reduce_result_init(&r, RSIMD_RED_SUM);
   switch (in.type) {
   case RSIMD_F64:

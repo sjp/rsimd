@@ -45,6 +45,12 @@ Integer and logical vectors are summed exactly. Double vectors are summed in
 the mode set with \code{\link{simd_precision}()}, so the result can differ
 from base R's in the last bits.
 
+A compact sequence such as \code{1:n} or \code{seq_len(n)} is not read: from
+R 4.6.0 on, \code{simd_sum()} and \code{simd_mean()} compute its sum from its
+first and last elements, as base R's \code{sum()} does, and the sum is
+exact and rounded once, in every precision mode. Other ALTREP vectors are
+read in blocks, without being expanded.
+
 \code{simd_sum()} of a complex vector sums the real and the imaginary
 parts separately, each exactly as a double vector of that part would be
 summed, and its missing values follow the rules below part by part:

@@ -40,6 +40,11 @@ The results are exact and the same for every implementation, including the
 sign of a zero result: like base R, \code{simd_min(c(0, -0))} is \code{0}
 and \code{simd_min(c(-0, 0))} is \code{-0} (the first zero wins).
 
+From R 4.6.0 on, the extremes of a compact sequence such as \code{1:n} or
+\code{seq_len(n)} come from its first and last elements, without reading
+the others, as in base R; other ALTREP vectors are read in blocks, without
+being expanded.
+
 Without \code{na.rm}, a missing value makes the result \code{NA} (if there
 is an \code{NA}) or \code{NaN}, wherever it is; \code{simd_range()} then
 returns it twice. When nothing is left after removing missing values (or
