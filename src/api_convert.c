@@ -72,7 +72,7 @@ static SEXP simd_convert_impl(SEXP x, SEXP to, SEXP mode, SEXP quiet) {
     op = target == 0 ? RSIMD_CVT_I64_I32 : target == 1 ? RSIMD_CVT_I64_F64
        : target == 2 ? RSIMD_CVT_I64_LGL : target == 3 ? RSIMD_CVT_I64_U8 : -1;
     break;
-  default: Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
+  default: rsimd_type_error(in.type, "x", NULL);
   }
   out = PROTECT(rsimd_alloc_like(target_type[target], in.n));
   po = (char *) rsimd_out_ptr(out);

@@ -1,5 +1,5 @@
 # Predicates (elementwise, any, all) and elementwise comparisons. Each
-# function checks the types the C side cannot name the function for
+# function checks the types the C side takes but the function does not
 # (complex, and raw where it is not taken) and calls the entry point with
 # the op's name.
 

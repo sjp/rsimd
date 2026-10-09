@@ -80,7 +80,10 @@ test_that("simd_scaleb and simd_rootn take whole numbers as n", {
   expect_error(simd_scaleb(1, 1.5), "'n' must be whole numbers in the integer range")
   expect_error(simd_rootn(1, 2^31), "'n' must be whole numbers in the integer range")
   expect_error(simd_rootn(1, Inf), "'n' must be whole numbers")
-  expect_error(simd_scaleb(1, "2"), "non-numeric argument")
+  expect_error(simd_scaleb(1, "2"), "'n' must be an atomic vector")
+  expect_error(simd_scaleb(1, as.raw(2)), "simd_scaleb() does not support 'n' of type raw",
+    fixed = TRUE
+  )
   expect_error(simd_scaleb(1, 1i), "does not support 'n' of type complex")
   expect_error(simd_scaleb("1", 2L), "must be an atomic vector")
   expect_error(simd_scaleb(1:3, 1:2), "length")

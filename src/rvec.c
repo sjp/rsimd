@@ -153,6 +153,28 @@ static SEXP ns_eval(SEXP call) {
   return out;
 }
 
+void rsimd_type_error(rsimd_etype t, const char *arg, const char *msg) {
+  char buf[128];
+  SEXP type, sarg, smsg;
+  if (msg) snprintf(buf, sizeof buf, "%s", msg);
+  else snprintf(buf, sizeof buf, "invalid 'type' (%s) of argument", rsimd_etype_names[t]);
+  type = PROTECT(Rf_mkString(rsimd_etype_names[t]));
+  sarg = PROTECT(arg ? Rf_mkString(arg) : R_NilValue);
+  smsg = PROTECT(Rf_mkString(buf));
+  ns_eval(PROTECT(Rf_lang4(Rf_install(".type_error"), type, sarg, smsg)));
+  UNPROTECT(4); /* not reached: .type_error() always errors */
+  Rf_error("%s", buf);
+}
+
+void rsimd_mix_error(rsimd_etype t1, rsimd_etype t2, const char *msg) {
+  SEXP type1 = PROTECT(Rf_mkString(rsimd_etype_names[t1]));
+  SEXP smsg = PROTECT(Rf_mkString(msg));
+  SEXP type2 = PROTECT(Rf_mkString(rsimd_etype_names[t2]));
+  ns_eval(PROTECT(Rf_lang5(Rf_install(".type_error"), type1, R_NilValue, smsg, type2)));
+  UNPROTECT(4); /* not reached: .type_error() always errors */
+  Rf_error("%s", msg);
+}
+
 static SEXP impl_sync_eval(void *data) {
   SEXP call = PROTECT(Rf_lang1(Rf_install(".sync_option"))), problem;
   (void) data;
@@ -816,7 +838,7 @@ SEXP rsimd_reduce_finish(int op, rsimd_etype type, R_xlen_t n, const rsimd_reduc
   case RSIMD_RED_COUNT_NA: return Rf_ScalarReal((double) r->i64);
   default: Rf_error("internal error: unknown reduction %d", op);
   }
-  Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[type]);
+  rsimd_type_error(type, NULL, NULL);
   return R_NilValue; /* not reached */
 }
 

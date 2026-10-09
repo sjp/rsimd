@@ -402,8 +402,14 @@ test_that("operands are promoted to complex, and other types are rejected as bas
   })
   expect_identical(simd_pow(complex(0), 1i), complex(0))
   expect_identical(simd_sqrt(complex(0)), complex(0))
-  expect_error(simd_pow(1i, as.raw(1)), "non-numeric argument to binary operator", fixed = TRUE)
-  expect_error(simd_log(1i, "a"), "non-numeric argument to mathematical function", fixed = TRUE)
+  expect_error(simd_pow(1i, as.raw(1)), "simd_pow() does not support 'y' of type raw", fixed = TRUE)
+  expect_error(simd_log(1i, as.raw(1)), "simd_log() does not support 'base' of type raw",
+    fixed = TRUE
+  )
+  expect_error(simd_atan2(as.raw(1), 1i), "simd_atan2() does not support 'y' of type raw",
+    fixed = TRUE
+  )
+  expect_error(simd_log(1i, "a"), "'base' must be an atomic vector", fixed = TRUE)
   expect_error(simd_pow(1i, 1:2 + 0i)[1], NA)
   expect_error(simd_pow(c(1i, 2i, 3i), 1:2))
   # Functions base R does not define on complex numbers.

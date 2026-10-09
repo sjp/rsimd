@@ -53,14 +53,12 @@ static SEXP simd_pred_impl(SEXP x, SEXP op, SEXP mode) {
     }
     break;
   case RSIMD_U8:
-    if (code >= RSIMD_PRED_NEGATIVE) Rf_error("invalid 'type' (raw) of argument");
+    if (code >= RSIMD_PRED_NEGATIVE) rsimd_type_error(RSIMD_U8, "x", NULL);
     return constant_false(in.n, m);
   case RSIMD_C128:
-    if (code >= RSIMD_PRED_NEGATIVE) {
-      Rf_error("invalid 'type' (complex) of argument");
-    }
+    if (code >= RSIMD_PRED_NEGATIVE) rsimd_type_error(RSIMD_C128, "x", NULL);
     break;
-  default: Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
+  default: rsimd_type_error(in.type, "x", NULL);
   }
   /* An input known to have no missing value (as for na_check) needs no
      scan for one. */

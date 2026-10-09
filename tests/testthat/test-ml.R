@@ -232,7 +232,7 @@ test_that("pairwise softmax does not depend on the chunk stride", {
 test_that("non-numeric input is rejected", {
   for (f in list(simd_sigmoid, simd_softmax, simd_log_softmax)) {
     expect_error(f("a"), "must be an atomic vector")
-    expect_error(f(as.raw(1:3)), "non-numeric argument to mathematical function")
+    expect_error(f(as.raw(1:3)), "does not support 'x' of type raw", fixed = TRUE)
     expect_error(f(list(1)), "must be an atomic vector")
   }
   expect_error(simd_softmax(1i), "simd_softmax() does not support 'x' of type complex", fixed = TRUE)

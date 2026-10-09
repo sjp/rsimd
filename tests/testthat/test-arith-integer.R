@@ -172,10 +172,15 @@ test_that("wrapping ops reject doubles, raw gives base R's errors", {
   expect_error(simd_abs_wrap(-1.5), "simd_abs_wrap() does not support 'x' of type double",
     fixed = TRUE
   )
-  expect_error(simd_add(as.raw(1), as.raw(2)), "non-numeric argument to binary operator")
-  expect_error(simd_mul_add(1L, as.raw(2), 3L), "non-numeric argument to binary operator")
-  expect_error(simd_neg(as.raw(1)), "invalid argument to unary operator")
-  expect_error(simd_abs(as.raw(1)), "non-numeric argument to mathematical function")
+  expect_error(simd_add(as.raw(1), as.raw(2)), "simd_add() does not support 'x' of type raw",
+    fixed = TRUE
+  )
+  expect_error(simd_mul_add(1L, as.raw(2), 3L),
+    "simd_mul_add() does not support 'y' of type raw",
+    fixed = TRUE
+  )
+  expect_error(simd_neg(as.raw(1)), "simd_neg() does not support 'x' of type raw", fixed = TRUE)
+  expect_error(simd_abs(as.raw(1)), "simd_abs() does not support 'x' of type raw", fixed = TRUE)
 })
 
 test_that("na_check = FALSE skips NA masks without harm", {

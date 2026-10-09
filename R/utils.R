@@ -112,14 +112,66 @@
 # function from outside the package (an exported function, or the simd_vec
 # method a base generic dispatched to). Walks the stack, so only for errors.
 .user_call <- function() {
+  i <- .user_frame()
+  if (i > 0L) sys.call(i) else NULL
+}
+
+# The frame number of the call .user_call() returns (0 for none), as seen
+# from the caller of .user_frame().
+.user_frame <- function() {
   ns <- topenv()
-  calls <- sys.calls()
   parents <- sys.parents()
   frames <- sys.frames()
-  for (i in rev(seq_along(calls))) {
+  for (i in rev(seq_along(parents))) {
     if (!identical(topenv(environment(sys.function(i))), ns)) next
     p <- parents[[i]]
-    if (!identical(topenv(if (p == 0L) globalenv() else frames[[p]]), ns)) return(calls[[i]])
+    if (!identical(topenv(if (p == 0L) globalenv() else frames[[p]]), ns)) return(i)
+  }
+  0L
+}
+
+# The error the C side raises (rsimd_type_error(), rsimd_mix_error()) for
+# an operand of `type` that the op does not take (with one of type
+# `other`, for a pair that it does not take together). In the user's call
+# of an exported simd_* function it is rsimd's message, naming the first
+# argument of that function holding a value of `type` (preferring `arg`,
+# the C side's name for it); elsewhere (the simd_vec methods of base
+# generics) it is base R's `msg`, naming the call that made the .Call(), as
+# an error raised in C would.
+.type_error <- function(type, arg, msg, other = NULL) {
+  i <- .user_frame()
+  call <- if (i > 0L) sys.call(i)
+  fun <- if (i > 0L) .simd_fun_name(call, sys.function(i))
+  if (is.null(fun)) stop(simpleError(msg, sys.call(-1L)))
+  if (!is.null(other)) {
+    stop(simpleError(paste0(fun, "() cannot combine ", type, " and ", other, " operands"), call))
+  }
+  frame <- sys.frame(i)
+  has_type <- function(a) {
+    exists(a, envir = frame, inherits = FALSE) &&
+      identical(tryCatch(.sv_type(get(a, envir = frame)), error = function(e) NULL), type)
+  }
+  formal <- setdiff(names(formals(sys.function(i))), "...")
+  found <- if (!is.null(arg) && arg %in% formal && has_type(arg)) arg else Find(has_type, formal)
+  if (!is.null(found)) arg <- found
+  if (is.null(arg)) arg <- formal[[1L]]
+  stop(simpleError(paste0(fun, "() does not support '", arg, "' of type ", type), call))
+}
+
+# The name of the exported simd_* function `f`, called by `call`: the name
+# in the call (plain or rsimd::name) when it is that function, else the
+# first export that is (do.call(simd_var, ...)); NULL if f is none.
+.simd_fun_name <- function(call, f) {
+  ns <- topenv()
+  head <- call[[1L]]
+  if (is.call(head) && length(head) == 3L && as.character(head[[1L]]) %in% c("::", ":::")) {
+    head <- head[[3L]]
+  }
+  names <- getNamespaceExports(ns)
+  names <- names[startsWith(names, "simd_")]
+  if (is.symbol(head) && as.character(head) %in% names) names <- c(as.character(head), names)
+  for (name in names) {
+    if (identical(get(name, envir = ns), f)) return(name)
   }
   NULL
 }

@@ -162,8 +162,9 @@ test_that("ops match on random vectors of edge lengths and compact sequences", {
 })
 
 test_that("argument and type errors", {
-  msg <- tryCatch(TRUE & as.raw(1), error = conditionMessage)
-  expect_error(simd_bit_and(1L, as.raw(1)), msg, fixed = TRUE)
+  expect_error(simd_bit_and(1L, as.raw(1)), "simd_bit_and() cannot combine integer and raw operands",
+    fixed = TRUE
+  )
   expect_error(simd_bit_and(1.5, 1L), "simd_bit_and() does not support 'x' of type double",
     fixed = TRUE
   )

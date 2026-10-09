@@ -251,7 +251,7 @@ test_that("conj, re and im of double, integer and logical input match base R", {
   }
   expect_null(attributes(simd_re(c(a = 1 + 1i))))
   expect_null(attributes(simd_conj(c(a = 1.5))))
-  expect_error(simd_re(as.raw(1)), "non-numeric argument to function", fixed = TRUE)
+  expect_error(simd_re(as.raw(1)), "simd_re() does not support 'z' of type raw", fixed = TRUE)
   expect_error(simd_re("a"), "'z' must be an atomic vector")
   expect_error(simd_conj(structure(0, class = "integer64")),
     "simd_conj() does not support 'z' of type integer64",
@@ -304,7 +304,7 @@ test_that("other functions reject complex input", {
     fixed = TRUE
   )
   expect_error(simd_expm1(1i), "simd_expm1() does not support 'x' of type complex", fixed = TRUE)
-  expect_error(simd_max(1i), "invalid 'type' (complex) of argument", fixed = TRUE)
+  expect_error(simd_max(1i), "simd_max() does not support 'x' of type complex", fixed = TRUE)
   expect_error(simd_is_zero(1i), "simd_is_zero() does not support 'x' of type complex",
     fixed = TRUE
   )
@@ -312,6 +312,6 @@ test_that("other functions reject complex input", {
     "simd_add() cannot combine complex and integer64 operands",
     fixed = TRUE
   )
-  expect_error(simd_add(1i, as.raw(1)), "non-numeric argument to binary operator", fixed = TRUE)
-  expect_error(simd_sub(as.raw(1), 1i), "non-numeric argument to binary operator", fixed = TRUE)
+  expect_error(simd_add(1i, as.raw(1)), "simd_add() does not support 'y' of type raw", fixed = TRUE)
+  expect_error(simd_sub(as.raw(1), 1i), "simd_sub() does not support 'x' of type raw", fixed = TRUE)
 })

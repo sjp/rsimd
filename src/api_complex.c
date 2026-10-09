@@ -644,7 +644,7 @@ int rsimd_c128_pred(const rsimd_in *in, int code, int mode, int *po) {
 /* Conj(z), Re(z) or Im(z) by name. Complex z gives a complex conjugate
    and double parts; double, integer and logical z give double, as in base
    R: Conj and Re are the values (a bare copy), Im is zeros. Raw is an
-   error with base R's message; integer64 is rejected on the R side. */
+   error (rsimd_type_error()); integer64 is rejected on the R side. */
 static SEXP simd_cplx_impl(SEXP z, SEXP op) {
   static const char *const names[] = {"conj", "re", "im"};
   int code = rsimd_arg_choice(op, names, 3);
@@ -686,8 +686,8 @@ static SEXP simd_cplx_impl(SEXP z, SEXP op) {
     }
     break;
   }
-  case RSIMD_U8: Rf_error("non-numeric argument to function");
-  default: Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
+  case RSIMD_U8: rsimd_type_error(RSIMD_U8, "z", "non-numeric argument to function");
+  default: rsimd_type_error(in.type, "z", NULL);
   }
   UNPROTECT(1);
   return out;

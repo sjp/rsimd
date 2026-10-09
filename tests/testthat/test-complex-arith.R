@@ -157,7 +157,7 @@ test_that("scalars broadcast on either side, and other types are promoted", {
     "simd_mul() cannot combine complex and integer64 operands",
     fixed = TRUE
   )
-  expect_error(simd_div(as.raw(1), 1i), "non-numeric argument to binary operator", fixed = TRUE)
+  expect_error(simd_div(as.raw(1), 1i), "simd_div() does not support 'x' of type raw", fixed = TRUE)
 })
 
 test_that("every rounding variant's kernels compute its formula", {
@@ -335,8 +335,8 @@ test_that("abs (Mod) and Arg match base R", {
   expect_identical(simd_arg(c(-1L, 1L)), Arg(c(-1L, 1L)))
   expect_identical(simd_arg(c(TRUE, NA)), Arg(c(TRUE, NA)))
   expect_identical(simd_arg(complex(0)), double(0))
-  expect_error(simd_arg("a"), "non-numeric argument to function", fixed = TRUE)
-  expect_error(simd_arg(as.raw(1)), "non-numeric argument to function", fixed = TRUE)
+  expect_error(simd_arg("a"), "'z' must be an atomic vector", fixed = TRUE)
+  expect_error(simd_arg(as.raw(1)), "simd_arg() does not support 'z' of type raw", fixed = TRUE)
   expect_error(simd_arg(structure(0, class = "integer64")),
     "simd_arg() does not support 'z' of type integer64",
     fixed = TRUE

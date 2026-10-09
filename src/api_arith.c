@@ -11,22 +11,22 @@
 #include "dispatch.h"
 #include "api_complex.h"
 
-/* Errors for an operand type the elementwise ops do not take, with base
-   R's message for raw (`raw_msg`); complex operands are allowed when
-   `cplx` is set, integer64 ones when `i64` is. Returns 1 if an operand is
-   complex. The R side rejects complex and integer64 for the other ops,
-   naming the function, and has converted integer64 operands mixed with
-   doubles to double. */
+/* Errors (rsimd_type_error(), with base R's `raw_msg` for raw from a
+   simd_vec method) for an operand type the elementwise ops do not take;
+   complex operands are allowed when `cplx` is set, integer64 ones when
+   `i64` is. Returns 1 if an operand is complex. The R side rejects complex
+   and integer64 for the other ops and has converted integer64 operands
+   mixed with doubles to double. */
 static int check_numeric(const rsimd_ew *e, const char *raw_msg, int cplx, int i64) {
   int i, any_c128 = 0;
   for (i = 0; i < e->k; i++) {
-    if (e->in[i].type == RSIMD_U8) Rf_error("%s", raw_msg);
+    if (e->in[i].type == RSIMD_U8) rsimd_type_error(RSIMD_U8, NULL, raw_msg);
   }
   for (i = 0; i < e->k; i++) {
     rsimd_etype t = e->in[i].type;
     if (t == RSIMD_C128 && cplx) any_c128 = 1;
     else if (t != RSIMD_F64 && !rsimd_is_int_like(t) && !(t == RSIMD_I64 && i64)) {
-      Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
+      rsimd_type_error(t, NULL, NULL);
     }
   }
   return any_c128;

@@ -24,7 +24,10 @@ simd_im <- function(z) {
 simd_arg <- function(z) {
   .check_supported(z, "simd_arg", "integer64", character(), "z")
   if (!is.complex(z)) {
-    if (!is.numeric(z) && !is.logical(z)) .stop("non-numeric argument to function")
+    if (!is.numeric(z) && !is.logical(z)) {
+      .check_data(z, "z")
+      .stop("simd_arg() does not support 'z' of type ", typeof(z))
+    }
     z <- .sv_like(as.complex(z), z)
   }
   .Call(C_simd_cmath, z, "arg", NULL)

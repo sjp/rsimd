@@ -15,9 +15,10 @@
 
 static const char *const math_msg = "non-numeric argument to mathematical function";
 
-/* Errors with `msg` unless every operand is double, integer or logical
-   (complex and integer64 operands are rejected on the R side, which names
-   the function), and returns the RSIMD_EW_I32 flags of the int32 ones. */
+/* Errors (rsimd_type_error(), with base R's `msg` from a simd_vec method)
+   unless every operand is double, integer or logical (complex and
+   integer64 operands are rejected on the R side), and returns the
+   RSIMD_EW_I32 flags of the int32 ones. */
 static int check_operands(const rsimd_ew *e, const char *msg) {
   int i, f = 0;
   for (i = 0; i < e->k; i++) {
@@ -25,7 +26,7 @@ static int check_operands(const rsimd_ew *e, const char *msg) {
     if (t == RSIMD_I32 || t == RSIMD_LGL) {
       f |= RSIMD_EW_I32(i);
     } else if (t != RSIMD_F64) {
-      Rf_error("%s", msg);
+      rsimd_type_error(t, NULL, msg);
     }
   }
   return f;

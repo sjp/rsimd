@@ -1,5 +1,5 @@
 # Three-valued logic, bitwise ops, shifts, rotates and bit counts. Each
-# function checks the types the C side cannot name the function for and
+# function checks the types the C side takes but the function does not, and
 # calls the entry point with the op's name; shift and rotate counts are
 # checked here.
 

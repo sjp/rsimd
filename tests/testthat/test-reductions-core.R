@@ -533,10 +533,12 @@ test_that("complex any/all read values as base R does, with its warning", {
 
 test_that("arguments and types are validated", {
   for (f in c("simd_prod", "simd_mean", "simd_min", "simd_max", "simd_range")) {
-    expect_error(get(f)(as.raw(1)), "invalid 'type' (raw) of argument", fixed = TRUE)
+    expect_error(get(f)(as.raw(1)), paste0(f, "() does not support 'x' of type raw"),
+      fixed = TRUE
+    )
   }
   for (f in c("simd_min", "simd_max", "simd_range")) {
-    expect_error(get(f)(1i), "invalid 'type' (complex) of argument", fixed = TRUE)
+    expect_error(get(f)(1i), paste0(f, "() does not support 'x' of type complex"), fixed = TRUE)
   }
   no_complex <- c("simd_which_min", "simd_which_max")
   for (f in no_complex) {

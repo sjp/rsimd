@@ -61,6 +61,7 @@ Other checks to run before a release:
 sh ./configure && sh tools/check_makevars.sh   # no forbidden flags or variable overrides
 Rscript tools/check_spelling.R                 # spelling, against inst/WORDLIST
 sh tools/check_size.sh                         # tarball, installed and library sizes
+sh tools/check_tarball.sh                      # tarball holds only git-tracked and generated files
 shellcheck -s sh configure configure.win cleanup cleanup.win
 checkbashisms configure configure.win cleanup cleanup.win
 ```
@@ -80,7 +81,7 @@ On every pull request and every push to `main` (except changes only to `issues/`
 |----------|---------------|----------------------|
 | `fast` | The first signal, meant to take under 5 minutes: on Linux x86-64 and arm64, install, then the whole suite at quick lengths (`RSIMD_TEST_SUBSET=quick`) with the kernel tests looping over every available tier, then the dispatch tests once per tier. | |
 | `R-CMD-check` | `R CMD check --as-cran` (warnings fail; the tests loop over every tier) on Linux x86-64 (R release, devel, oldrel-1), Linux arm64, macOS arm64 and Windows x86-64. Each job then runs the dispatch tests once per tier with that tier as the default (`RSIMD_IMPL`), fails if `none`, or `sse2` and `avx2` on x86-64, or `neon` on arm64, is missing, and prints the runner's CPU features and tiers. Only Linux x86-64 R release builds the vignettes and the PDF manual; the others neither build nor check the vignettes. The C lint, `tools/check_makevars.sh` and `tools/check_build.sh` on Linux. | macOS x86-64; the vignettes on every platform; builds without SLEEF and with a compiler that rejects AVX-512. |
-| `size-check` | `tools/check_size.sh`: tarball and installed package (library stripped) under 5 MB, no installed directory but `libs` over 1 MB, vendored code and library budgets. | |
+| `size-check` | `tools/check_size.sh`: tarball and installed package (library stripped) under 5 MB, no installed directory but `libs` over 1 MB, vendored code and library budgets. `tools/check_tarball.sh`: the tarball holds no file untracked in git but those R CMD build generates. | |
 | `coverage` | | covr, uploaded to Codecov (needs the `CODECOV_TOKEN` secret); informational. |
 
 The per-platform check job is `check-os.yaml`, which `R-CMD-check` calls. It caches

@@ -437,7 +437,7 @@ test_that("integer64 mixed with double converts to double with a warning", {
 
 test_that("other integer64 combinations and functions are rejected", {
   x <- i64(1)
-  expect_error(simd_add(x, as.raw(1)), "non-numeric argument to binary operator", fixed = TRUE)
+  expect_error(simd_add(x, as.raw(1)), "simd_add() does not support 'y' of type raw", fixed = TRUE)
   expect_error(simd_add(x, 1i), "cannot combine complex and integer64", fixed = TRUE)
   for (f in c("simd_fma", "simd_lerp")) {
     expect_error(get(f)(x, 1, 1), paste0(f, "() does not support 'x' of type integer64"),

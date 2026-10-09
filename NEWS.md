@@ -139,7 +139,9 @@ First release.
   makes its own call into C, so a call on a short vector costs well under a
   microsecond more than the C code itself. The `na_check` argument defaults
   to `NULL`, meaning option `rsimd.na_check`. Warnings and errors name the
-  user's call (`simd_log(-1)`). An invalid value of one of the four options
+  user's call (`simd_log(-1)`), and an input type a function does not take
+  is reported as `simd_var() does not support 'x' of type raw` (the
+  `simd_vec` methods of base generics keep base R's messages). An invalid value of one of the four options
   set before loading gives a warning naming the option, and the default is
   used; one set after loading makes the next call that reads it an error
   naming the option and how to reset it, and `simd_use()`,

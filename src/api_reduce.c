@@ -10,7 +10,7 @@
 #include "api_complex.h"
 
 static void bad_type(rsimd_etype type) {
-  Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[type]);
+  rsimd_type_error(type, NULL, NULL);
 }
 
 static int is_numeric(rsimd_etype t) {
@@ -226,8 +226,8 @@ static SEXP simd_prod2_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, 
   rsimd_opts_init(&o, na_rm, na_check, b.x.no_na_hint && b.y.no_na_hint);
   o.precision = rsimd_arg_precision(precision);
   if (b.x.type == RSIMD_C128 && b.y.type == RSIMD_C128) return rsimd_c128_prod2(ew, &b, &o);
-  if (!is_numeric(b.x.type)) bad_type(b.x.type);
-  if (!is_numeric(b.y.type)) bad_type(b.y.type);
+  if (!is_numeric(b.x.type)) rsimd_type_error(b.x.type, "x", NULL);
+  if (!is_numeric(b.y.type)) rsimd_type_error(b.y.type, "y", NULL);
   flags = (b.x_scalar ? RSIMD_EW_SCALAR(0) : 0) | (b.y_scalar ? RSIMD_EW_SCALAR(1) : 0) |
           (b.x.type != RSIMD_F64 ? RSIMD_EW_I32(0) : 0) |
           (b.y.type != RSIMD_F64 ? RSIMD_EW_I32(1) : 0);
@@ -852,8 +852,8 @@ static SEXP simd_dot_impl(SEXP x, SEXP y, SEXP op, SEXP na_rm, SEXP na_check, SE
 
   rsimd_in_init(&b.x, x, "x");
   rsimd_in_init(&b.y, y, "y");
-  if (!is_numeric(b.x.type)) bad_type(b.x.type);
-  if (!is_numeric(b.y.type)) bad_type(b.y.type);
+  if (!is_numeric(b.x.type)) rsimd_type_error(b.x.type, "x", NULL);
+  if (!is_numeric(b.y.type)) rsimd_type_error(b.y.type, "y", NULL);
   if (b.x.n != b.y.n) {
     Rf_error("lengths of 'x' (%lld) and 'y' (%lld) must be equal", (long long) b.x.n,
              (long long) b.y.n);

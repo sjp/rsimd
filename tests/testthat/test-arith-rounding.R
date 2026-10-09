@@ -89,8 +89,10 @@ test_that("digits must be a single number", {
   expect_identical(simd_round(c(1.5, NaN), NA), round(c(1.5, NaN), NA))
   expect_identical(simd_round(1.26, simd_vec(1)), round(1.26, 1))
   expect_identical(as.double(simd_round(simd_vec(1.26), TRUE)), 1.3)
-  expect_error(simd_round(as.raw(1)), "non-numeric argument to mathematical function")
-  expect_error(simd_round(as.raw(1), 2), "non-numeric argument to mathematical function")
+  expect_error(simd_round(as.raw(1)), "simd_round() does not support 'x' of type raw", fixed = TRUE)
+  expect_error(simd_round(as.raw(1), 2), "simd_round() does not support 'x' of type raw",
+    fixed = TRUE
+  )
   expect_error(simd_floor(1i), "simd_floor() does not support 'x' of type complex", fixed = TRUE)
 })
 

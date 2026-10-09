@@ -70,7 +70,7 @@ static SEXP softmax(SEXP x, SEXP precision, int log_out) {
       if (r.saw_na) break;
     });
     break;
-  default: Rf_error("non-numeric argument to mathematical function");
+  default: rsimd_type_error(in.type, "x", "non-numeric argument to mathematical function");
   }
   m = r.f64_hi;
   if (in.n == 0) {

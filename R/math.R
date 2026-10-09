@@ -28,10 +28,13 @@
   }
   fun <- paste0("simd_", if (op == "logb") "log" else op)
   .check_complex_i64(fun, x, y)
-  for (a in list(x, y)) {
+  args <- list(x, y)
+  names(args) <- switch(op, logb = c("x", "base"), atan2 = c("y", "x"), c("x", "y"))
+  for (arg in names(args)) {
+    a <- args[[arg]]
     if (!(is.numeric(a) || is.logical(a) || is.complex(a))) {
-      msg <- if (op == "pow") "binary operator" else "mathematical function"
-      .stop("non-numeric argument to ", msg)
+      .check_data(a, arg)
+      .stop(fun, "() does not support '", arg, "' of type ", typeof(a))
     }
   }
   p <- .promote_pair(x, y, call)
@@ -58,7 +61,8 @@
 .n_arg <- function(fun, x, n) {
   .math_check(fun, list(x = x, n = n))
   if (!(is.numeric(n) || is.logical(n))) {
-    .stop("non-numeric argument to mathematical function")
+    .check_data(n, "n")
+    .stop(fun, "() does not support 'n' of type ", typeof(n))
   }
   .whole_arg(n)
 }

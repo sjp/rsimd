@@ -1,7 +1,7 @@
 # Reductions. Each function makes its own .Call(), so that warnings and
 # errors from the C side name the user's call; NULL for na_check and the
 # precision tell the C side to read options rsimd.na_check and
-# rsimd.precision. Types the C side cannot name the function for are
+# rsimd.precision. Types the C side takes but the function does not are
 # checked here first, for operands with a class or of a rejected type.
 
 simd_sum <- function(x, ..., na.rm = FALSE, na_check = NULL) {
@@ -55,7 +55,7 @@ simd_mean <- function(x, ..., na.rm = FALSE, na_check = NULL) {
 }
 
 # min, max and range share one kernel; op is 0, 1 or 2. Complex input is
-# left to the C side, which rejects it with base R's message. With absval
+# left to the C side, which rejects it. With absval
 # (max_abs and min_abs) the kernel reads abs(x), Mod(x) for complex x (in
 # the math accuracy mode), and raw input is rejected here.
 simd_min <- function(x, ..., na.rm = FALSE, na_check = NULL) {

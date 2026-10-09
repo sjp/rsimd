@@ -59,11 +59,16 @@ test_that("raw operands combine bytewise, for all pairs of bytes", {
   expect_identical(simd_not(as.raw(0xF0)), as.raw(0x0f))
 })
 
-test_that("mixing raw with another type errors with base R's message", {
-  msg <- tryCatch(TRUE & as.raw(1), error = conditionMessage)
-  expect_error(simd_and(TRUE, as.raw(1)), msg, fixed = TRUE)
-  expect_error(simd_or(as.raw(1), 1L), msg, fixed = TRUE)
-  expect_error(simd_xor(as.raw(1), 2.5), msg, fixed = TRUE)
+test_that("mixing raw with another type errors", {
+  expect_error(simd_and(TRUE, as.raw(1)), "simd_and() cannot combine logical and raw operands",
+    fixed = TRUE
+  )
+  expect_error(simd_or(as.raw(1), 1L), "simd_or() cannot combine raw and integer operands",
+    fixed = TRUE
+  )
+  expect_error(simd_xor(as.raw(1), 2.5), "simd_xor() cannot combine raw and double operands",
+    fixed = TRUE
+  )
   expect_error(simd_and(1i, TRUE), "simd_and() does not support 'x' of type complex", fixed = TRUE)
 })
 

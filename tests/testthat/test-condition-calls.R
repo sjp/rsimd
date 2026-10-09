@@ -93,6 +93,28 @@ test_that("errors from the R side name the user's call", {
   expect_identical(condition_call(simd_sum(1)), quote(simd_sum(1)))
 })
 
+test_that("type errors from the C side name the function and argument (issue 046)", {
+  msg <- function(expr) tryCatch(expr, error = conditionMessage)
+  expect_identical(condition_call(simd_var(as.raw(1))), quote(simd_var(as.raw(1))))
+  expect_identical(msg(simd_var(as.raw(1))), "simd_var() does not support 'x' of type raw")
+  # The argument holding the type, wherever the C side found it.
+  expect_identical(msg(simd_add(1, as.raw(1))), "simd_add() does not support 'y' of type raw")
+  expect_identical(msg(simd_dot(1:3, as.raw(1:3))), "simd_dot() does not support 'y' of type raw")
+  # An exported function reached through an inner one (simd_sd calls simd_var).
+  expect_identical(msg(simd_sd(as.raw(1))), "simd_sd() does not support 'x' of type raw")
+  expect_identical(msg(rsimd::simd_var(as.raw(1))), "simd_var() does not support 'x' of type raw")
+  expect_identical(
+    msg(do.call(simd_var, list(as.raw(1)))),
+    "simd_var() does not support 'x' of type raw"
+  )
+  # The simd_vec methods of base generics keep base R's message.
+  expect_identical(
+    msg(exp(simd_vec(as.raw(1)))),
+    msg(exp(as.raw(1)))
+  )
+  expect_identical(msg(min(simd_vec(1i))), msg(min(1i)))
+})
+
 test_that("errors from simd_vec methods name the method's call, not an inner helper", {
   v <- simd_vec(c(1, 2))
   expect_identical(condition_call(v + "a"), quote(Ops.simd_vec(v, "a")))

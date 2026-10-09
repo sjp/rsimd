@@ -275,7 +275,7 @@ test_that("integer sums of extreme values are exact across block boundaries", {
 })
 
 test_that("simd_sum validates its arguments", {
-  expect_error(simd_sum(as.raw(1)), "invalid 'type' (raw) of argument", fixed = TRUE)
+  expect_error(simd_sum(as.raw(1)), "simd_sum() does not support 'x' of type raw", fixed = TRUE)
   expect_error(simd_sum("a"), "'x' must be an atomic vector", fixed = TRUE)
   expect_error(simd_sum(factor("a")), "not factor", fixed = TRUE)
   expect_error(simd_sum(list(1)), "not list", fixed = TRUE)

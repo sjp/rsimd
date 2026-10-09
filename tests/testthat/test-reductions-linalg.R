@@ -478,12 +478,14 @@ test_that("argument errors", {
   expect_error(simd_dist(1, 1:3), "must be equal")
   expect_error(simd_cosine(1:2, 1:3), "must be equal")
   for (f in list(simd_sum_sq, simd_sum_abs, simd_norm, simd_var, simd_sd)) {
-    expect_error(f(as.raw(1:3)), "invalid 'type' (raw) of argument", fixed = TRUE)
+    expect_error(f(as.raw(1:3)), "does not support 'x' of type raw", fixed = TRUE)
     expect_error(f(c(1i, 2i)), "does not support 'x' of type complex")
     expect_error(f(letters), "must be an atomic vector")
     expect_error(f(1:3, na.rm = NA), "'na.rm' must be TRUE or FALSE")
   }
-  expect_error(simd_dot(1:3, as.raw(1:3)), "invalid 'type' (raw) of argument", fixed = TRUE)
+  expect_error(simd_dot(1:3, as.raw(1:3)), "simd_dot() does not support 'y' of type raw",
+    fixed = TRUE
+  )
   expect_error(simd_dot(1:2, c(1i, 2i)), "does not support 'y' of type complex")
   expect_error(simd_dist(factor(1:2), 1:2), "must be an atomic vector")
   skip_if_not_installed("bit64")

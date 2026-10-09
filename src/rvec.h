@@ -49,6 +49,28 @@ rsimd_etype rsimd_etype_of(SEXP x);
    "'x' must be an atomic vector (double, integer, logical, raw, complex or
    integer64), not <class>". */
 rsimd_etype rsimd_check_atomic(SEXP x, const char *arg);
+
+/* Errors for an operand of type t that the op does not take. From an
+   exported simd_* function the message is rsimd's "<fun>() does not
+   support '<arg>' of type <type>", naming the argument that has type t in
+   the function's frame (`arg` when it does, or none is found; NULL if
+   unknown), with the user's call; from anywhere else (a simd_vec method
+   of a base generic) it is base R's `msg` (NULL for "invalid 'type'
+   (<type>) of argument"), with the call that made the .Call(). Evaluates
+   .type_error() in the namespace. */
+void rsimd_type_error(rsimd_etype t, const char *arg, const char *msg)
+#ifdef __GNUC__
+  __attribute__((noreturn))
+#endif
+  ;
+/* The same for operands of types t1 and t2 that the op does not take
+   together: "<fun>() cannot combine <t1> and <t2> operands", or base R's
+   `msg`. */
+void rsimd_mix_error(rsimd_etype t1, rsimd_etype t2, const char *msg)
+#ifdef __GNUC__
+  __attribute__((noreturn))
+#endif
+  ;
 /* Bytes per element. */
 size_t rsimd_etype_size(rsimd_etype t);
 
@@ -324,8 +346,8 @@ void rsimd_reduce_result_init(rsimd_reduce_result *r, int op);
      any, all, any_na -> logical
      count_na   i64, as a double
    The double value is rsimd_reduce_value() for o->precision (f64, the
-   compensated pair or the pairwise leaf tree). Errors with
-   "invalid 'type' (<type>) of argument" for a type the op does not take.
+   compensated pair or the pairwise leaf tree). Errors (rsimd_type_error())
+   for a type the op does not take.
 
    Missing values and empty input (na.h describes the rules):
      - with na.rm = FALSE, saw_na gives NA of the result type, else saw_nan

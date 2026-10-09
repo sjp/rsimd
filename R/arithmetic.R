@@ -3,8 +3,8 @@
 # and warns. Operands with a class, complex operands (for simd_add, _sub,
 # _mul and _div only beside a non-complex one: the C side takes two complex
 # operands) and, for the _wrap ops, double operands first go through
-# .ew_args(), which checks the types the C side cannot name the function
-# for and converts integer64 operands mixed with doubles to double, with a
+# .ew_args(), which checks the types the C side takes but the function does
+# not, and converts integer64 operands mixed with doubles to double, with a
 # warning. Each function makes its own .Call(), so that warnings and errors
 # from the C side name the user's call.
 
@@ -90,7 +90,7 @@
     return(args)
   }
   .ew_check(fun, args, wrap)
-  # A raw operand is left for the C side, which gives base R's message.
+  # A raw operand is left for the C side, which rejects it.
   if (length(args) == 2L && ncplx && !raw) {
     p <- .promote_pair(args[[1L]], args[[2L]], call)
     return(list(p$x, p$y))

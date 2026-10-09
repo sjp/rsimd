@@ -80,7 +80,9 @@ test_that("unsupported argument types error", {
     # As every function of the package: the access layer names the type.
     expect_error(f("a"), "'x' must be an atomic vector", fixed = TRUE)
     expect_error(f(list(1)), "'x' must be an atomic vector", fixed = TRUE)
-    expect_error(f(as.raw(1)), "non-numeric argument to mathematical function", fixed = TRUE)
+    expect_error(f(as.raw(1)), sprintf("simd_%s() does not support 'x' of type raw", name),
+      fixed = TRUE
+    )
   }
   # Complex input is taken where base R takes it (test-complex-math.R).
   expect_error(simd_hypot(2, 1i), "simd_hypot() does not support 'y' of type complex",
@@ -89,10 +91,10 @@ test_that("unsupported argument types error", {
   expect_error(simd_nextafter(1i, 1), "simd_nextafter() does not support 'x' of type complex",
     fixed = TRUE
   )
-  expect_error(simd_hypot(1, as.raw(1)), "non-numeric argument to mathematical function",
+  expect_error(simd_hypot(1, as.raw(1)), "simd_hypot() does not support 'y' of type raw",
     fixed = TRUE
   )
-  expect_error(simd_pow(as.raw(1), 1), "non-numeric argument to binary operator", fixed = TRUE)
+  expect_error(simd_pow(as.raw(1), 1), "simd_pow() does not support 'x' of type raw", fixed = TRUE)
   expect_error(simd_pow("a", 1), "'x' must be an atomic vector", fixed = TRUE)
   expect_error(simd_sincos(1i), "simd_sincos() does not support 'x' of type complex",
     fixed = TRUE

@@ -1,7 +1,7 @@
 /* .Call entry points of three-valued logic (&, |, xor, !), the bitwise
    ops, shifts, rotates and bit counts, and the population count total.
    Raw operands give raw results (bytewise), except for the counts, which
-   are integer; raw cannot be mixed with other types (base R's error). */
+   are integer; raw cannot be mixed with other types (rsimd_mix_error()). */
 
 #include <math.h>
 #include <string.h>
@@ -12,8 +12,9 @@
 static const char *const raw_mix_msg =
   "operations are possible only for numeric, logical or complex types";
 
-/* 1 if every operand is raw, 0 if none is; errors with base R's message
-   for a mix, and for types other than `allowed` operands. */
+/* 1 if every operand is raw, 0 if none is; errors (rsimd_mix_error(),
+   rsimd_type_error()) for a mix, and for types other than the allowed
+   ones. */
 static int all_raw(const rsimd_ew *e, int allow_double, int allow_i64) {
   int i, raw = 0;
   for (i = 0; i < e->k; i++) {
@@ -21,10 +22,13 @@ static int all_raw(const rsimd_ew *e, int allow_double, int allow_i64) {
     if (t == RSIMD_U8) raw++;
     else if (!rsimd_is_int_like(t) && !(allow_double && t == RSIMD_F64) &&
              !(allow_i64 && t == RSIMD_I64)) {
-      Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[t]);
+      rsimd_type_error(t, NULL, NULL);
     }
   }
-  if (raw != 0 && raw != e->k) Rf_error("%s", raw_mix_msg);
+  if (raw != 0 && raw != e->k) {
+    for (i = 1; (e->in[i].type == RSIMD_U8) == (e->in[0].type == RSIMD_U8); i++) {}
+    rsimd_mix_error(e->in[0].type, e->in[i].type, raw_mix_msg);
+  }
   return raw != 0;
 }
 
@@ -143,7 +147,7 @@ static SEXP simd_bit_impl(SEXP x, SEXP y, SEXP op, SEXP k, SEXP na_check) {
   }
   if (all_raw(&e, 0, 0)) {
     void *po;
-    if (code == RSIMD_BIT_SAR) Rf_error("invalid 'type' (raw) of argument");
+    if (code == RSIMD_BIT_SAR) rsimd_type_error(RSIMD_U8, "x", NULL);
     out = PROTECT(rsimd_alloc_like(counts ? RSIMD_I32 : RSIMD_U8, e.n));
     po = rsimd_out_ptr(out);
     RSIMD_FOREACH_CHUNK_EW(&e, p, len, off, {
@@ -199,7 +203,7 @@ static SEXP simd_popcount_total_impl(SEXP x, SEXP na_rm, SEXP na_check) {
       if (r.saw_na && !o.na_rm) break;
     });
   } else {
-    Rf_error("invalid 'type' (%s) of argument", rsimd_etype_names[in.type]);
+    rsimd_type_error(in.type, "x", NULL);
   }
   return Rf_ScalarReal(r.saw_na && !o.na_rm ? NA_REAL : (double) r.i64);
 }
