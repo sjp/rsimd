@@ -142,8 +142,9 @@ static SEXP simd_ew2_impl(SEXP x, SEXP y, SEXP op, SEXP na_check) {
 }
 
 SEXP C_simd_ew2(SEXP x, SEXP y, SEXP op, SEXP na_check) {
-  /* These return one of their operands. */
-  static const char *const keeps[] = {"pmin", "pmax", "pmin_num", "pmax_num", NULL};
+  /* These return one of their operands, or its magnitude with the other's
+     sign bit. */
+  static const char *const keeps[] = {"pmin", "pmax", "pmin_num", "pmax_num", "copysign", NULL};
   rsimd_entry();
   return rsimd_exit(rsimd_sv_result(simd_ew2_impl(x, y, op, na_check), rsimd_str_in(op, keeps)));
 }
@@ -272,7 +273,7 @@ static SEXP simd_ew1_impl(SEXP x, SEXP op) {
 
 SEXP C_simd_ew1(SEXP x, SEXP op) {
   /* These cannot make a missing value from a non-missing one. */
-  static const char *const keeps[] = {"neg", "abs", "sign", "floor",
+  static const char *const keeps[] = {"neg", "abs", "sign", "recip", "floor",
                                       "ceiling", "trunc", "round", NULL};
   rsimd_entry();
   return rsimd_exit(rsimd_sv_result(simd_ew1_impl(x, op), rsimd_str_in(op, keeps)));

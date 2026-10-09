@@ -553,6 +553,16 @@ test_that("the flag is kept by ops that cannot make a missing value", {
   expect_identical(simd_na_free(simd_pmax(x, 0)), TRUE)
   expect_identical(simd_na_free(simd_pmin(x, c(0, 1, 2))), NULL)
   expect_identical(simd_na_free(simd_clamp(x, -1, 1)), TRUE)
+  # 1/0 is Inf and 1/Inf is 0; copysign only moves a sign bit.
+  z <- simd_vec(c(0, -0, Inf, 2), check_na = TRUE)
+  expect_identical(simd_na_free(simd_recip(z)), TRUE)
+  expect_identical(simd_na_free(simd_recip(i)), TRUE)
+  expect_identical(simd_na_free(simd_copysign(z, -1)), TRUE)
+  expect_identical(simd_na_free(simd_copysign(z, x[c(1, 2, 3, 1)])), TRUE)
+  expect_identical(simd_na_free(simd_copysign(z, NaN)), NULL)
+  expect_identical(simd_na_free(simd_copysign(z, c(1, NA, 1, 1))), NULL)
+  expect_identical(simd_na_free(simd_recip(simd_vec(c(1, NaN), check_na = TRUE))), NULL)
+  expect_identical(simd_na_free(simd_recip(simd_vec(c(1, 2)))), NULL)
   # FALSE and unknown are not kept.
   expect_identical(simd_na_free(abs(simd_vec(c(1, NA), check_na = TRUE))), NULL)
   expect_identical(simd_na_free(abs(simd_vec(c(1, 2)))), NULL)
@@ -563,7 +573,7 @@ test_that("the flag is dropped by ops that can make a missing value", {
   for (f in list(
     function(v) v + v, function(v) v - 1, function(v) v * 2, function(v) v / v,
     function(v) v^2, function(v) v %% 2, function(v) v %/% 2, exp, sqrt, log, sin,
-    cumsum, cumprod, gamma, simd_sigmoid, simd_softmax, simd_recip
+    cumsum, cumprod, gamma, simd_sigmoid, simd_softmax
   )) {
     expect_identical(simd_na_free(suppressWarnings(f(x))), NULL)
   }
