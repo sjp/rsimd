@@ -20,7 +20,8 @@ simd_prod_diffs(x, y, ..., na.rm = FALSE, na_check = NULL)
 \item{x, y}{A double, integer, logical or complex vector, or for
 \code{simd_sum()} a \pkg{bit64} \code{integer64} vector. \code{y} (for
 \code{simd_prod_sums()} and \code{simd_prod_diffs()}) must have the length
-of \code{x}, or either may have length 1.}
+of \code{x}, or either may have length 1; a zero-length \code{x} or
+\code{y} gives the empty product, 1.}
 \item{\dots}{Must be empty. Each function takes one vector (two for
 \code{simd_prod_sums()} and \code{simd_prod_diffs()}), and \code{na.rm} and
 \code{na_check} must be named, so that an extra vector is not read as

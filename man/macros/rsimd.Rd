@@ -85,9 +85,9 @@ protected against overflow of the sum of squares.}
 
 \newcommand{\rsimdLengths}{\strong{Lengths.} The operands must have the same
 length, or length one: a length-one operand is used for every element
-(broadcast). Any other combination is an error; there is no general
-recycling. A zero-length operand with length-one operands gives a
-zero-length result.}
+(broadcast). A zero-length operand gives a zero-length result whatever
+the other lengths, as in base R. Any other combination is an error; there
+is no general recycling.}
 
 \newcommand{\rsimdBroadcast}{\rsimdLengths
 

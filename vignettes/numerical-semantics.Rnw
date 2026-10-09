@@ -222,10 +222,13 @@ Unary functions keep the length of their input. Binary and ternary
 functions need operands of the same length, or of length one: a length-one
 operand is used for every element. Base R also recycles other lengths
 (with a warning when they do not divide); \pkg{rsimd} reports an error,
-since unequal lengths are almost always a mistake:
+since unequal lengths are almost always a mistake. As in base R, a
+zero-length operand gives a zero-length result whatever the other lengths,
+so a vector filtered down to nothing passes through:
 
 <<lengths>>=
 simd_add(1:4, 10L)
+simd_add(numeric(0), 1:2)
 msg <- tryCatch(simd_add(1:4, 1:2), error = conditionMessage)
 writeLines(strwrap(msg, 70))
 @
@@ -330,7 +333,7 @@ Several vectors in a reduction &
   identical on every tier. \\
 Recycling &
   Only length-one operands are reused; other unequal lengths are an
-  error. &
+  error, except that a zero-length operand gives a zero-length result. &
   Avoids silent mistakes. Use \code{rep\_len()} if recycling is
   intended. \\
 \code{NULL} input &

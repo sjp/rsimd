@@ -146,9 +146,7 @@ test_that("binary functions broadcast a length-1 operand and reject other mismat
   expect_error(simd_atan2(1:3, 1:2), "lengths of 'y' (3) and 'x' (2) must be equal or one of them must be 1",
     fixed = TRUE
   )
-  expect_error(simd_hypot(1:2, double()), "lengths of 'x' (2) and 'y' (0) must be equal or one of them must be 1",
-    fixed = TRUE
-  )
+  expect_identical(simd_hypot(1:2, double()), double())
 })
 
 test_that("simd_log() takes a base like base R's log()", {

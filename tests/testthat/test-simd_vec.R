@@ -359,6 +359,11 @@ test_that("operators follow base R's types and warnings", {
   )
   expect_error(simd_vec(as.raw(1)) + as.raw(1), "non-numeric argument to binary operator")
   expect_error(simd_vec(1:3) + 1:2, "lengths of 'x' \\(3\\) and 'y' \\(2\\)")
+  # A zero-length operand gives a zero-length result, also on the base
+  # R fallback (complex comparisons).
+  expect_identical(bare(simd_vec(numeric(0)) + 1:2), numeric(0))
+  expect_identical(simd_vec(complex(0)) == c(1i, 2i), logical(0))
+  expect_error(simd_vec(1:3 + 0i) == c(1i, 2i), "lengths of 'x' \\(3\\) and 'y' \\(2\\)")
 })
 
 test_that("unary + follows base R", {

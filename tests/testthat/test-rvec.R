@@ -191,7 +191,11 @@ test_that("binary operands follow the length-1 broadcast rule", {
   expect_identical(r$value, 3)
   expect_false(r$x_scalar || r$y_scalar)
 
-  for (args in list(list(numeric(0), 1), list(1, numeric(0)), list(numeric(0), numeric(0)))) {
+  # A zero-length operand gives a zero-length result, as in base R.
+  for (args in list(
+    list(numeric(0), 1), list(1, numeric(0)), list(numeric(0), numeric(0)),
+    list(numeric(0), c(1, 2, 3)), list(c(1, 2, 3), numeric(0))
+  )) {
     r <- do.call(.debug_bin, args)
     expect_identical(r$value, numeric(0))
     expect_identical(r$n, 0)
@@ -200,8 +204,25 @@ test_that("binary operands follow the length-1 broadcast rule", {
 
   expect_error(.debug_bin(x, c(1, 2)), len_msg(5, 2), fixed = TRUE)
   expect_error(.debug_bin(c(1, 2), x), len_msg(2, 5), fixed = TRUE)
-  expect_error(.debug_bin(numeric(0), c(1, 2, 3)), len_msg(0, 3), fixed = TRUE)
-  expect_error(.debug_bin(c(1, 2, 3), numeric(0)), len_msg(3, 0), fixed = TRUE)
+})
+
+test_that("a zero-length operand gives a zero-length result whatever the other lengths", {
+  expect_identical(simd_add(numeric(0), 1:2), numeric(0) + 1:2)
+  expect_identical(simd_add(1:2, integer(0)), 1:2 + integer(0))
+  expect_identical(simd_eq(numeric(0), 1:2), numeric(0) == 1:2)
+  expect_identical(simd_and(logical(0), c(TRUE, NA)), logical(0) & c(TRUE, NA))
+  expect_identical(simd_pmin(1:3, integer(0)), pmin(1:3, integer(0)))
+  expect_identical(simd_atan2(1:2, double()), atan2(1:2, double()))
+  expect_identical(simd_add(complex(0), c(1i, 2i)), complex(0) + c(1i, 2i))
+  expect_identical(simd_fma(numeric(0), 1:2, 1:3), numeric(0))
+  expect_identical(simd_fma(1:2, 1:3, numeric(0)), numeric(0))
+  # Broadcasting reductions give their empty-input value.
+  expect_identical(simd_hamming(numeric(0), 1:2), 0)
+  expect_identical(simd_prod_sums(numeric(0), 1:2), prod(numeric(0) + 1:2))
+  # simd_dot() and friends still need equal lengths.
+  expect_error(simd_dot(numeric(0), 1:2), "lengths of 'x' (0) and 'y' (2) must be equal",
+    fixed = TRUE
+  )
 })
 
 test_that("binary chunking mixes ALTREP, contiguous and scalar operands", {

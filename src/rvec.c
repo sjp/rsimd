@@ -547,6 +547,8 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y) {
   b->x_scalar = b->y_scalar = 0;
   if (b->x.n == b->y.n) {
     b->n = b->x.n;
+  } else if (b->x.n == 0 || b->y.n == 0) {
+    b->n = 0;
   } else if (b->y.n == 1) {
     b->y_scalar = 1;
     b->n = b->x.n;
@@ -571,7 +573,7 @@ void rsimd_ew_no_c128(const rsimd_ew *e) {
 
 int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names) {
   R_xlen_t n = 1;
-  int i, have_n = 0, ok = 1;
+  int i, have_n = 0, ok = 1, empty = 0;
   if (k < 1 || k > RSIMD_EW_MAX_ARGS) Rf_error("internal error: %d operands", k);
   e->k = k;
   e->flags = 0;
@@ -579,6 +581,7 @@ int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names
   for (i = 0; i < k; i++) {
     rsimd_in_init(&e->in[i], args[i], names[i]);
     e->no_na_hint = e->no_na_hint && e->in[i].no_na_hint;
+    if (e->in[i].n == 0) empty = 1;
     if (e->in[i].n == 1) continue;
     if (!have_n) {
       n = e->in[i].n;
@@ -587,7 +590,9 @@ int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names
       ok = 0;
     }
   }
-  if (!ok) {
+  if (empty) {
+    n = 0;
+  } else if (!ok) {
     if (k == 2) {
       Rf_error("lengths of '%s' (%lld) and '%s' (%lld) must be equal or one of them must be 1",
                names[0], (long long) e->in[0].n, names[1], (long long) e->in[1].n);

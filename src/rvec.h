@@ -152,11 +152,11 @@ typedef struct {
   int y_scalar, x_scalar;  /* operand has length 1 and is broadcast */
 } rsimd_bin;
 
-/* Length-1 broadcast only: equal lengths give n = nx; ny == 1 sets
-   y_scalar (n = nx); otherwise nx == 1 sets x_scalar (n = ny). Any other
-   pair errors: "lengths of 'x' (<nx>) and 'y' (<ny>) must be equal or one
-   of them must be 1". So (0, 0), (0, 1) and (1, 0) give n = 0, and (0, 3)
-   is an error. Both operands must already have the common type (the R side
+/* Length-1 broadcast only: equal lengths give n = nx; a zero-length
+   operand gives n = 0 (as in base R, so (0, 3) is not an error); ny == 1
+   sets y_scalar (n = nx); otherwise nx == 1 sets x_scalar (n = ny). Any
+   other pair errors: "lengths of 'x' (<nx>) and 'y' (<ny>) must be equal
+   or one of them must be 1". Both operands must already have the common type (the R side
    promotes them). Returns 0. */
 int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y);
 
@@ -222,8 +222,8 @@ typedef struct {
    messages, and applies the length-1 broadcast rule: the operands that do
    not have length 1 must all have the same length, which is the result
    length (1 if every operand has length 1), and the operands of length 1
-   are broadcast when it is not 1. So a zero-length operand with scalars
-   gives a zero-length result. Otherwise errors, for two operands as
+   are broadcast when it is not 1. A zero-length operand makes the result
+   zero-length whatever the other lengths, as in base R. Otherwise errors, for two operands as
    rsimd_bin_init() does, for three with "lengths of 'x' (<nx>), 'y' (<ny>)
    and 'z' (<nz>) must be equal or 1". Returns 0. */
 int rsimd_ew_init(rsimd_ew *e, int k, const SEXP *args, const char *const *names);

@@ -34,7 +34,8 @@ First release.
   `simd_pmin()`, `simd_pmax()`, `simd_pmin_num()`, `simd_pmax_num()`,
   `simd_clamp()`, `simd_floor()`, `simd_ceiling()`, `simd_trunc()`,
   `simd_round()`, and wrapping integer variants (`simd_add_wrap()` and
-  friends). Operands must have equal lengths or length one.
+  friends). Operands must have equal lengths or length one; a zero-length
+  operand gives a zero-length result, as in base R.
 * **Predicates, comparisons, logic, bits and conversions:** `simd_is_na()`,
   `simd_is_nan()`, `simd_is_finite()`, `simd_is_infinite()`,
   `simd_is_negative()`, `simd_is_zero()` and the number classes
