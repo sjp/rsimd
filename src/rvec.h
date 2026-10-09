@@ -98,8 +98,22 @@ rsimd_etype rsimd_promote(rsimd_etype a, rsimd_etype b);
 /* ---- Chunked read access ----------------------------------------------- */
 
 /* Elements per region on the ALTREP path; the region buffer is at most
-   64 KiB (complex). A multiple of RSIMD_PAIRWISE_LEAF. */
+   64 KiB (complex). A multiple of RSIMD_PAIRWISE_LEAF.
+
+   The RSIMD_FOREACH_CHUNK* macros below hold their region buffers as
+   automatic arrays, reserved in the caller's frame whether or not the input
+   is ALTREP: 64 KiB for one complex operand, 128 KiB for a complex pair,
+   96 KiB for three elementwise operands. A function with several chunk
+   loops may get a frame larger than any one of them when the compiler does
+   not overlap the buffers (about 160 KiB for the Hamming distance entry
+   point with gcc -O2, measured with -fstack-usage). That is safe on R's
+   main thread (8 MiB on Linux and macOS, 64 MiB on Windows), but not on a
+   thread with a small stack, so the kernels must not be called from one.
+   Each macro's buffers are checked against RSIMD_CHUNK_STACK_MAX at compile
+   time, so raising RSIMD_CHUNK or adding operands means revisiting this
+   budget (or moving the buffers to R_alloc()). */
 #define RSIMD_CHUNK 4096
+#define RSIMD_CHUNK_STACK_MAX (128 * 1024)
 
 typedef struct {
   SEXP sx;
@@ -183,6 +197,9 @@ void rsimd_check_interrupt(void);
     }                                                                                  \
   } while (0)
 
+_Static_assert(RSIMD_CHUNK * sizeof(Rcomplex) <= RSIMD_CHUNK_STACK_MAX,
+               "RSIMD_FOREACH_CHUNK buffer exceeds the stack budget");
+
 /* ---- Binary operands and broadcast -------------------------------------- */
 
 typedef struct {
@@ -241,6 +258,9 @@ int rsimd_bin_init(rsimd_bin *b, SEXP x, SEXP y);
       }                                                                                \
     }                                                                                  \
   } while (0)
+
+_Static_assert(2 * RSIMD_CHUNK * sizeof(Rcomplex) <= RSIMD_CHUNK_STACK_MAX,
+               "RSIMD_FOREACH_CHUNK2T buffers exceed the stack budget");
 
 /* ---- Elementwise operands ----------------------------------------------- */
 
@@ -311,6 +331,9 @@ void rsimd_ew_no_c128(const rsimd_ew *e);
       }                                                                                \
     }                                                                                  \
   } while (0)
+
+_Static_assert(RSIMD_EW_MAX_ARGS * RSIMD_CHUNK * sizeof(double) <= RSIMD_CHUNK_STACK_MAX,
+               "RSIMD_FOREACH_CHUNK_EW buffers exceed the stack budget");
 
 /* ---- Reductions --------------------------------------------------------- */
 
