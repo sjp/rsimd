@@ -84,7 +84,11 @@ is computed in double-double arithmetic, which makes the result correctly
 rounded in nearly every case (measured: never more than 0.502 ULP from the
 exact root); \code{simd_rootn(x, 2)} is \code{sqrt(x)} exactly,
 \code{simd_rootn(x, 1)} is \code{x} and \code{simd_rootn(x, -1)} is \code{1
-/ x}. The special values are C23's: \code{n = 0} gives \code{NaN}; a zero
+/ x}. That accuracy costs several transcendental evaluations per element:
+about two to three times the time of \code{x^(1/n)} on most
+implementations, though \code{"avx2"} is about as fast as base R. For
+\code{n = 3}, \code{\link{simd_cbrt}()} is faster where its 1-ULP accuracy
+suffices. The special values are C23's: \code{n = 0} gives \code{NaN}; a zero
 gives a zero for a positive \code{n} and \code{Inf} for a negative one, and
 an infinity the reverse, each with the sign of \code{x} for an odd \code{n}
 and positive for an even one (so \code{simd_rootn(-0, 2)} is \code{0} and
