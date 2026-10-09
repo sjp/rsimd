@@ -29,16 +29,28 @@ static inline double rsimd_ew_get(const void *p, int flags, int k, R_xlen_t i, i
 
 #if RSIMD_TIER_IS(none)
 
-/* Runs `expr`, which sets r from a (and b, c), for every element. */
-#define RSIMD_EW_NONE_LOOP(nargs, expr)                                          \
+/* Runs `expr`, which sets r from a (and b, c), for every element, with
+   the operands read by get(p, k, i). */
+#define RSIMD_EW_NONE_ELT(nargs, get, expr)                                      \
   for (i = 0; i < n; i++) {                                                     \
-    double a = rsimd_ew_get(x, flags, 0, i, check), b = 0.0, c = 0.0, r;          \
-    if ((nargs) > 1) b = rsimd_ew_get(y, flags, 1, i, check);                     \
-    if ((nargs) > 2) c = rsimd_ew_get(z, flags, 2, i, check);                     \
+    double a = get(x, 0, i), b = 0.0, c = 0.0, r;                                \
+    if ((nargs) > 1) b = get(y, 1, i);                                           \
+    if ((nargs) > 2) c = get(z, 2, i);                                           \
     (void) b;                                                                    \
     (void) c;                                                                    \
     expr;                                                                        \
     out[i] = r;                                                                  \
+  }
+#define RSIMD_EW_GET_F64(p, k, i) (((const double *) (p))[i])
+#define RSIMD_EW_GET_ANY(p, k, i) rsimd_ew_get(p, flags, k, i, check)
+/* Double vectors (flags 0), the common case, have their own loop without
+   the per-element operand tests, so that the scalar reference runs about
+   as fast as base R's own loops. */
+#define RSIMD_EW_NONE_LOOP(nargs, expr)                                          \
+  if (flags == 0) {                                                             \
+    RSIMD_EW_NONE_ELT(nargs, RSIMD_EW_GET_F64, expr)                             \
+  } else {                                                                      \
+    RSIMD_EW_NONE_ELT(nargs, RSIMD_EW_GET_ANY, expr)                             \
   }
 
 int RSIMD_KERNEL(ew1_f64)(int op, const void *x, R_xlen_t n, int flags, double *out,
@@ -85,7 +97,11 @@ int RSIMD_KERNEL(ew2_f64)(int op, const void *x, const void *y, R_xlen_t n, int 
   const void *z = NULL;
   const int check = o->na_check;
   R_xlen_t i;
-#define RSIMD_EW_MERGED(e) r = check ? rsimd_na_merge_f64(e, a, b) : (e)
+/* Every merged op gives NaN for a NaN operand, so only a NaN result can
+   need the NA merge. */
+#define RSIMD_EW_MERGED(e)                                                       \
+  r = (e);                                                                       \
+  if (isnan(r) && check) r = rsimd_na_merge_f64(r, a, b)
   switch (op) {
   case RSIMD_EW_ADD: RSIMD_EW_NONE_LOOP(2, RSIMD_EW_MERGED(a + b)) break;
   case RSIMD_EW_SUB: RSIMD_EW_NONE_LOOP(2, RSIMD_EW_MERGED(a - b)) break;
@@ -113,7 +129,9 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
   const int check = o->na_check;
   int st = 0;
   R_xlen_t i;
-#define RSIMD_EW_MERGED(e) r = check ? rsimd_na_merge3_f64(e, a, b, c) : (e)
+#define RSIMD_EW_MERGED(e)                                                       \
+  r = (e);                                                                       \
+  if (isnan(r) && check) r = rsimd_na_merge3_f64(r, a, b, c)
   switch (op) {
   case RSIMD_EW_FMA: RSIMD_EW_NONE_LOOP(3, RSIMD_EW_MERGED(rsimd_fma(a, b, c))) break;
   case RSIMD_EW_MUL_ADD:
@@ -204,6 +222,9 @@ int RSIMD_KERNEL(ew3_i32)(int op, const int *x, const int *y, const int *z, R_xl
 }
 
 #undef RSIMD_EW_NONE_LOOP
+#undef RSIMD_EW_NONE_ELT
+#undef RSIMD_EW_GET_F64
+#undef RSIMD_EW_GET_ANY
 
 #else /* vector tiers */
 

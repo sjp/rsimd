@@ -219,7 +219,9 @@ code.
 \item \emph{Memory-bound operations.} \code{add}, \code{fma} and
   \code{is\_na} read and write whole vectors. At $10^7$ elements they are
   limited by memory bandwidth, for base R as much as for \pkg{rsimd}, so the
-  gain over base R is small even when the gain over \code{none} is large.
+  gain over base R is small. The \code{none} tier, the scalar code a CPU
+  without SIMD runs, is no faster than base R there, so base R is the
+  baseline to read for them.
 \item \emph{Compute-bound operations.} Reductions, \code{pmax} and the
   conversion gain most at $10^5$ elements and above.
 \item \emph{Elementary functions.} \code{exp} gains over base R only as far

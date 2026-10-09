@@ -269,6 +269,35 @@ test_that("elementwise doubles keep NA and NaN apart", {
   })
 })
 
+test_that("elementwise doubles give NA wherever an operand is NA, for every merged op", {
+  # The none tier merges NA only into a NaN result, so this checks that
+  # each merged op gives NaN for a missing operand in every position.
+  batch_expectations({
+    v <- c(NA, NaN, 1.5, -2, Inf, 0)
+    g <- expand.grid(a = seq_along(v), b = seq_along(v), c = seq_along(v))
+    a <- v[g$a]
+    b <- v[g$b]
+    cc <- v[g$c]
+    is_na_only <- function(v) is.na(v) & !is.nan(v)
+    ops2 <- list(add = simd_add, sub = simd_sub, mul = simd_mul, div = simd_div,
+                 idiv = simd_idiv, mod = simd_mod, copysign = simd_copysign)
+    ops3 <- list(fma = simd_fma, mul_add = simd_mul_add, add_mul = simd_add_mul, lerp = simd_lerp)
+    for_each_tier(function(tier) {
+      for (op in names(ops2)) {
+        r <- ops2[[op]](a, b)
+        check_identical(is_na_only(r), is_na_only(a) | is_na_only(b), info = paste(op, tier))
+        check_true(all(is.na(r)[is.na(a) | is.na(b)]), info = paste(op, tier))
+      }
+      for (op in names(ops3)) {
+        r <- ops3[[op]](a, b, cc)
+        miss <- is_na_only(a) | is_na_only(b) | is_na_only(cc)
+        check_identical(is_na_only(r), miss, info = paste(op, tier))
+        check_true(all(is.na(r)[is.na(a) | is.na(b) | is.na(cc)]), info = paste(op, tier))
+      }
+    })
+  })
+})
+
 test_that("elementwise doubles match the none tier in every lane", {
   batch_expectations({
     set.seed(1)

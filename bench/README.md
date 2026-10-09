@@ -115,6 +115,13 @@ A cell such as `412 µs (3.1× n, 5.6× b)` is the median time per call, then th
 against the `none` tier (`n`) and against base R (`b`). Above 1× means faster. `none`
 cells show only the speedup against base R, and base R cells show only the time.
 
+`none` is rsimd's portable scalar build, the code a CPU without SIMD runs: plain C loops at
+the package's optimisation level, with rsimd's NA rules, so `n` is the gain of SIMD over
+that code. For the reductions and the elementary functions that is the SIMD gain proper,
+the same algorithm or the same libm in scalar form. For memory-bound elementwise ops
+(`add`, `fma`) `none` and base R both run near memory speed and base R (`b`) is the
+baseline to read.
+
 A SIMD tier that is less than 1.1× faster than `none` on a compute-bound op (`sum`, `mean`,
 `dot`, `exp`, `pmax`, `any_na`) at n ≥ 1e5 in the main table is marked ⚠, and `run.R`
 prints a warning. That pattern usually means the tier is running scalar code: a kernel
