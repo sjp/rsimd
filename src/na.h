@@ -1216,8 +1216,8 @@ RSIMD_ALWAYS_INLINE void rsimd_vfold_f64(const double *x, const double *y, ptrdi
 #endif /* RSIMD_NO_F64_SIMD */
 
 /* Vectors per block of rsimd_vfold_sum_i32_(): each 32-bit lane of its
-   two pairs of accumulators then sums at most RSIMD_SUM_I32_BLOCK / 2
-   halves of at most 2^16 in magnitude, far from overflow. */
+   accumulators then sums at most RSIMD_SUM_I32_BLOCK halves of at most
+   2^16 in magnitude, far from overflow. */
 #define RSIMD_SUM_I32_BLOCK 1024
 
 /* The vector form of rsimd_fold_sum_i32(): 32-bit lanes. Each element is
@@ -1225,7 +1225,11 @@ RSIMD_ALWAYS_INLINE void rsimd_vfold_f64(const double *x, const double *y, ptrdi
    can be 2^31) and its low half (x & 0xffff), summed in separate 32-bit
    accumulators over blocks of RSIMD_SUM_I32_BLOCK vectors and combined
    exactly in 64 bits as hi * 2^16 + lo. Without na.rm a block with an NA
-   ends the fold, as the sum is then NA whatever follows. */
+   ends the fold, as the sum is then NA whatever follows. The halves of two
+   vectors are added together before they reach the accumulators: gcc 16
+   folds an accumulator update per vector into ssra on neon and then
+   copies the accumulators with a mov around each one in the loops without
+   the NA compare, which made na_check = FALSE slower than the check. */
 RSIMD_ALWAYS_INLINE void rsimd_vfold_sum_i32_(const int32_t *x, ptrdiff_t n, const int absval,
                                               const int check, const int narm,
                                               rsimd_reduce_result *r) {
@@ -1234,48 +1238,55 @@ RSIMD_ALWAYS_INLINE void rsimd_vfold_sum_i32_(const int32_t *x, ptrdiff_t n, con
   const rsimd_vi32 low = rsimd_vi32_set1(0xffff);
   int64_t s = 0;
   ptrdiff_t i = 0, removed = 0;
-#define RSIMD_VFOLD_I32_(hi, lo, v)                                                      \
+/* Sets h and l to the halves of v, after the NA handling and absval. Under
+   na.rm the NAs are only counted: a nonzero count is how they are seen. */
+#define RSIMD_VFOLD_I32_(h, l, v)                                                        \
   do {                                                                                   \
     if (check) {                                                                         \
       rsimd_mi32 m_ = rsimd_vi32_cmp_eq((v), na);                                        \
-      mna = rsimd_mi32_or(mna, m_);                                                      \
       if (narm) {                                                                        \
         (v) = rsimd_vi32_blend((v), zero, m_);                                           \
         cnt = rsimd_vi32_inc(cnt, m_);                                                   \
+      } else {                                                                           \
+        mna = rsimd_mi32_or(mna, m_);                                                    \
       }                                                                                  \
     }                                                                                    \
     if (absval) {                                                                        \
       (v) = rsimd_vi32_blend((v), rsimd_vi32_sub(zero, (v)), rsimd_vi32_cmp_lt((v), zero)); \
-      (hi) = rsimd_vi32_add((hi), rsimd_vi32_srl((v), 16));                              \
+      (h) = rsimd_vi32_srl((v), 16);                                                     \
     } else {                                                                             \
-      (hi) = rsimd_vi32_add((hi), rsimd_vi32_sra((v), 16));                              \
+      (h) = rsimd_vi32_sra((v), 16);                                                     \
     }                                                                                    \
-    (lo) = rsimd_vi32_add((lo), rsimd_vi32_and((v), low));                               \
+    (l) = rsimd_vi32_and((v), low);                                                      \
   } while (0)
   while (i < n) {
     const ptrdiff_t end = n - i > RSIMD_SUM_I32_BLOCK * W ? i + RSIMD_SUM_I32_BLOCK * W : n;
-    rsimd_vi32 hi0 = zero, hi1 = zero, lo0 = zero, lo1 = zero, cnt = zero;
+    rsimd_vi32 hi = zero, lo = zero, cnt = zero, h0, h1, l0, l1;
     rsimd_mi32 mna = rsimd_mi32_none();
     for (; i + 2 * W <= end; i += 2 * W) {
       rsimd_vi32 v0 = rsimd_vi32_loadu(x + i), v1 = rsimd_vi32_loadu(x + i + W);
-      RSIMD_VFOLD_I32_(hi0, lo0, v0);
-      RSIMD_VFOLD_I32_(hi1, lo1, v1);
+      RSIMD_VFOLD_I32_(h0, l0, v0);
+      RSIMD_VFOLD_I32_(h1, l1, v1);
+      hi = rsimd_vi32_add(hi, rsimd_vi32_add(h0, h1));
+      lo = rsimd_vi32_add(lo, rsimd_vi32_add(l0, l1));
     }
     for (; i < end; i += W) {
       rsimd_vi32 v = rsimd_vi32_loadu_p(rsimd_p32_while(i, end), x + i, 0);
-      RSIMD_VFOLD_I32_(hi0, lo0, v);
+      RSIMD_VFOLD_I32_(h0, l0, v);
+      hi = rsimd_vi32_add(hi, h0);
+      lo = rsimd_vi32_add(lo, l0);
     }
     i = end;
-    if (check && rsimd_mi32_any(mna)) {
+    if (narm) {
+      const ptrdiff_t k = (ptrdiff_t) rsimd_vi32_reduce_add(cnt);
+      if (k) r->saw_na = 1;
+      removed += k;
+    } else if (check && rsimd_mi32_any(mna)) {
       r->saw_na = 1;
-      if (!narm) {
-        r->count += n;
-        return;
-      }
-      removed += (ptrdiff_t) rsimd_vi32_reduce_add(cnt);
+      r->count += n;
+      return;
     }
-    s += rsimd_vi32_reduce_add(rsimd_vi32_add(hi0, hi1)) * 65536 +
-         rsimd_vi32_reduce_add(rsimd_vi32_add(lo0, lo1));
+    s += rsimd_vi32_reduce_add(hi) * 65536 + rsimd_vi32_reduce_add(lo);
   }
 #undef RSIMD_VFOLD_I32_
   rsimd_merge_i64_sum(r, s);

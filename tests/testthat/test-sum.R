@@ -245,6 +245,35 @@ test_that("na_check = FALSE gives the same result on NA-free input", {
   }
 })
 
+test_that("integer sums of extreme values are exact across block boundaries", {
+  # The vector tiers fold 1024 vectors per block, so these lengths cross
+  # one or more block boundaries on every lane width up to 16.
+  for (n in c(2049L, 8195L, 16387L, 49159L)) {
+    x <- rep(c(.Machine$integer.max, -.Machine$integer.max, .Machine$integer.max), length.out = n)
+    x[seq(5L, n, by = 7L)] <- -.Machine$integer.max
+    want <- sum(as.double(x))
+    want_abs <- sum(abs(as.double(x)))
+    xna <- x
+    xna[c(3L, n - 1L)] <- NA
+    want_na <- sum(as.double(xna), na.rm = TRUE)
+    for (tier in tiers_to_test()) {
+      simd_with_impl(tier, {
+        info <- paste(tier, n)
+        expect_identical(simd_sum(x), want, info = info)
+        expect_identical(simd_sum(x, na_check = FALSE), want, info = info)
+        expect_identical(simd_sum(x, na.rm = TRUE), want, info = info)
+        expect_identical(simd_sum_abs(x), want_abs, info = info)
+        expect_identical(simd_sum_abs(x, na_check = FALSE), want_abs, info = info)
+        expect_identical(simd_sum_abs(x, na.rm = TRUE), want_abs, info = info)
+        expect_identical(simd_sum(xna), NA_integer_, info = info)
+        expect_identical(simd_sum(xna, na.rm = TRUE), want_na, info = info)
+        expect_identical(simd_sum_abs(xna, na.rm = TRUE), sum(abs(as.double(xna)), na.rm = TRUE),
+                         info = info)
+      })
+    }
+  }
+})
+
 test_that("simd_sum validates its arguments", {
   expect_error(simd_sum(as.raw(1)), "invalid 'type' (raw) of argument", fixed = TRUE)
   expect_error(simd_sum("a"), "'x' must be an atomic vector", fixed = TRUE)
