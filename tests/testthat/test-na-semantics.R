@@ -59,6 +59,45 @@ test_that("double reductions: NA wins over NaN in any order, na.rm removes both"
   })
 })
 
+test_that("Inf + -Inf in a lane is not a missing value, in any block", {
+  # The vector tiers test their accumulators for NaN once per block, which
+  # Inf + -Inf in a lane also gives; the flags must still be those of the
+  # none tier, and a missing value after such a block must still be seen.
+  batch_expectations({
+    n <- 3e4 + 3
+    inf <- with_seed(62, sample(c(Inf, -Inf, runif(6)), n, TRUE))
+    zero_inf <- rep(c(0, Inf, 1, -Inf), length.out = n) # 0 * Inf is a NaN term
+    cases <- list(inf = inf)
+    for (pos in c(1, 4100, n - 2)) {
+      for (miss in list(NA_real_, NaN)) {
+        x <- inf
+        x[pos] <- miss
+        cases[[paste(if (is.nan(miss)) "nan" else "na", pos)]] <- x
+      }
+    }
+    x <- inf
+    x[c(5, 20000)] <- c(NaN, NA)
+    cases$nan_then_na <- x
+    for (name in names(cases)) {
+      x <- cases[[name]]
+      for (prec in prec_codes) {
+        res <- expect_tiers_identical(function() {
+          list(
+            x = .debug_fold(x, NULL, "x", FALSE, TRUE, prec),
+            abs = .debug_fold(x, NULL, "abs", FALSE, TRUE, prec),
+            xy = .debug_fold(x, rev(x), "xy", FALSE, TRUE, prec),
+            zero_inf = .debug_fold(x, zero_inf, "xy", FALSE, TRUE, prec)
+          )
+        }, label = paste(name, prec))
+        info <- paste(name, prec)
+        check_identical(res$none$x$saw_nan, anyNA(x), info = info)
+        check_identical(res$none$x$saw_na, anyNA(x) && !all(is.nan(x[is.na(x)])), info = info)
+        check_true(res$none$zero_inf$saw_nan, info = info)
+      }
+    }
+  })
+})
+
 test_that("a missing value in y alone makes x * y missing", {
   x <- c(1, 2, 3, 4, 5)
   expect_tiers_identical(function() {

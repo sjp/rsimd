@@ -890,9 +890,11 @@ RSIMD_INLINE R_xlen_t RSIMD_KERNEL(count_nan_f64_)(const double *x, R_xlen_t n) 
 /* Minimum and/or maximum (ext) of the n doubles, or of their absolute
    values, into r, in four accumulator pairs. NaN lanes cannot win
    (RSIMD_MIN_ACC_); without stop they are counted afterwards when the NaN
-   mask is set. With stop (na_check without na.rm) a block of
-   RSIMD_FOLD_BLOCK elements with an NA ends the scan, as the result is
-   then NA, and the count does not matter. The sign of a zero extremum is
+   mask is set. The mask tests the sum of each four vectors, through which
+   a NaN carries, so it can also be set by Inf + -Inf: whether there is a
+   NaN is then settled by an exact scan. With stop (na_check without na.rm)
+   a block of RSIMD_FOLD_BLOCK elements with an NA ends the scan, as the
+   result is then NA, and the count does not matter. The sign of a zero extremum is
    that of the first zero in x, as in base R, found by a second scan. */
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, const int check,
                                                   const int stop, const int absval,
@@ -910,7 +912,6 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
     rsimd_vf64 v_ = absval ? rsimd_vf64_abs(v0) : (v0);                                  \
     if (want_lo) (lo) = RSIMD_MIN_ACC_(v_, (lo));                                        \
     if (want_hi) (hi) = RSIMD_MAX_ACC_(v_, (hi));                                        \
-    if (check) mnan = rsimd_mf64_or(mnan, rsimd_vf64_is_nan(v_));                        \
   } while (0)
   while (i + 4 * W <= n) {
     const R_xlen_t end = stop && n - i > RSIMD_FOLD_BLOCK ? i + RSIMD_FOLD_BLOCK : n;
@@ -921,6 +922,10 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
       RSIMD_MINMAX_F64_(lo1, hi1, v1);
       RSIMD_MINMAX_F64_(lo2, hi2, v2);
       RSIMD_MINMAX_F64_(lo3, hi3, v3);
+      if (check) {
+        rsimd_vf64 s = rsimd_vf64_add(rsimd_vf64_add(v0, v1), rsimd_vf64_add(v2, v3));
+        mnan = rsimd_mf64_or(mnan, rsimd_vf64_is_nan(s));
+      }
     }
     if (stop && rsimd_mf64_any(mnan)) {
       if (rsimd_vf64_any_na(x + from, i - from)) {
@@ -930,7 +935,7 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
         return;
       }
       mnan = rsimd_mf64_none();
-      nan = 1;
+      if (!nan) nan = RSIMD_KERNEL(count_nan_f64_)(x + from, i - from) > 0;
     }
   }
   tail = stop ? i : 0; /* the blocks before tail hold no NA */
@@ -938,13 +943,17 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(minmax_f64_)(const double *x, R_xlen_t n, 
     /* The tail repeats element i in the inactive lanes. */
     rsimd_vf64 v = rsimd_vf64_loadu_p(rsimd_p64_while(i, n), x + i, x[i]);
     RSIMD_MINMAX_F64_(lo0, hi0, v);
+    if (check) mnan = rsimd_mf64_or(mnan, rsimd_vf64_is_nan(v));
   }
 #undef RSIMD_MINMAX_F64_
   if (check && (nan || rsimd_mf64_any(mnan))) {
-    r->saw_nan = 1;
-    /* Under stop the result is NA or NaN, whatever the count. */
+    /* Under stop the result is NA or NaN, whatever the count, and the
+       mask is exact, as it only holds the vectors after tail. */
     if (!stop) missing = RSIMD_KERNEL(count_nan_f64_)(x, n);
-    if (rsimd_mf64_any(mnan) && rsimd_vf64_any_na(x + tail, n - tail)) r->saw_na = 1;
+    if (stop || missing) {
+      r->saw_nan = 1;
+      if (rsimd_mf64_any(mnan) && rsimd_vf64_any_na(x + tail, n - tail)) r->saw_na = 1;
+    }
   }
   r->count += n - missing;
   /* The accumulators hold no NaN, so the lane order of the reduction does

@@ -701,6 +701,47 @@ test_that("min and max skip NA (a signalling NaN) and NaN with na.rm on every ti
   }
 })
 
+test_that("min and max find NA and NaN anywhere, and Inf + -Inf is not taken for NaN", {
+  # The vector tiers test the sum of each four vectors for NaN, which
+  # Inf + -Inf in a lane (or finite values overflowing into it) also give.
+  # Base R function, rsimd function, whether both take na.rm.
+  fs <- list(
+    list(min, simd_min, TRUE), list(max, simd_max, TRUE), list(range, simd_range, TRUE),
+    list(function(v, ...) max(abs(v), ...), simd_max_abs, TRUE),
+    list(function(v, ...) min(abs(v), ...), simd_min_abs, TRUE),
+    list(which.min, simd_which_min, FALSE), list(which.max, simd_which_max, FALSE),
+    list(function(v) which.min(abs(v)), simd_which_min_abs, FALSE),
+    list(function(v) which.max(abs(v)), simd_which_max_abs, FALSE)
+  )
+  expect_all <- function(y) {
+    for (f in fs) {
+      expect_tiers_give(f[[1]](y), f[[2]], y)
+      if (f[[3]]) {
+        expect_tiers_give(f[[1]](y, na.rm = TRUE), function(v) f[[2]](v, na.rm = TRUE), y)
+      }
+    }
+  }
+  for (n in c(64L, 101L, 3e4L + 3L)) {
+    inf <- with_seed(n, sample(c(Inf, -Inf, 1e308, -1e308, runif(4)), n, TRUE))
+    expect_all(inf)
+    for (f in fs[1:3]) {
+      expect_tiers_give(f[[1]](inf), function(v) f[[2]](v, na_check = FALSE), inf)
+    }
+    # A NaN or an NA in each of the first four vectors of a block, at a
+    # block edge, in a later block and in the tail.
+    for (pos in unique(pmin(c(1:33, 4096:4097, 20000L, n - 0:9), n))) {
+      for (miss in list(NaN, NA_real_)) {
+        y <- inf
+        y[pos] <- miss
+        expect_all(y)
+        # NA wins over a NaN before or after it.
+        y[if (pos > 1L) 1L else n] <- if (is.nan(miss)) NA_real_ else NaN
+        expect_tiers_give(NA_real_, simd_min, y)
+      }
+    }
+  }
+})
+
 test_that("reductions without na.rm stop at an NA and still give NA on every tier", {
   n <- 3e4
   x <- runif(n)
