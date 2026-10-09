@@ -373,12 +373,16 @@ sprinkle_na <- function(env) {
 # ---------------------------------------------------------------------------
 # Timing
 
+# bench::mark stops at min_time or max_iterations, whichever comes first.
+# The cap (bench's default) is high enough that min_time binds for calls of
+# 10 µs or more; faster calls stop at 10000 samples, which bounds the size of
+# the marks saved in the .rds.
 budget <- function(n) {
   min_time <- if (n >= 1e7) 0.5 else if (n >= 1e5) 0.2 else 0.1
   if (opts$quick) {
-    list(min_time = min_time / 2, min_iterations = 10L, max_iterations = 100L)
+    list(min_time = min_time / 2, min_iterations = 10L, max_iterations = 10000L)
   } else {
-    list(min_time = min_time, min_iterations = 20L, max_iterations = 200L)
+    list(min_time = min_time, min_iterations = 20L, max_iterations = 10000L)
   }
 }
 
@@ -407,8 +411,8 @@ record <- function(table, spec, mode, n, impl, m) {
   acc$marks[[key]] <- m
   acc$rows[[length(acc$rows) + 1L]] <- data.frame(
     table = table, op = spec$op, type = spec$type, mode = mode, n = n, impl = impl,
-    median_us = as.numeric(m$median), itr_sec = as.numeric(m$`itr/sec`),
-    n_itr = as.integer(m$n_itr), stringsAsFactors = FALSE
+    median_us = as.numeric(m$median), min_us = as.numeric(m$min),
+    itr_sec = as.numeric(m$`itr/sec`), n_itr = as.integer(m$n_itr), stringsAsFactors = FALSE
   )
 }
 
@@ -502,6 +506,8 @@ timestamp <- mi$timestamp
 metadata <- list(
   timestamp = timestamp,
   rsimd_version = as.character(utils::packageVersion("rsimd")),
+  rsimd_path = find.package("rsimd"),
+  rsimd_built = utils::packageDescription("rsimd")$Built,
   bench_version = as.character(utils::packageVersion("bench")),
   git_sha = sha,
   r_version = R.version.string,
@@ -621,6 +627,7 @@ meta_lines <- c(
   "| | |", "|---|---|",
   sprintf("| Timestamp (UTC) | %s |", timestamp),
   sprintf("| rsimd | %s (git %s) |", metadata$rsimd_version, if (is.na(sha)) "unknown" else sha),
+  sprintf("| rsimd library | `%s` (built %s) |", metadata$rsimd_path, metadata$rsimd_built),
   sprintf("| R | %s |", R.version.string),
   sprintf("| Compiler | `%s` |", metadata$cc),
   sprintf("| CFLAGS | `%s` |", metadata$cflags),

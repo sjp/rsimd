@@ -20,13 +20,13 @@ Install the package and `bench`, then from the package root:
 ```sh
 R CMD INSTALL .
 Rscript bench/run.R --quick           # sizes 1e3 and 1e5, a minute or two at most
-Rscript bench/run.R                   # sizes 1e3, 1e5 and 1e7, a few minutes
+Rscript bench/run.R                   # sizes 1e3, 1e5 and 1e7, 10 to 20 minutes
 Rscript bench/run.R --ops sum,exp --sizes 1e4,1e6 --out /tmp/bench
 ```
 
 | Option | Meaning |
 |--------|---------|
-| `--quick` | Sizes 1e3 and 1e5 and half the timing budget (at least 10, at most 100 iterations). |
+| `--quick` | Sizes 1e3 and 1e5 and half the minimum time (at least 10 iterations, still at most 10000). |
 | `--ops a,b` | Only these operations: `sum`, `mean`, `dot`, `add`, `fma`, `scalar_sub`, `fma_scalar`, `lt_scalar`, `pmax`, `exp`, `any_na`, `is_na`, `as_integer`, `hamming`, `is_whole`, `is_pow2`, `recip_approx`, `rsqrt`, `rsqrt_approx`, `rootn`, `mul`, `div`, `prod`, `abs` (complex), `sum_narm`, `min`, `is_finite_all`, `bit_and` and `popcount_total` (raw), and the math-table ops `sin`, `log`, `tanh`, `atan2`, `hypot`, `pow`, `asinh` and the complex `sqrt`, `exp`, `log`, `sin`, `asin`, `asin_cut`, `pow`, and the overhead-table op `eq` (the overhead table also has `sum`, `add`, `exp`, `as_integer`, `dot` and complex `mul`). |
 | `--sizes a,b` | Input lengths (default `1e3,1e5,1e7`: L1-resident, cache-resident, DRAM-bound). |
 | `--out dir` | Output directory (default `bench/results/`, which git ignores). |
@@ -86,9 +86,11 @@ Inputs are generated once per size with `set.seed(20261003)`: doubles from
 `10^runif(n, -3, 3)` to the power `runif(n, -5, 5)`, and `asin_cut` on real numbers with
 1.01 ≤ |x| ≤ 10.
 Each timing is `bench::mark(check = FALSE, filter_gc = TRUE, memory = FALSE)` with at least
-20 and at most 200 iterations and a minimum time of 0.1 s, 0.2 s or 0.5 s for
-n < 1e5, < 1e7 and ≥ 1e7. `check = FALSE` because results legitimately differ in the last
-bits between precision modes. Correctness is the test suite's job.
+20 iterations and a minimum time of 0.1 s, 0.2 s or 0.5 s for n < 1e5, < 1e7 and ≥ 1e7,
+capped at 10000 iterations (`bench`'s default). `bench::mark()` stops at whichever of the
+minimum time and the cap comes first, so calls under 10 µs (n = 1e3 and the overhead
+table) stop at 10000 samples in less than the minimum time. `check = FALSE` because
+results legitimately differ in the last bits between precision modes. Correctness is the test suite's job.
 
 ## Output
 
@@ -96,12 +98,14 @@ Each run writes three files named `<UTC timestamp>-<os>-<arch>-<git sha>`, and c
 markdown to `latest.md`:
 
 - `.rds`: a list with `results` (the flat table), `marks` (every `bench_mark` object,
-  named `table/op/type/mode/n/impl`) and `metadata`: rsimd, R and bench versions, git SHA
+  named `table/op/type/mode/n/impl`) and `metadata`: rsimd, R and bench versions, the
+  library rsimd was loaded from and its `Built` stamp (also in the markdown header, so a
+  stale installed copy shows; set `R_LIBS` to benchmark a fresh build), git SHA
   (with `-dirty` for uncommitted changes), `R CMD config CC` and `CFLAGS`, OS, CPU model,
   core count, `simd_cpu_features()`, `simd_available()`, the tier `"auto"` selects, the
   machine key used by `compare.R`, the sizes and the run time.
-- `.csv`: the flat table: `table, op, type, mode, n, impl, median_us, itr_sec, n_itr,
-  speedup_none, speedup_base, flag, rsimd_version, timestamp, machine`.
+- `.csv`: the flat table: `table, op, type, mode, n, impl, median_us, min_us, itr_sec,
+  n_itr, speedup_none, speedup_base, flag, rsimd_version, timestamp, machine`.
 - `.md`: a metadata header and one table per op, rows for sizes (or modes),
   columns for tiers then base R.
 
