@@ -108,6 +108,16 @@
  *     rsimd_vf64_storeu_p(pg, out + i, rsimd_vf64_add(v, k));
  *   }
  *
+ * RSIMD_CHUNK_LOOP writes that loop once for both parts, with RSIMD_LDT
+ * and RSIMD_STT for the loads and stores; its last vector's inactive
+ * lanes repeat element i, the fill the elementwise kernels rely on:
+ *
+ *   ptrdiff_t i = 0;
+ *   RSIMD_CHUNK_LOOP(64, i, n, {
+ *     rsimd_vf64 v = RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, x, i);
+ *     RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, out + i, rsimd_vf64_add(v, k));
+ *   });
+ *
  * The SVE tiers implement predicates with svwhilelt, AVX-512 with mask
  * registers, the other fixed-width tiers with a lane count and a small stack
  * buffer, and the none tier with a single lane.
@@ -211,6 +221,44 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
 #elif RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)
 #include "vec_sve.inc.h"
 #endif
+
+/* Runs the statements in `...` over the elements from i (an lvalue, which
+   the loop advances) to n in vectors of W-bit lanes (W is 32 or 64): once
+   for each full vector, with tail_ = 0 and pg all lanes, then, if elements
+   remain, once for the last vector, with tail_ = 1 and pg =
+   rsimd_pW_while(i, n). The statements read and write through RSIMD_LDT
+   and RSIMD_STT, which take the plain or the predicated form by tail_. As
+   tail_ is a constant in each copy, each compiles to its own form only. */
+#define RSIMD_CHUNK_LOOP(W, i, n, ...)                                           \
+  do {                                                                           \
+    for (; (i) + RSIMD_LANES_##W <= (n); (i) += RSIMD_LANES_##W) {               \
+      const int tail_ = 0;                                                       \
+      const rsimd_p##W pg = rsimd_p##W##_true();                                 \
+      (void) tail_;                                                              \
+      (void) pg;                                                                 \
+      __VA_ARGS__;                                                               \
+    }                                                                            \
+    if ((i) < (n)) {                                                             \
+      const int tail_ = 1;                                                       \
+      const rsimd_p##W pg = rsimd_p##W##_while(i, n);                            \
+      (void) tail_;                                                              \
+      (void) pg;                                                                 \
+      __VA_ARGS__;                                                               \
+    }                                                                            \
+  } while (0)
+/* Inside RSIMD_CHUNK_LOOP: the vector of elements i, i + 1, ... of the
+   array p, read with LD, or in the last vector with LD_P. Its inactive
+   lanes repeat element i, so they compute what an active lane computes
+   and cannot raise a status bit (overflow, lo > hi, a conversion warning)
+   or change an any/all answer that no element would. */
+#define RSIMD_LDT(LD, LD_P, p, i) (tail_ ? LD_P(pg, (p) + (i), (p)[i]) : LD((p) + (i)))
+/* Inside RSIMD_CHUNK_LOOP: stores v at p with ST, or in the last vector
+   its active lanes with ST_P. */
+#define RSIMD_STT(ST, ST_P, p, v)                                                \
+  do {                                                                           \
+    if (tail_) ST_P(pg, p, v);                                                   \
+    else ST(p, v);                                                               \
+  } while (0)
 
 /* Upper-case aliases. */
 #define RSIMD_PRED64 rsimd_p64_while

@@ -13,8 +13,9 @@
  *   - RSIMD_LANE64_LOOP: a loop over double or int32 operands (flags
  *     RSIMD_EW_SCALAR(k), RSIMD_EW_I32(k)) writing int32 elements from
  *     64-bit lanes.
- * In the predicated last vector the inactive lanes repeat the first active
- * element of each operand, as in arith.inc.c.
+ * Both loops are RSIMD_CHUNK_LOOP (common.inc.h): in the predicated last
+ * vector the inactive lanes repeat the first active element of each
+ * operand.
  */
 
 #ifndef RSIMD_KERNELS_LOGICAL_INC_H
@@ -55,20 +56,13 @@ RSIMD_INLINE rsimd_vi64 rsimd_lgl_vi64(rsimd_mf64 t, rsimd_mf64 na) {
                      by_ = yp_ != NULL ? rsimd_vi32_set1((int32_t) yp_[0]) : rsimd_vi32_zero(); \
     const int sx_ = RSIMD_LGL_SCALAR(0), sy_ = yp_ == NULL || RSIMD_LGL_SCALAR(1);         \
     ptrdiff_t i = 0;                                                                       \
-    for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {                                 \
-      rsimd_vi32 a = sx_ ? bx_ : LD(xp_ + i), b = sy_ ? by_ : LD(yp_ + i), r;              \
+    RSIMD_CHUNK_LOOP(32, i, n, {                                                           \
+      rsimd_vi32 a = sx_ ? bx_ : RSIMD_LDT(LD, LD_P, xp_, i);                              \
+      rsimd_vi32 b = sy_ ? by_ : RSIMD_LDT(LD, LD_P, yp_, i), r;                           \
       (void) b;                                                                            \
-      __VA_ARGS__;                                                                          \
-      ST((OT *) out + i, r);                                                               \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      rsimd_p32 pg = rsimd_p32_while(i, n);                                                \
-      rsimd_vi32 a = sx_ ? bx_ : LD_P(pg, xp_ + i, xp_[i]);                                \
-      rsimd_vi32 b = sy_ ? by_ : LD_P(pg, yp_ + i, yp_[i]), r;                             \
-      (void) b;                                                                            \
-      __VA_ARGS__;                                                                          \
-      ST_P(pg, (OT *) out + i, r);                                                         \
-    }                                                                                      \
+      __VA_ARGS__;                                                                         \
+      RSIMD_STT(ST, ST_P, (OT *) out + i, r);                                              \
+    });                                                                                    \
   } while (0)
 
 #ifndef RSIMD_NO_F64_SIMD
@@ -79,23 +73,14 @@ RSIMD_INLINE rsimd_vi64 rsimd_lgl_vi64(rsimd_mf64 t, rsimd_mf64 na) {
 #define RSIMD_LANE64_LOOP(fl, ...)                                                         \
   do {                                                                                     \
     ptrdiff_t i = 0;                                                                       \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                                 \
-      rsimd_vf64 a = rsimd_ew_ld(x, fl, 0, bc0, i, 1);                                     \
-      rsimd_vf64 b = y == NULL ? bc1 : rsimd_ew_ld(y, fl, 1, bc1, i, 1);                   \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                           \
+      rsimd_vf64 a = rsimd_ew_ldt(x, fl, 0, bc0, i, tail_, pg, 1);                         \
+      rsimd_vf64 b = y == NULL ? bc1 : rsimd_ew_ldt(y, fl, 1, bc1, i, tail_, pg, 1);       \
       rsimd_vi64 r;                                                                        \
       (void) b;                                                                            \
-      __VA_ARGS__;                                                                          \
-      rsimd_vi64_storeu_i32((int32_t *) out + i, r);                                       \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                                \
-      rsimd_vf64 a = rsimd_ew_ld_p(x, fl, 0, bc0, i, pg, 1);                               \
-      rsimd_vf64 b = y == NULL ? bc1 : rsimd_ew_ld_p(y, fl, 1, bc1, i, pg, 1);             \
-      rsimd_vi64 r;                                                                        \
-      (void) b;                                                                            \
-      __VA_ARGS__;                                                                          \
-      rsimd_vi64_storeu_i32_p(pg, (int32_t *) out + i, r);                                 \
-    }                                                                                      \
+      __VA_ARGS__;                                                                         \
+      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, (int32_t *) out + i, r);   \
+    });                                                                                    \
   } while (0)
 /* As RSIMD_LANE64_LOOP, reading the operands through rsimd_ew_dptr(). */
 #define RSIMD_LANE64_LOOP_D(...)                                                           \
@@ -105,22 +90,14 @@ RSIMD_INLINE rsimd_vi64 rsimd_lgl_vi64(rsimd_mf64 t, rsimd_mf64 na) {
     RSIMD_EW_DPTRS(x, y, NULL);                                                            \
     (void) p1_;                                                                            \
     (void) p2_;                                                                            \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                                 \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                           \
       rsimd_vf64 a = RSIMD_EW_DLD(0), b = RSIMD_EW_DLD(1);                                 \
       rsimd_vi64 r;                                                                        \
       (void) b;                                                                            \
-      __VA_ARGS__;                                                                          \
-      rsimd_vi64_storeu_i32((int32_t *) out + i, r);                                       \
-      RSIMD_EW_DNEXT();                                                                    \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                                \
-      rsimd_vf64 a = RSIMD_EW_DLD_P(0), b = RSIMD_EW_DLD_P(1);                             \
-      rsimd_vi64 r;                                                                        \
-      (void) b;                                                                            \
-      __VA_ARGS__;                                                                          \
-      rsimd_vi64_storeu_i32_p(pg, (int32_t *) out + i, r);                                 \
-    }                                                                                      \
+      __VA_ARGS__;                                                                         \
+      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, (int32_t *) out + i, r);   \
+      if (!tail_) RSIMD_EW_DNEXT();                                                        \
+    });                                                                                    \
   } while (0)
 /* The loop with all-vector double operands as a constant case, the loop
    over double operands, vectors or scalars, without per-operand tests

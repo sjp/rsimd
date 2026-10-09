@@ -86,74 +86,37 @@ int RSIMD_KERNEL(pred_i32)(int op, const int *x, R_xlen_t n, int mode, int *out)
 
 #else /* vector tiers */
 
-/* Runs the predicate over the chunk: m is the mask of the vector loaded
-   from x at i (by the statement `load`), with the elementwise result
-   stored by `store`. The any and all modes combine the masks of four
-   vectors (MASK_OR, MASK_AND on masks of type MASK_T) before each
-   horizontal test. In the last vector the inactive lanes repeat element
-   i, so they cannot change an any/all answer. */
-#define RSIMD_PRED_LOOP(LANES, MASK_T, MASK_OR, MASK_AND, MASK_ANY, MASK_ALL, load, load_p,    \
-                        store, store_p)                                                    \
+/* Runs the predicate PRED(op, v) over the chunk of x, read with LD / LD_P,
+   giving masks of type MASK (rsimd_mi32 or rsimd_mf64) for vectors of
+   W-bit lanes; the elementwise result LGL(m, none) is stored with ST /
+   ST_P. The any and all modes combine the masks of four vectors before
+   each horizontal test. In the last vector the inactive lanes repeat
+   element i, so they cannot change an any/all answer. */
+#define RSIMD_PRED_LOOP(W, MASK, LD, LD_P, PRED, ST, ST_P, LGL)                              \
   do {                                                                                     \
+    const ptrdiff_t l_ = RSIMD_LANES_##W;                                                  \
     ptrdiff_t i = 0;                                                                       \
     if (mode != RSIMD_PRED_ELT) {                                                          \
-      for (; i + 4 * (LANES) <= n; i += 4 * (LANES)) {                                     \
-        MASK_T m0_, m1_, m2_, m3_;                                                         \
-        {                                                                                  \
-          load;                                                                            \
-          m0_ = m;                                                                         \
-        }                                                                                  \
-        {                                                                                  \
-          const ptrdiff_t j_ = i + (LANES);                                                \
-          {                                                                                \
-            const ptrdiff_t i = j_;                                                        \
-            load;                                                                          \
-            m1_ = m;                                                                       \
-          }                                                                                \
-        }                                                                                  \
-        {                                                                                  \
-          const ptrdiff_t j_ = i + 2 * (LANES);                                            \
-          {                                                                                \
-            const ptrdiff_t i = j_;                                                        \
-            load;                                                                          \
-            m2_ = m;                                                                       \
-          }                                                                                \
-        }                                                                                  \
-        {                                                                                  \
-          const ptrdiff_t j_ = i + 3 * (LANES);                                            \
-          {                                                                                \
-            const ptrdiff_t i = j_;                                                        \
-            load;                                                                          \
-            m3_ = m;                                                                       \
-          }                                                                                \
-        }                                                                                  \
+      for (; i + 4 * l_ <= n; i += 4 * l_) {                                               \
+        MASK m0_ = PRED(op, LD(x + i)), m1_ = PRED(op, LD(x + i + l_));                    \
+        MASK m2_ = PRED(op, LD(x + i + 2 * l_)), m3_ = PRED(op, LD(x + i + 3 * l_));       \
         if (mode == RSIMD_PRED_ANY) {                                                      \
-          if (MASK_ANY(MASK_OR(MASK_OR(m0_, m1_), MASK_OR(m2_, m3_)))) return 1;           \
-        } else if (!MASK_ALL(MASK_AND(MASK_AND(m0_, m1_), MASK_AND(m2_, m3_)))) {          \
+          if (MASK##_any(MASK##_or(MASK##_or(m0_, m1_), MASK##_or(m2_, m3_)))) return 1;   \
+        } else if (!MASK##_all(MASK##_and(MASK##_and(m0_, m1_), MASK##_and(m2_, m3_)))) { \
           return 0;                                                                        \
         }                                                                                  \
       }                                                                                    \
     }                                                                                      \
-    for (; i + (LANES) <= n; i += (LANES)) {                                               \
-      load;                                                                                \
+    RSIMD_CHUNK_LOOP(W, i, n, {                                                            \
+      MASK m = PRED(op, RSIMD_LDT(LD, LD_P, x, i));                                        \
       if (mode == RSIMD_PRED_ELT) {                                                        \
-        store;                                                                             \
+        RSIMD_STT(ST, ST_P, out + i, LGL(m, none));                                        \
       } else if (mode == RSIMD_PRED_ANY) {                                                 \
-        if (MASK_ANY(m)) return 1;                                                         \
-      } else if (!MASK_ALL(m)) {                                                           \
+        if (MASK##_any(m)) return 1;                                                       \
+      } else if (!MASK##_all(m)) {                                                         \
         return 0;                                                                          \
       }                                                                                    \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      load_p;                                                                              \
-      if (mode == RSIMD_PRED_ELT) {                                                        \
-        store_p;                                                                           \
-      } else if (mode == RSIMD_PRED_ANY) {                                                 \
-        return MASK_ANY(m);                                                                \
-      } else {                                                                             \
-        return MASK_ALL(m);                                                                \
-      }                                                                                    \
-    }                                                                                      \
+    });                                                                                    \
     return mode == RSIMD_PRED_ALL;                                                         \
   } while (0)
 
@@ -188,13 +151,8 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(pred_i32_)(const int op, const int32_t *x, 
                                                 int mode, int32_t *out) {
   const rsimd_mi32 none = rsimd_mi32_none();
   (void) none;
-  RSIMD_PRED_LOOP(RSIMD_LANES_32, rsimd_mi32, rsimd_mi32_or, rsimd_mi32_and, rsimd_mi32_any,
-                  rsimd_mi32_all,
-                  rsimd_mi32 m = rsimd_pred_vi32(op, rsimd_vi32_loadu(x + i)),
-                  rsimd_p32 pg = rsimd_p32_while(i, n);
-                  rsimd_mi32 m = rsimd_pred_vi32(op, rsimd_vi32_loadu_p(pg, x + i, x[i])),
-                  rsimd_vi32_storeu(out + i, rsimd_lgl_vi32(m, none)),
-                  rsimd_vi32_storeu_p(pg, out + i, rsimd_lgl_vi32(m, none)));
+  RSIMD_PRED_LOOP(32, rsimd_mi32, rsimd_vi32_loadu, rsimd_vi32_loadu_p, rsimd_pred_vi32,
+                  rsimd_vi32_storeu, rsimd_vi32_storeu_p, rsimd_lgl_vi32);
 }
 
 int RSIMD_KERNEL(pred_i32)(int op, const int *x, R_xlen_t n, int mode, int *out);
@@ -280,13 +238,8 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(pred_f64_)(const int op, const double *x, R
                                                 int mode, int32_t *out) {
   const rsimd_mf64 none = rsimd_mf64_none();
   (void) none;
-  RSIMD_PRED_LOOP(RSIMD_LANES_64, rsimd_mf64, rsimd_mf64_or, rsimd_mf64_and, rsimd_mf64_any,
-                  rsimd_mf64_all,
-                  rsimd_mf64 m = rsimd_pred_vf64(op, rsimd_vf64_loadu(x + i)),
-                  rsimd_p64 pg = rsimd_p64_while(i, n);
-                  rsimd_mf64 m = rsimd_pred_vf64(op, rsimd_vf64_loadu_p(pg, x + i, x[i])),
-                  rsimd_vi64_storeu_i32(out + i, rsimd_lgl_vi64(m, none)),
-                  rsimd_vi64_storeu_i32_p(pg, out + i, rsimd_lgl_vi64(m, none)));
+  RSIMD_PRED_LOOP(64, rsimd_mf64, rsimd_vf64_loadu, rsimd_vf64_loadu_p, rsimd_pred_vf64,
+                  rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, rsimd_lgl_vi64);
 }
 
 int RSIMD_KERNEL(pred_f64)(int op, const double *x, R_xlen_t n, int mode, int *out);

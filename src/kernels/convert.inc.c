@@ -194,26 +194,19 @@ RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_cvt_vf64_u8(rsimd_vf64 x, const int mode, i
 #define RSIMD_CVT_F64_LOOP(fn)                                                             \
   do {                                                                                     \
     ptrdiff_t i = 0;                                                                       \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                                 \
-      rsimd_vf64_storeu_i32(o32 + i, fn(rsimd_vf64_loadu(x64 + i), mode, &st));            \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                                \
-      rsimd_vf64 v_ = rsimd_vf64_loadu_p(pg, x64 + i, x64[i]);                            \
-      rsimd_vf64_storeu_i32_p(pg, o32 + i, fn(v_, mode, &st));                             \
-    }                                                                                      \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                           \
+      rsimd_vf64 v_ = RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, x64, i);             \
+      RSIMD_STT(rsimd_vf64_storeu_i32, rsimd_vf64_storeu_i32_p, o32 + i, fn(v_, mode, &st)); \
+    });                                                                                    \
   } while (0)
 
 /* Elements of the int32 buffer b (values 0..255) to bytes. */
 RSIMD_INLINE void rsimd_cvt_i32_to_u8(const int32_t *b, ptrdiff_t n, uint8_t *out) {
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
-    rsimd_vi32_storeu_u8(out + i, rsimd_vi32_loadu(b + i));
-  }
-  if (i < n) {
-    rsimd_p32 pg = rsimd_p32_while(i, n);
-    rsimd_vi32_storeu_u8_p(pg, out + i, rsimd_vi32_loadu_p(pg, b + i, 0));
-  }
+  RSIMD_CHUNK_LOOP(32, i, n, {
+    rsimd_vi32 v = RSIMD_LDT(rsimd_vi32_loadu, rsimd_vi32_loadu_p, b, i);
+    RSIMD_STT(rsimd_vi32_storeu_u8, rsimd_vi32_storeu_u8_p, out + i, v);
+  });
 }
 
 RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(f64_to_i32_)(const double *x64, R_xlen_t n, const int mode,
@@ -245,27 +238,19 @@ static inline void RSIMD_KERNEL(f64_to_lgl_)(const double *x, R_xlen_t n, int32_
   rsimd_lgl_vi64(rsimd_mf64_not(rsimd_mf64_or(rsimd_vf64_is_nan(v),                         \
                                               rsimd_vf64_cmp_eq(v, rsimd_vf64_zero()))),    \
                  rsimd_vf64_is_nan(v))
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_vf64 v = rsimd_vf64_loadu(x + i);
-    rsimd_vi64_storeu_i32(out + i, RSIMD_CVT_LGL64(v));
-  }
-  if (i < n) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_vf64 v = rsimd_vf64_loadu_p(pg, x + i, 0.0);
-    rsimd_vi64_storeu_i32_p(pg, out + i, RSIMD_CVT_LGL64(v));
-  }
+  RSIMD_CHUNK_LOOP(64, i, n, {
+    rsimd_vf64 v = RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, x, i);
+    RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, out + i, RSIMD_CVT_LGL64(v));
+  });
 #undef RSIMD_CVT_LGL64
 }
 
 static inline void RSIMD_KERNEL(i32_to_f64_)(const int32_t *x, R_xlen_t n, double *out) {
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_vf64_storeu(out + i, rsimd_ew_from_i32(rsimd_vf64_loadu_i32(x + i), 1));
-  }
-  if (i < n) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_vf64_storeu_p(pg, out + i, rsimd_ew_from_i32(rsimd_vf64_loadu_i32_p(pg, x + i, 0), 1));
-  }
+  RSIMD_CHUNK_LOOP(64, i, n, {
+    rsimd_vf64 v = RSIMD_LDT(rsimd_vf64_loadu_i32, rsimd_vf64_loadu_i32_p, x, i);
+    RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, out + i, rsimd_ew_from_i32(v, 1));
+  });
 }
 
 /* int32 (integer or logical) to raw. */
@@ -288,14 +273,10 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(i32_to_u8_)(const int32_t *x, R_xlen_t n, c
                                                  uint8_t *out) {
   int st = 0;
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
-    rsimd_vi32_storeu_u8(out + i, rsimd_cvt_vi32_u8(rsimd_vi32_loadu(x + i), mode, &st));
-  }
-  if (i < n) {
-    rsimd_p32 pg = rsimd_p32_while(i, n);
-    rsimd_vi32 v = rsimd_vi32_loadu_p(pg, x + i, x[i]);
-    rsimd_vi32_storeu_u8_p(pg, out + i, rsimd_cvt_vi32_u8(v, mode, &st));
-  }
+  RSIMD_CHUNK_LOOP(32, i, n, {
+    rsimd_vi32 v = RSIMD_LDT(rsimd_vi32_loadu, rsimd_vi32_loadu_p, x, i);
+    RSIMD_STT(rsimd_vi32_storeu_u8, rsimd_vi32_storeu_u8_p, out + i, rsimd_cvt_vi32_u8(v, mode, &st));
+  });
   return st;
 }
 
@@ -306,17 +287,11 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(i32_to_u8_)(const int32_t *x, R_xlen_t n, c
     const T *xp_ = (const T *) x;                                                          \
     int32_t *op_ = (int32_t *) out;                                                        \
     ptrdiff_t i = 0;                                                                       \
-    for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {                                 \
-      rsimd_vi32 v = LD(xp_ + i), r;                                                       \
-      __VA_ARGS__;                                                                          \
-      rsimd_vi32_storeu(op_ + i, r);                                                       \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      rsimd_p32 pg = rsimd_p32_while(i, n);                                                \
-      rsimd_vi32 v = LD_P(pg, xp_ + i, 0), r;                                              \
-      __VA_ARGS__;                                                                          \
-      rsimd_vi32_storeu_p(pg, op_ + i, r);                                                 \
-    }                                                                                      \
+    RSIMD_CHUNK_LOOP(32, i, n, {                                                           \
+      rsimd_vi32 v = RSIMD_LDT(LD, LD_P, xp_, i), r;                                       \
+      __VA_ARGS__;                                                                         \
+      RSIMD_STT(rsimd_vi32_storeu, rsimd_vi32_storeu_p, op_ + i, r);                       \
+    });                                                                                    \
   } while (0)
 
 static inline void RSIMD_KERNEL(u8_to_f64_)(const uint8_t *x, R_xlen_t len, double *out) {
@@ -324,21 +299,17 @@ static inline void RSIMD_KERNEL(u8_to_f64_)(const uint8_t *x, R_xlen_t len, doub
   R_xlen_t off;
   for (off = 0; off < len; off += RSIMD_CVT_BLOCK) {
     const R_xlen_t n = len - off < RSIMD_CVT_BLOCK ? len - off : RSIMD_CVT_BLOCK;
+    const uint8_t *xb = x + off;
     ptrdiff_t i = 0;
-    for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
-      rsimd_vi32_storeu(buf + i, rsimd_vi32_loadu_u8(x + off + i));
-    }
-    if (i < n) {
-      rsimd_p32 pg = rsimd_p32_while(i, n);
-      rsimd_vi32_storeu_p(pg, buf + i, rsimd_vi32_loadu_u8_p(pg, x + off + i, 0));
-    }
-    for (i = 0; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-      rsimd_vf64_storeu(out + off + i, rsimd_vf64_loadu_i32(buf + i));
-    }
-    if (i < n) {
-      rsimd_p64 pg = rsimd_p64_while(i, n);
-      rsimd_vf64_storeu_p(pg, out + off + i, rsimd_vf64_loadu_i32_p(pg, buf + i, 0));
-    }
+    RSIMD_CHUNK_LOOP(32, i, n, {
+      rsimd_vi32 v = RSIMD_LDT(rsimd_vi32_loadu_u8, rsimd_vi32_loadu_u8_p, xb, i);
+      RSIMD_STT(rsimd_vi32_storeu, rsimd_vi32_storeu_p, buf + i, v);
+    });
+    i = 0;
+    RSIMD_CHUNK_LOOP(64, i, n, {
+      rsimd_vf64 v = RSIMD_LDT(rsimd_vf64_loadu_i32, rsimd_vf64_loadu_i32_p, buf, i);
+      RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, out + off + i, v);
+    });
   }
 }
 

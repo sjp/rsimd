@@ -1014,28 +1014,26 @@ RSIMD_INLINE rsimd_vi64 rsimd_vi64_ctz(rsimd_vi64 x) {
 
 /* Operand k of an elementwise kernel at i, as int64 lanes: the broadcast
    bc, int64 elements, or int32 elements sign-extended with NA_integer_
-   becoming NA (with check). The _p form reads the active lanes of pg and
-   repeats element i in the others. */
+   becoming NA (with check). rsimd_i64_ldt is the form for
+   RSIMD_CHUNK_LOOP (whose tail_ and pg it takes), rsimd_i64_ld the one
+   for a loop over full vectors only. */
 RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_i64_from_i32(rsimd_vi64 v, int check) {
   if (!check) return v;
   return rsimd_vi64_set_na(v, rsimd_vi64_cmp_eq(v, rsimd_vi64_set1(RSIMD_NA_I32)));
 }
+RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_i64_ldt(const void *p, int flags, int k, rsimd_vi64 bc,
+                                             ptrdiff_t i, const int tail_, rsimd_p64 pg,
+                                             int check) {
+  if (flags & RSIMD_EW_SCALAR(k)) return bc;
+  if (flags & RSIMD_EW_I32(k)) {
+    return rsimd_i64_from_i32(
+      RSIMD_LDT(rsimd_vi64_loadu_i32, rsimd_vi64_loadu_i32_p, (const int32_t *) p, i), check);
+  }
+  return RSIMD_LDT(rsimd_vi64_loadu, rsimd_vi64_loadu_p, (const int64_t *) p, i);
+}
 RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_i64_ld(const void *p, int flags, int k, rsimd_vi64 bc,
                                             ptrdiff_t i, int check) {
-  if (flags & RSIMD_EW_SCALAR(k)) return bc;
-  if (flags & RSIMD_EW_I32(k)) {
-    return rsimd_i64_from_i32(rsimd_vi64_loadu_i32((const int32_t *) p + i), check);
-  }
-  return rsimd_vi64_loadu((const int64_t *) p + i);
-}
-RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_i64_ld_p(const void *p, int flags, int k, rsimd_vi64 bc,
-                                              ptrdiff_t i, rsimd_p64 pg, int check) {
-  if (flags & RSIMD_EW_SCALAR(k)) return bc;
-  if (flags & RSIMD_EW_I32(k)) {
-    const int32_t *q = (const int32_t *) p + i;
-    return rsimd_i64_from_i32(rsimd_vi64_loadu_i32_p(pg, q, q[0]), check);
-  }
-  return rsimd_vi64_loadu_p(pg, (const int64_t *) p + i, ((const int64_t *) p)[i]);
+  return rsimd_i64_ldt(p, flags, k, bc, i, 0, rsimd_p64_true(), check);
 }
 /* Operand k broadcast from its element 0 (zeros for a NULL operand). */
 static inline rsimd_vi64 rsimd_i64_bcast(const void *p, int flags, int k, int check) {
@@ -1049,25 +1047,15 @@ static inline rsimd_vi64 rsimd_i64_bcast(const void *p, int flags, int k, int ch
 #define RSIMD_I64_LOOP_(fl, nargs, OT, ST, ST_P, expr)                                     \
   do {                                                                                     \
     ptrdiff_t i = 0;                                                                       \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                                 \
-      rsimd_vi64 a = rsimd_i64_ld(x, fl, 0, bc0, i, check), b = bc1, c = bc2, r;           \
-      if ((nargs) > 1) b = rsimd_i64_ld(y, fl, 1, bc1, i, check);                          \
-      if ((nargs) > 2) c = rsimd_i64_ld(z, fl, 2, bc2, i, check);                          \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                           \
+      rsimd_vi64 a = rsimd_i64_ldt(x, fl, 0, bc0, i, tail_, pg, check), b = bc1, c = bc2, r; \
+      if ((nargs) > 1) b = rsimd_i64_ldt(y, fl, 1, bc1, i, tail_, pg, check);              \
+      if ((nargs) > 2) c = rsimd_i64_ldt(z, fl, 2, bc2, i, tail_, pg, check);              \
       (void) b;                                                                            \
       (void) c;                                                                            \
       expr;                                                                                \
-      ST((OT *) out + i, r);                                                               \
-    }                                                                                      \
-    if (i < n) {                                                                           \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                                \
-      rsimd_vi64 a = rsimd_i64_ld_p(x, fl, 0, bc0, i, pg, check), b = bc1, c = bc2, r;     \
-      if ((nargs) > 1) b = rsimd_i64_ld_p(y, fl, 1, bc1, i, pg, check);                    \
-      if ((nargs) > 2) c = rsimd_i64_ld_p(z, fl, 2, bc2, i, pg, check);                    \
-      (void) b;                                                                            \
-      (void) c;                                                                            \
-      expr;                                                                                \
-      ST_P(pg, (OT *) out + i, r);                                                         \
-    }                                                                                      \
+      RSIMD_STT(ST, ST_P, (OT *) out + i, r);                                              \
+    });                                                                                    \
   } while (0)
 /* The loop with the flags as constants in the two common cases (all
    operands int64 vectors; an int64 scalar y). */
@@ -1517,33 +1505,20 @@ RSIMD_ALWAYS_INLINE int rsimd_intdiv_i64_block(const void *x, const void *y, ptr
   const rsimd_vi64 bias = rsimd_vi64_set1(INT64_C(1) << 51), zero = rsimd_vi64_zero();
   rsimd_vi64 acc = zero;
   rsimd_mi64 dz = rsimd_mi64_none();
-  for (; i + RSIMD_LANES_64 <= e; i += RSIMD_LANES_64) {
-    rsimd_vi64 a = rsimd_i64_ld(x, flags, 0, bc0, i, check), b = bc1;
+  RSIMD_CHUNK_LOOP(64, i, e, {
+    rsimd_vi64 a = rsimd_i64_ldt(x, flags, 0, bc0, i, tail_, pg, check), b = bc1;
     acc = rsimd_vi64_or(acc, rsimd_vi64_add(a, bias));
     if (!ys) {
-      b = rsimd_i64_ld(y, flags, 1, bc1, i, check);
+      b = rsimd_i64_ldt(y, flags, 1, bc1, i, tail_, pg, check);
       acc = rsimd_vi64_or(acc, rsimd_vi64_add(b, bias));
       dz = rsimd_mi64_or(dz, rsimd_vi64_cmp_eq(b, zero));
     }
     if (compute) {
-      rsimd_vi64_storeu(out + i, rsimd_vf64_intdiv_i64(rsimd_vi64_to_vf64_51(a),
-                                                       ys ? bd : rsimd_vi64_to_vf64_51(b), mod));
+      RSIMD_STT(rsimd_vi64_storeu, rsimd_vi64_storeu_p, out + i,
+                rsimd_vf64_intdiv_i64(rsimd_vi64_to_vf64_51(a),
+                                      ys ? bd : rsimd_vi64_to_vf64_51(b), mod));
     }
-  }
-  if (i < e) {
-    rsimd_p64 pg = rsimd_p64_while(i, e);
-    rsimd_vi64 a = rsimd_i64_ld_p(x, flags, 0, bc0, i, pg, check), b = bc1;
-    acc = rsimd_vi64_or(acc, rsimd_vi64_add(a, bias));
-    if (!ys) {
-      b = rsimd_i64_ld_p(y, flags, 1, bc1, i, pg, check);
-      acc = rsimd_vi64_or(acc, rsimd_vi64_add(b, bias));
-      dz = rsimd_mi64_or(dz, rsimd_vi64_cmp_eq(b, zero));
-    }
-    if (compute) {
-      rsimd_vi64_storeu_p(pg, out + i, rsimd_vf64_intdiv_i64(rsimd_vi64_to_vf64_51(a),
-                                                             ys ? bd : rsimd_vi64_to_vf64_51(b), mod));
-    }
-  }
+  });
   return rsimd_mi64_any(rsimd_vi64_cmp_gt(rsimd_vi64_srl(acc, 52), zero)) || rsimd_mi64_any(dz);
 }
 /* The kernel, inlined with constant flags, mod and check; with a scalar
@@ -1768,22 +1743,16 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(pred_i64_)(const int op, const int64_t *x, 
                                                 int mode, int32_t *out) {
   const rsimd_mi64 none = rsimd_mi64_none();
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_mi64 m = rsimd_pred_vi64(op, rsimd_vi64_loadu(x + i));
-    if (mode == RSIMD_PRED_ELT) rsimd_vi64_storeu_i32(out + i, rsimd_lgl_vi64m(m, none));
-    else if (mode == RSIMD_PRED_ANY) {
+  RSIMD_CHUNK_LOOP(64, i, n, {
+    rsimd_mi64 m = rsimd_pred_vi64(op, RSIMD_LDT(rsimd_vi64_loadu, rsimd_vi64_loadu_p, x, i));
+    if (mode == RSIMD_PRED_ELT) {
+      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, out + i, rsimd_lgl_vi64m(m, none));
+    } else if (mode == RSIMD_PRED_ANY) {
       if (rsimd_mi64_any(m)) return 1;
     } else if (!rsimd_mi64_all(m)) {
       return 0;
     }
-  }
-  if (i < n) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_mi64 m = rsimd_pred_vi64(op, rsimd_vi64_loadu_p(pg, x + i, x[i]));
-    if (mode == RSIMD_PRED_ELT) rsimd_vi64_storeu_i32_p(pg, out + i, rsimd_lgl_vi64m(m, none));
-    else if (mode == RSIMD_PRED_ANY) return rsimd_mi64_any(m);
-    else return rsimd_mi64_all(m);
-  }
+  });
   return mode == RSIMD_PRED_ALL;
 }
 
@@ -1954,13 +1923,10 @@ RSIMD_INLINE int RSIMD_KERNEL(convert_i64_)(int op, int mode, const void *x, R_x
     const int32_t *xi = (const int32_t *) x;
     int64_t *po = (int64_t *) out;
     ptrdiff_t j = 0;
-    for (; j + RSIMD_LANES_64 <= n; j += RSIMD_LANES_64) {
-      rsimd_vi64_storeu(po + j, rsimd_i64_from_i32(rsimd_vi64_loadu_i32(xi + j), 1));
-    }
-    if (j < n) {
-      rsimd_p64 pg = rsimd_p64_while(j, n);
-      rsimd_vi64_storeu_p(pg, po + j, rsimd_i64_from_i32(rsimd_vi64_loadu_i32_p(pg, xi + j, 0), 1));
-    }
+    RSIMD_CHUNK_LOOP(64, j, n, {
+      rsimd_vi64 v = RSIMD_LDT(rsimd_vi64_loadu_i32, rsimd_vi64_loadu_i32_p, xi, j);
+      RSIMD_STT(rsimd_vi64_storeu, rsimd_vi64_storeu_p, po + j, rsimd_i64_from_i32(v, 1));
+    });
     return 0;
   }
 #ifndef RSIMD_NO_F64_SIMD
@@ -1979,19 +1945,12 @@ RSIMD_INLINE int RSIMD_KERNEL(convert_i64_)(int op, int mode, const void *x, R_x
     prec = rsimd_mi64_or(prec, rsimd_mi64_andnot(m_, p_));                                 \
     res = rsimd_vf64_blend(rsimd_vi64_to_vf64(v), na, rsimd_mi64_to_mf64(m_));             \
   } while (0)
-    for (; j + RSIMD_LANES_64 <= n; j += RSIMD_LANES_64) {
-      rsimd_vi64 v = rsimd_vi64_loadu((const int64_t *) x + j);
+    RSIMD_CHUNK_LOOP(64, j, n, {
+      rsimd_vi64 v = RSIMD_LDT(rsimd_vi64_loadu, rsimd_vi64_loadu_p, (const int64_t *) x, j);
       rsimd_vf64 res;
       RSIMD_I64_F64_(v, res);
-      rsimd_vf64_storeu(po + j, res);
-    }
-    if (j < n) {
-      rsimd_p64 pg = rsimd_p64_while(j, n);
-      rsimd_vi64 v = rsimd_vi64_loadu_p(pg, (const int64_t *) x + j, 0);
-      rsimd_vf64 res;
-      RSIMD_I64_F64_(v, res);
-      rsimd_vf64_storeu_p(pg, po + j, res);
-    }
+      RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, po + j, res);
+    });
 #undef RSIMD_I64_F64_
     return rsimd_mi64_any(prec) ? RSIMD_CVT_WARN_PRECISION : 0;
   }
@@ -2019,17 +1978,12 @@ RSIMD_INLINE int RSIMD_KERNEL(convert_i64_)(int op, int mode, const void *x, R_x
       res = rsimd_vi64_blend(rsimd_vi64_max(res, lo), na, rsimd_mf64_to_mi64(nan_));       \
     }                                                                                      \
   } while (0)
-      for (; j + RSIMD_LANES_64 <= n; j += RSIMD_LANES_64) {
+      RSIMD_CHUNK_LOOP(64, j, n, {
+        rsimd_vf64 v = RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, xd, j);
         rsimd_vi64 res;
-        RSIMD_F64_I64_(rsimd_vf64_loadu(xd + j), res);
-        rsimd_vi64_storeu(po + j, res);
-      }
-      if (j < n) {
-        rsimd_p64 pg = rsimd_p64_while(j, n);
-        rsimd_vi64 res;
-        RSIMD_F64_I64_(rsimd_vf64_loadu_p(pg, xd + j, 0.0), res);
-        rsimd_vi64_storeu_p(pg, po + j, res);
-      }
+        RSIMD_F64_I64_(v, res);
+        RSIMD_STT(rsimd_vi64_storeu, rsimd_vi64_storeu_p, po + j, res);
+      });
 #undef RSIMD_F64_I64_
       return rsimd_mf64_any(bad) ? RSIMD_CVT_WARN_I64 : 0;
     }

@@ -749,25 +749,15 @@ static inline rsimd_vf64 rsimd_math_sigmoid(rsimd_vf64 a) {
 #define RSIMD_MATH_LOOP(nargs, expr)                                             \
   do {                                                                           \
     ptrdiff_t i = 0;                                                             \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                       \
-      const int lanes = (int) RSIMD_LANES_64;                                    \
-      rsimd_vf64 a = rsimd_ew_ld(x, flags, 0, bc0, i, 1), b = bc1, r;            \
-      if ((nargs) > 1) b = rsimd_ew_ld(y, flags, 1, bc1, i, 1);                  \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                 \
+      const int lanes = tail_ ? rsimd_p64_count(pg) : (int) RSIMD_LANES_64;      \
+      rsimd_vf64 a = rsimd_ew_ldt(x, flags, 0, bc0, i, tail_, pg, 1), b = bc1, r; \
+      if ((nargs) > 1) b = rsimd_ew_ldt(y, flags, 1, bc1, i, tail_, pg, 1);      \
       (void) b;                                                                  \
       (void) lanes;                                                              \
       expr;                                                                      \
-      rsimd_vf64_storeu(out + i, r);                                             \
-    }                                                                            \
-    if (i < n) {                                                                 \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                      \
-      const int lanes = rsimd_p64_count(pg);                                     \
-      rsimd_vf64 a = rsimd_ew_ld_p(x, flags, 0, bc0, i, pg, 1), b = bc1, r;      \
-      if ((nargs) > 1) b = rsimd_ew_ld_p(y, flags, 1, bc1, i, pg, 1);            \
-      (void) b;                                                                  \
-      (void) lanes;                                                              \
-      expr;                                                                      \
-      rsimd_vf64_storeu_p(pg, out + i, r);                                       \
-    }                                                                            \
+      RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, out + i, r);             \
+    });                                                                          \
   } while (0)
 
 /* Finishes r = f(a) with math1's rule: a NaN input is returned as it is,
@@ -1250,19 +1240,12 @@ RSIMD_ALWAYS_INLINE int rsimd_sincos_run(const void *x, R_xlen_t n, int flags, d
     vs = pi ? rsimd_vf64_blend(vs, a, in_) : rsimd_math_tiny(rsimd_vf64_blend(vs, a, in_), a); \
     vc = rsimd_vf64_blend(vc, a, in_);                                           \
   } while (0)
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_vf64 a = rsimd_ew_ld(x, flags, 0, bc0, i, 1), vs, vc;
+  RSIMD_CHUNK_LOOP(64, i, n, {
+    rsimd_vf64 a = rsimd_ew_ldt(x, flags, 0, bc0, i, tail_, pg, 1), vs, vc;
     RSIMD_MATH_SINCOS(a, vs, vc);
-    rsimd_vf64_storeu(s + i, vs);
-    rsimd_vf64_storeu(c + i, vc);
-  }
-  if (i < n) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_vf64 a = rsimd_ew_ld_p(x, flags, 0, bc0, i, pg, 1), vs, vc;
-    RSIMD_MATH_SINCOS(a, vs, vc);
-    rsimd_vf64_storeu_p(pg, s + i, vs);
-    rsimd_vf64_storeu_p(pg, c + i, vc);
-  }
+    RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, s + i, vs);
+    RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, c + i, vc);
+  });
 #undef RSIMD_MATH_SINCOS
   return st;
 }
@@ -1327,14 +1310,10 @@ void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out);
 void RSIMD_KERNEL(ilogb_f64)(const void *x, R_xlen_t n, int flags, int *out) {
   const rsimd_vf64 bc0 = rsimd_ew_bcast(x, flags, 0, 1);
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {
-    rsimd_vf64_storeu_i32(out + i, rsimd_math_ilogb_na(rsimd_ew_ld(x, flags, 0, bc0, i, 1)));
-  }
-  if (i < n) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_vf64_storeu_i32_p(pg, out + i,
-                            rsimd_math_ilogb_na(rsimd_ew_ld_p(x, flags, 0, bc0, i, pg, 1)));
-  }
+  RSIMD_CHUNK_LOOP(64, i, n, {
+    rsimd_vf64 a = rsimd_ew_ldt(x, flags, 0, bc0, i, tail_, pg, 1);
+    RSIMD_STT(rsimd_vf64_storeu_i32, rsimd_vf64_storeu_i32_p, out + i, rsimd_math_ilogb_na(a));
+  });
 }
 
 #else /* RSIMD_NO_F64_SIMD: 32-bit ARM, the none tier does doubles */

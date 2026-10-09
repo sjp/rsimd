@@ -4,10 +4,11 @@
  *
  * The none tier is plain C over the scalar helpers of na.h and is the
  * reference the vector tiers are tested against. The vector tiers process
- * full vectors and then one predicated vector. In that last vector the
- * inactive lanes of an operand repeat its first active element, so they
- * compute what an active lane computes and cannot raise a status bit
- * (overflow, lo > hi) that no element raised.
+ * full vectors and then one predicated vector (RSIMD_CHUNK_LOOP,
+ * common.inc.h). In that last vector the inactive lanes of an operand
+ * repeat its first active element, so they compute what an active lane
+ * computes and cannot raise a status bit (overflow, lo > hi) that no
+ * element raised.
  *
  * Double kernels read each operand as doubles or as int32 elements
  * (RSIMD_EW_I32(k)); an int32 NA becomes NA_real_ unless na_check is off,
@@ -230,39 +231,26 @@ int RSIMD_KERNEL(ew3_i32)(int op, const int *x, const int *y, const int *z, R_xl
 
 /* ---- int32 kernels ------------------------------------------------------- */
 
-/* Operand k of an int32 kernel at i: full vector, or the predicated last
-   vector whose inactive lanes repeat element i. */
+/* Operand k of an int32 kernel at i, inside RSIMD_CHUNK_LOOP. */
 #define RSIMD_EW_LDI(p, k, i)                                                    \
-  (RSIMD_EW_IS_SCALAR(flags, k) ? bc##k : rsimd_vi32_loadu((const int32_t *) (p) + (i)))
-#define RSIMD_EW_LDI_P(p, k, i, pg)                                              \
   (RSIMD_EW_IS_SCALAR(flags, k)                                                  \
      ? bc##k                                                                     \
-     : rsimd_vi32_loadu_p(pg, (const int32_t *) (p) + (i), ((const int32_t *) (p))[i]))
+     : RSIMD_LDT(rsimd_vi32_loadu, rsimd_vi32_loadu_p, (const int32_t *) (p), i))
 
 /* Runs `expr`, which sets the rsimd_vi32 r from a, b (and c), over the
    chunk. */
 #define RSIMD_EW_I32_LOOP(nargs, expr)                                           \
   do {                                                                           \
     ptrdiff_t i = 0;                                                             \
-    for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {                       \
+    RSIMD_CHUNK_LOOP(32, i, n, {                                                 \
       rsimd_vi32 a = RSIMD_EW_LDI(x, 0, i), b = bc1, c = bc2, r;                 \
       if ((nargs) > 1) b = RSIMD_EW_LDI(y, 1, i);                                \
       if ((nargs) > 2) c = RSIMD_EW_LDI(z, 2, i);                                \
       (void) b;                                                                  \
       (void) c;                                                                  \
       expr;                                                                      \
-      rsimd_vi32_storeu((int32_t *) out + i, r);                                 \
-    }                                                                            \
-    if (i < n) {                                                                 \
-      rsimd_p32 pg = rsimd_p32_while(i, n);                                      \
-      rsimd_vi32 a = RSIMD_EW_LDI_P(x, 0, i, pg), b = bc1, c = bc2, r;           \
-      if ((nargs) > 1) b = RSIMD_EW_LDI_P(y, 1, i, pg);                          \
-      if ((nargs) > 2) c = RSIMD_EW_LDI_P(z, 2, i, pg);                          \
-      (void) b;                                                                  \
-      (void) c;                                                                  \
-      expr;                                                                      \
-      rsimd_vi32_storeu_p(pg, (int32_t *) out + i, r);                           \
-    }                                                                            \
+      RSIMD_STT(rsimd_vi32_storeu, rsimd_vi32_storeu_p, (int32_t *) out + i, r); \
+    });                                                                          \
   } while (0)
 
 /* Checked add, sub or mul of a and b into r, NA in the lanes of the mask
@@ -308,14 +296,11 @@ static inline void rsimd_ew_intdiv_const_i32(const int *x, int32_t d, R_xlen_t n
                                              int check, int *out) {
   const rsimd_divmagic_i32 g = rsimd_divmagic_i32_make(d);
   ptrdiff_t i = 0;
-  for (; i + RSIMD_LANES_32 <= n; i += RSIMD_LANES_32) {
-    rsimd_vi32_storeu(out + i, rsimd_vi32_intdiv_const(rsimd_vi32_loadu(x + i), &g, mod, check));
-  }
-  if (i < n) {
-    rsimd_p32 pg = rsimd_p32_while(i, n);
-    rsimd_vi32_storeu_p(pg, out + i,
-                        rsimd_vi32_intdiv_const(rsimd_vi32_loadu_p(pg, x + i, 0), &g, mod, check));
-  }
+  RSIMD_CHUNK_LOOP(32, i, n, {
+    rsimd_vi32 v = RSIMD_LDT(rsimd_vi32_loadu, rsimd_vi32_loadu_p, x, i);
+    RSIMD_STT(rsimd_vi32_storeu, rsimd_vi32_storeu_p, out + i,
+              rsimd_vi32_intdiv_const(v, &g, mod, check));
+  });
 }
 
 /* %/% or %% of int32 operands through double lanes (exact, na.h), two
@@ -340,12 +325,12 @@ RSIMD_ALWAYS_INLINE void rsimd_ew_intdiv_i32_(const int *x, const int *y, R_xlen
     rsimd_vf64_storeu_i32(out + i, rsimd_vf64_intdiv(a0, b0, mod, check));
     rsimd_vf64_storeu_i32(out + i + W, rsimd_vf64_intdiv(a1, b1, mod, check));
   }
-  for (; i < n; i += W) {
-    rsimd_p64 pg = rsimd_p64_while(i, n);
-    rsimd_vf64 a = xs ? bx : rsimd_vf64_loadu_i32_p(pg, x + i, x[i]);
-    rsimd_vf64 b = ys ? by : rsimd_vf64_loadu_i32_p(pg, y + i, y[i]);
-    rsimd_vf64_storeu_i32_p(pg, out + i, rsimd_vf64_intdiv(a, b, mod, check));
-  }
+  RSIMD_CHUNK_LOOP(64, i, n, {
+    rsimd_vf64 a = xs ? bx : RSIMD_LDT(rsimd_vf64_loadu_i32, rsimd_vf64_loadu_i32_p, x, i);
+    rsimd_vf64 b = ys ? by : RSIMD_LDT(rsimd_vf64_loadu_i32, rsimd_vf64_loadu_i32_p, y, i);
+    RSIMD_STT(rsimd_vf64_storeu_i32, rsimd_vf64_storeu_i32_p, out + i,
+              rsimd_vf64_intdiv(a, b, mod, check));
+  });
 #endif
 }
 static void rsimd_ew_intdiv_i32(const int *x, const int *y, R_xlen_t n, int flags, int mod,
@@ -470,24 +455,21 @@ static inline rsimd_vf64 rsimd_ew_bcast(const void *p, int flags, int k, int che
   }
   return rsimd_vf64_set1(v);
 }
-/* Operand k at i: full vector, or the predicated last vector whose
-   inactive lanes repeat element i. */
+/* Operand k at i, inside RSIMD_CHUNK_LOOP (whose tail_ and pg these are). */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_ew_ldt(const void *p, int flags, int k, rsimd_vf64 bc,
+                                            ptrdiff_t i, const int tail_, rsimd_p64 pg,
+                                            int check) {
+  if (RSIMD_EW_IS_SCALAR(flags, k)) return bc;
+  if (RSIMD_EW_IS_I32(flags, k)) {
+    return rsimd_ew_from_i32(
+      RSIMD_LDT(rsimd_vf64_loadu_i32, rsimd_vf64_loadu_i32_p, (const int32_t *) p, i), check);
+  }
+  return RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, (const double *) p, i);
+}
+/* Operand k at i, in a loop over full vectors only. */
 RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_ew_ld(const void *p, int flags, int k, rsimd_vf64 bc,
                                            ptrdiff_t i, int check) {
-  if (RSIMD_EW_IS_SCALAR(flags, k)) return bc;
-  if (RSIMD_EW_IS_I32(flags, k)) {
-    return rsimd_ew_from_i32(rsimd_vf64_loadu_i32((const int32_t *) p + i), check);
-  }
-  return rsimd_vf64_loadu((const double *) p + i);
-}
-RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_ew_ld_p(const void *p, int flags, int k, rsimd_vf64 bc,
-                                             ptrdiff_t i, rsimd_p64 pg, int check) {
-  if (RSIMD_EW_IS_SCALAR(flags, k)) return bc;
-  if (RSIMD_EW_IS_I32(flags, k)) {
-    const int32_t *q = (const int32_t *) p + i;
-    return rsimd_ew_from_i32(rsimd_vf64_loadu_i32_p(pg, q, q[0]), check);
-  }
-  return rsimd_vf64_loadu_p(pg, (const double *) p + i, ((const double *) p)[i]);
+  return rsimd_ew_ldt(p, flags, k, bc, i, 0, rsimd_p64_true(), check);
 }
 
 /* 1 if every int32 operand is a scalar (whose broadcast value
@@ -509,8 +491,8 @@ static inline const double *rsimd_ew_dptr(const void *p, int flags, int k, rsimd
   *step = 0;
   return buf;
 }
-#define RSIMD_EW_DLD(k) rsimd_vf64_loadu(p##k##_)
-#define RSIMD_EW_DLD_P(k) rsimd_vf64_loadu_p(pg, p##k##_, p##k##_[0])
+/* Operand k at the pointer of rsimd_ew_dptr(), inside RSIMD_CHUNK_LOOP. */
+#define RSIMD_EW_DLD(k) RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, p##k##_, 0)
 /* Declares the pointers and steps of rsimd_ew_dptr() for operands x, y
    and z (NULL when absent), with broadcast values bc0, bc1 and bc2, and
    RSIMD_EW_DNEXT() advances them. */
@@ -532,29 +514,17 @@ static inline const double *rsimd_ew_dptr(const void *p, int flags, int k, rsimd
 #define RSIMD_EW_F64_LOOP_(fl, nargs, expr)                                      \
   do {                                                                           \
     ptrdiff_t i = 0;                                                             \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                       \
-      const int lanes = (int) RSIMD_LANES_64;                                    \
-      rsimd_vf64 a = rsimd_ew_ld(x, fl, 0, bc0, i, check), b = bc1, c = bc2, r;  \
-      if ((nargs) > 1) b = rsimd_ew_ld(y, fl, 1, bc1, i, check);                 \
-      if ((nargs) > 2) c = rsimd_ew_ld(z, fl, 2, bc2, i, check);                 \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                 \
+      const int lanes = tail_ ? rsimd_p64_count(pg) : (int) RSIMD_LANES_64;      \
+      rsimd_vf64 a = rsimd_ew_ldt(x, fl, 0, bc0, i, tail_, pg, check), b = bc1, c = bc2, r; \
+      if ((nargs) > 1) b = rsimd_ew_ldt(y, fl, 1, bc1, i, tail_, pg, check);     \
+      if ((nargs) > 2) c = rsimd_ew_ldt(z, fl, 2, bc2, i, tail_, pg, check);     \
       (void) b;                                                                  \
       (void) c;                                                                  \
       (void) lanes;                                                              \
       expr;                                                                      \
-      rsimd_vf64_storeu(out + i, r);                                             \
-    }                                                                            \
-    if (i < n) {                                                                 \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                      \
-      const int lanes = rsimd_p64_count(pg);                                     \
-      rsimd_vf64 a = rsimd_ew_ld_p(x, fl, 0, bc0, i, pg, check), b = bc1, c = bc2, r; \
-      if ((nargs) > 1) b = rsimd_ew_ld_p(y, fl, 1, bc1, i, pg, check);           \
-      if ((nargs) > 2) c = rsimd_ew_ld_p(z, fl, 2, bc2, i, pg, check);           \
-      (void) b;                                                                  \
-      (void) c;                                                                  \
-      (void) lanes;                                                              \
-      expr;                                                                      \
-      rsimd_vf64_storeu_p(pg, out + i, r);                                       \
-    }                                                                            \
+      RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, out + i, r);             \
+    });                                                                          \
   } while (0)
 /* As RSIMD_EW_F64_LOOP_, reading the operands through rsimd_ew_dptr(). */
 #define RSIMD_EW_F64_LOOP_D_(nargs, expr)                                        \
@@ -563,8 +533,8 @@ static inline const double *rsimd_ew_dptr(const void *p, int flags, int k, rsimd
     RSIMD_EW_DPTRS(x, y, z);                                                     \
     (void) p1_;                                                                  \
     (void) p2_;                                                                  \
-    for (; i + RSIMD_LANES_64 <= n; i += RSIMD_LANES_64) {                       \
-      const int lanes = (int) RSIMD_LANES_64;                                    \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                 \
+      const int lanes = tail_ ? rsimd_p64_count(pg) : (int) RSIMD_LANES_64;      \
       rsimd_vf64 a = RSIMD_EW_DLD(0), b = bc1, c = bc2, r;                       \
       if ((nargs) > 1) b = RSIMD_EW_DLD(1);                                      \
       if ((nargs) > 2) c = RSIMD_EW_DLD(2);                                      \
@@ -572,21 +542,9 @@ static inline const double *rsimd_ew_dptr(const void *p, int flags, int k, rsimd
       (void) c;                                                                  \
       (void) lanes;                                                              \
       expr;                                                                      \
-      rsimd_vf64_storeu(out + i, r);                                             \
-      RSIMD_EW_DNEXT();                                                          \
-    }                                                                            \
-    if (i < n) {                                                                 \
-      rsimd_p64 pg = rsimd_p64_while(i, n);                                      \
-      const int lanes = rsimd_p64_count(pg);                                     \
-      rsimd_vf64 a = RSIMD_EW_DLD_P(0), b = bc1, c = bc2, r;                     \
-      if ((nargs) > 1) b = RSIMD_EW_DLD_P(1);                                    \
-      if ((nargs) > 2) c = RSIMD_EW_DLD_P(2);                                    \
-      (void) b;                                                                  \
-      (void) c;                                                                  \
-      (void) lanes;                                                              \
-      expr;                                                                      \
-      rsimd_vf64_storeu_p(pg, out + i, r);                                       \
-    }                                                                            \
+      RSIMD_STT(rsimd_vf64_storeu, rsimd_vf64_storeu_p, out + i, r);             \
+      if (!tail_) RSIMD_EW_DNEXT();                                              \
+    });                                                                          \
   } while (0)
 /* The loop with the flags as constants in the two common cases (all
    operands double vectors; a double scalar y), the loop over double
@@ -833,7 +791,6 @@ int RSIMD_KERNEL(ew3_f64)(int op, const void *x, const void *y, const void *z, R
 #undef RSIMD_EW_I32_CHECKED
 #undef RSIMD_EW_I32_WRAP
 #undef RSIMD_EW_LDI
-#undef RSIMD_EW_LDI_P
 
 #endif /* vector tiers */
 
