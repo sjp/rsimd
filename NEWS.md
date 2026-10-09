@@ -12,8 +12,9 @@ First release.
   one in use, `simd_use()` selects one by name or `"auto"` (and without an
   argument returns the request), `simd_options()` shows every option at once,
   `simd_with_impl()` selects one temporarily, and the `rsimd.impl` option
-  and `RSIMD_IMPL` environment variable set it too (`?rsimd_options`). `simd_version()` reports the version of the native
-  interface.
+  and `RSIMD_IMPL` environment variable set it too (`?rsimd_options`).
+  `simd_build_info()` reports the bundled SIMDe and SLEEF versions, the
+  compiler and the tiers compiled in.
 * **Reductions:** `simd_sum()`, `simd_prod()`, `simd_mean()`, `simd_min()`,
   `simd_max()`, `simd_range()`, `simd_which_min()`, `simd_which_max()`,
   `simd_any()`, `simd_all()`, `simd_any_na()`, `simd_count_na()`,

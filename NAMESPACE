@@ -2,6 +2,7 @@ useDynLib(rsimd, .registration = TRUE)
 
 # control
 export(simd_available)
+export(simd_build_info)
 export(simd_cpu_features)
 export(simd_complex_variants)
 export(simd_current)
@@ -11,7 +12,6 @@ export(simd_options)
 export(simd_precision)
 export(simd_tiers)
 export(simd_use)
-export(simd_version)
 export(simd_with_impl)
 
 # reductions

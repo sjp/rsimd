@@ -1,0 +1,17 @@
+test_that("simd_build_info() describes the build", {
+  b <- simd_build_info()
+  expect_named(b, c("simde", "sleef", "compiler", "compiled", "sleef_tiers", "available", "current"))
+  expect_match(b$simde, "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  expect_length(b$sleef, 1L)
+  expect_length(b$compiler, 1L)
+  expect_identical(b$compiled, as.vector(simd_compiled_tiers()))
+  expect_true("none" %in% b$compiled)
+  expect_true(all(b$sleef_tiers %in% b$compiled))
+  expect_false("none" %in% b$sleef_tiers)
+  # SLEEF's version is given exactly when some tier uses it.
+  expect_identical(is.na(b$sleef), length(b$sleef_tiers) == 0L)
+  if (!is.na(b$sleef)) expect_match(b$sleef, "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  expect_true(all(b$available %in% b$compiled))
+  expect_identical(b$available, simd_available())
+  expect_identical(b$current, simd_current())
+})

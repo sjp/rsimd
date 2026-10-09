@@ -11,7 +11,7 @@
 #define CALLDEF(name, n) {#name, (DL_FUNC) (void (*)(void)) &name, n}
 
 static const R_CallMethodDef CallEntries[] = {
-  CALLDEF(C_simd_version, 0),
+  CALLDEF(C_simd_build_info, 0),
   CALLDEF(C_simd_cpu_features, 0),
   CALLDEF(C_simd_cpu_tiers, 0),
   CALLDEF(C_simd_compiled_tiers, 0),

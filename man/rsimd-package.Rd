@@ -55,7 +55,7 @@ The options that control the package (\code{rsimd.impl},
 \code{\link{simd_options}()} shows their current values.
 }
 \seealso{
-\code{\link{simd_version}}
+\code{\link{simd_build_info}}
 }
 \author{
 Simon Potter \email{simon@sjp.co.nz}

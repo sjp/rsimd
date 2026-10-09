@@ -1,5 +1,11 @@
-simd_version <- function() {
-  .Call(C_simd_version)
+simd_build_info <- function() {
+  compiled <- simd_compiled_tiers()
+  c(.Call(C_simd_build_info), list(
+    compiled = as.vector(compiled),
+    sleef_tiers = strsplit(attr(compiled, "sleef"), ",", fixed = TRUE)[[1L]],
+    available = simd_available(),
+    current = simd_current()
+  ))
 }
 
 simd_cpu_features <- function() {

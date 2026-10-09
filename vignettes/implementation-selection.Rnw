@@ -255,7 +255,8 @@ Results differ between tiers in the last bits &
   Expected for floating-point sums in the default \code{"fast"} precision
   mode, and for elementary functions; see the vignette \emph{Numerical
   semantics and precision}. Larger differences are a bug: please report
-  them with the output of \code{simd\_cpu\_features()}. \\
+  them with the output of \code{simd\_cpu\_features()} and
+  \code{simd\_build\_info()}. \\
 \pkg{rsimd} is slower than base R &
   Usually short vectors, where the cost of a call dominates, or a
   memory-bound operation on long vectors; see the vignette
