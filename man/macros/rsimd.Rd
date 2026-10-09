@@ -103,7 +103,7 @@ implementations use the vectorised functions of the bundled SLEEF library:
 its 1-ULP (\code{_u10}) variants, and its 0.5-ULP (\code{_u05}) variants for
 \code{sinpi}, \code{cospi} and \code{hypot}. Results are within 1 ULP (unit
 in the last place) of the exact value (0.5 ULP for the \code{_u05}
-functions), unless the function's own description gives another bound,
+functions, specified to 0.506 ULP, so not always correctly rounded), unless the function's own description gives another bound,
 and so may differ from base R in the last bit. Option
 \code{rsimd.math_accuracy = "fast"} trades accuracy for speed with SLEEF's
 3.5-ULP variants: see \code{\link{simd_math_accuracy}()} for the bounds of

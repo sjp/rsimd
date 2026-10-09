@@ -19,12 +19,14 @@ In \code{"accurate"} mode the SIMD implementations use SLEEF's 1-ULP
 SLEEF's 3.5-ULP (\code{_u35}) functions wherever SLEEF has one that is
 faster, which is typically 1.5 to 3 times as fast (6 times for
 \code{hypot}). The bounds are in units in the last place (ULP) of the exact
-result:
+result; the 0.5-ULP functions are SLEEF's, specified to 0.506 ULP, so they
+are not always correctly rounded:
 \tabular{lll}{
 \strong{Function} \tab \strong{accurate} \tab \strong{fast} \cr
 \code{sin}, \code{cos}, \code{tan}, \code{simd_sincos} \tab 1 \tab 3.5 \cr
 \code{asin}, \code{acos}, \code{atan}, \code{atan2} \tab 1 \tab 3.5 \cr
-\code{sinh}, \code{cosh}, \code{tanh} \tab 1 \tab 3.5 \cr
+\code{sinh}, \code{cosh} \tab 1 (about 2 for \eqn{709 < |x| < 710.48}) \tab 3.5 \cr
+\code{tanh} \tab 1 \tab 3.5 \cr
 \code{log}, \code{log2}, \code{cbrt} \tab 1 \tab 3.5 \cr
 \code{log(x, base)} for a base other than 2 and 10 \tab \code{log}'s, then a division \tab \code{log}'s, then a division \cr
 \code{sinpi}, \code{cospi}, \code{simd_sincospi} \tab 0.5 \tab 3.5 \cr
@@ -46,6 +48,11 @@ change between the modes. Missing values (\code{NA} and \code{NaN} kept
 apart), infinities, the signs of zero results, the exact cases (such as
 \code{simd_sinpi(1)} or \code{simd_log2(8)}), the range reductions and the
 \code{"NaNs produced"} warnings are the same in both.
+
+\code{sinh} and \code{cosh} use the C math library for
+\eqn{709 < |x| < 710.48}, where SLEEF's are less accurate (see
+\code{\link{simd_sinh}}), in both modes; there they are base R's results,
+which with glibc are within about 2 ULP.
 
 The exact functions of \link{simd_ilogb}, \code{\link{simd_rootn}},
 \code{\link{simd_rsqrt}} and the approximations of

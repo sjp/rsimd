@@ -454,7 +454,11 @@ On the SIMD tiers the elementary functions (\code{simd\_exp()},
 SLEEF library. \pkg{rsimd} uses SLEEF's 1-ULP variants, and its 0.5-ULP
 variants for \code{simd\_sinpi()}, \code{simd\_cospi()} and
 \code{simd\_hypot()}: results are within one unit in the last place (ULP) of
-the exact value, or correctly rounded for the 0.5-ULP ones. The C library
+the exact value, or within about 0.5 ULP for the 0.5-ULP ones (SLEEF
+specifies 0.506 ULP, so they are not always correctly rounded).
+\code{simd\_sinh()} and \code{simd\_cosh()} use the C library for
+$709 < |x| < 710.48$, where SLEEF's are less accurate, and are within about 2 ULP
+there, as base R's are with glibc. The C library
 that base R uses is usually also within 1 ULP, but not always the same
 ULP, so results can differ from base R and between tiers in the last bit.
 The \code{"none"} tier calls the C library, as base R does.

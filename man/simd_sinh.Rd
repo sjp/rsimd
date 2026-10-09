@@ -31,7 +31,9 @@ simd_atanh(x)
 R's do (just above \eqn{|x| = 710.47}); \code{simd_asinh()} and
 \code{simd_acosh()} are finite up to the largest double. SLEEF is less
 accurate in those ranges (\eqn{|x| > 709} and \eqn{|x| > 10^{154}}), so
-there the C library's functions are used instead. \code{simd_acosh(x)} for
+there the C library's functions are used instead, in both
+\link[=simd_math_accuracy]{modes}: their results there are base R's, within
+about 2 ULP with glibc rather than 1. \code{simd_acosh(x)} for
 \code{x < 1} and \code{simd_atanh(x)} for \eqn{|x| > 1} are \code{NaN} with a
 warning; \code{simd_atanh(1)} is \code{Inf}.
 

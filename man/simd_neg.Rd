@@ -50,7 +50,7 @@ symmetry with \code{\link{simd_add_wrap}()}, and reject doubles.
 \code{simd_neg()} of a complex vector negates both parts, as \code{-z}
 does (see \code{\link{simd_conj}()} for the conjugate). \code{simd_abs()}
 of a complex vector is its modulus, a double vector, as \code{abs(z)} and
-\code{Mod(z)} are: SLEEF's \code{hypot} (within 0.5 ULP, or 3.5 ULP in
+\code{Mod(z)} are: SLEEF's \code{hypot} (within 0.5 ULP, specified to 0.506, or 3.5 ULP in
 \link[=simd_math_accuracy]{fast mode}) for elements with both parts
 finite, the C library's otherwise, as base R (see
 \code{\link{simd_arg}()}).

@@ -242,3 +242,20 @@ test_that("hyperbolic functions are accurate up to overflow", {
   expect_true(all(is.finite(simd_asinh(c(big, -big)))))
   expect_close_to(simd_acosh(big), acosh(big), 2, "acosh vs base R")
 })
+
+test_that("sinh and cosh beyond 709 are the C library's on every tier, in both modes", {
+  # issue 057: ?simd_math_accuracy gives these about 2 ULP, the C library's
+  # bound, rather than SLEEF's 1.
+  x <- seq(709.0001, 710.4758, length.out = 2000)
+  x <- c(x, -x)
+  for (acc in c("accurate", "fast")) {
+    old <- simd_math_accuracy(acc)
+    for (f in list(sinh = simd_sinh, cosh = simd_cosh)) {
+      want <- simd_with_impl("none", f(x))
+      for (tier in tiers_to_test()) {
+        expect_identical(simd_with_impl(tier, f(x)), want)
+      }
+    }
+    simd_math_accuracy(old)
+  }
+})
