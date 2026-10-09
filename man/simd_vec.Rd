@@ -87,6 +87,16 @@ A pin to an implementation that is not available on this machine (an
 object saved on another one) is an error when the object is used; it
 never falls back silently. Unpin it with \code{simd_impl(x) <- NULL}.
 
+\strong{An invalid \code{rsimd.impl} option.} While the option
+\code{rsimd.impl} holds a value that cannot be selected (see
+\code{\link{simd_use}()}), nearly every operation on a \code{simd_vec}
+fails with that error: printing, \code{format()}, \code{str()},
+\code{x[i]}, \code{c()}, conversions, \code{simd_na_free()} and
+\code{simd_unwrap()} as well as the operators. \code{length()},
+\code{is_simd_vec()}, \code{simd_impl()} and \code{unclass()} still
+work. Repair the option with \code{simd_use()} or
+\code{options(rsimd.impl = "auto")}.
+
 \strong{Results.} When any operand of an \pkg{rsimd} function is a
 \code{simd_vec}, a result that is a vector of values (arithmetic,
 elementary functions, rounding, bitwise operations, conversions,

@@ -646,11 +646,12 @@ void rsimd_set_i64_class(SEXP out) {
      Evaluating R code here is safe where allocating is: out is protected
      by the caller. */
   if (!bit64_loaded) {
-    SEXP call = PROTECT(Rf_lang3(Rf_install("requireNamespace"), Rf_mkString("bit64"),
+    SEXP pkg = PROTECT(Rf_mkString("bit64"));
+    SEXP call = PROTECT(Rf_lang3(Rf_install("requireNamespace"), pkg,
                                  Rf_ScalarLogical(1)));
     SET_TAG(CDDR(call), Rf_install("quietly"));
     bit64_loaded = Rf_asLogical(Rf_eval(call, R_BaseEnv)) == 1;
-    UNPROTECT(1);
+    UNPROTECT(2);
   }
   if (!bit64_loaded) {
     Rf_error("integer64 results need package 'bit64'; install it with "

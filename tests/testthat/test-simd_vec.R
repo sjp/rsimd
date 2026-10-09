@@ -1309,3 +1309,27 @@ test_that("integer64 simd_vecs work with bit64 loaded", {
   expect_identical(class(v + x), "integer64")
   expect_output(print(x), "<NA>", fixed = TRUE)
 })
+
+test_that("an invalid rsimd.impl option makes simd_vec methods errors until it is repaired", {
+  old <- options(rsimd.impl = "auto")
+  on.exit(options(old))
+  v <- simd_vec(1:3, check_na = TRUE)
+  options(rsimd.impl = "bogus")
+  msg <- "invalid option rsimd.impl: unknown implementation 'bogus'"
+  expect_error(print(v), msg, fixed = TRUE)
+  expect_error(format(v), msg, fixed = TRUE)
+  expect_error(str(v), msg, fixed = TRUE)
+  expect_error(v[1:2], msg, fixed = TRUE)
+  expect_error(c(v, 1L), msg, fixed = TRUE)
+  expect_error(as.double(v), msg, fixed = TRUE)
+  expect_error(simd_na_free(v), msg, fixed = TRUE)
+  expect_error(simd_unwrap(v), msg, fixed = TRUE)
+  expect_error(v + 1L, msg, fixed = TRUE)
+  # The pure R accessors still work (as documented on ?simd_vec).
+  expect_true(is_simd_vec(v))
+  expect_identical(length(v), 3L)
+  expect_null(simd_impl(v))
+  simd_use("auto")
+  expect_identical(simd_unwrap(v), 1:3)
+  expect_true(simd_na_free(v))
+})

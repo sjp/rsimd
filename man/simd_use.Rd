@@ -42,7 +42,10 @@ tier, while an individual operation may run at a lower one.
 
 The selection is global. \code{simd_use()} sets it, together with the option
 \code{rsimd.impl}. Setting that option directly also works: it takes effect
-the next time an \pkg{rsimd} function is called. When the package is loaded,
+the next time an \pkg{rsimd} function is called. A value that cannot be
+selected makes that call an error, and every later one until the option is
+repaired with \code{simd_use()} or \code{options()}; that includes printing,
+subsetting and unwrapping a \code{\link{simd_vec}}. When the package is loaded,
 the initial value comes from the option \code{rsimd.impl} if it is already
 set, else from the environment variable \env{RSIMD_IMPL}, else it is
 \code{"auto"}. An unknown or unavailable value there gives a warning and
