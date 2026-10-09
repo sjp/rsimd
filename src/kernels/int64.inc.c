@@ -35,9 +35,13 @@
  *     (lanes with operands beyond +-2^31 use the scalar form, except on
  *     sve, which has the high half of the product)
  *   neg, abs, sign           native   native   native   native   native
- *   idiv, mod, mul_add,      scalar   scalar   scalar   scalar   scalar
- *     add_mul, cumsum,
- *     cummin, cummax
+ *   idiv, mod                partial  partial  native   native   native
+ *     (in double lanes, for blocks of operands within +-2^51; other
+ *     blocks are scalar, by a multiply for a scalar divisor except on
+ *     AArch64; the int64 <-> double conversions are partial on sse2 and
+ *     avx2)
+ *   mul_add, add_mul,        scalar   scalar   scalar   scalar   scalar
+ *     cumsum, cummin, cummax
  *   and, or, xor, not,       native   native   native   native   native
  *     shl, shr, rotl, rotr
  *   sar                      partial  partial  partial  partial  native
@@ -168,6 +172,201 @@ static inline int64_t rsimd_intdiv_i64(int64_t x, int64_t y, int mod, int check,
     r += y;
   }
   return mod ? r : q;
+}
+
+/* The high 64 bits of the 128-bit product a * b. */
+static inline int64_t rsimd_mulhi_i64(int64_t a, int64_t b) {
+#if defined(__SIZEOF_INT128__)
+  __extension__ typedef __int128 rsimd_i128;
+  return (int64_t) (((rsimd_i128) a * b) >> 64);
+#else
+  /* The unsigned high half from 32-bit partial products, less b for a < 0
+     and a for b < 0 (mod 2^64). */
+  const uint64_t ua = (uint64_t) a, ub = (uint64_t) b, lo = UINT64_C(0xFFFFFFFF);
+  uint64_t t = (ua >> 32) * (ub & lo) + (((ua & lo) * (ub & lo)) >> 32);
+  uint64_t w = (t & lo) + (ua & lo) * (ub >> 32);
+  uint64_t hi = (ua >> 32) * (ub >> 32) + (t >> 32) + (w >> 32);
+  if (a < 0) hi -= ub;
+  if (b < 0) hi -= ua;
+  return (int64_t) hi;
+#endif
+}
+
+/* Division of int64 values by a constant d other than 0, 1, -1 and
+   INT64_MIN without dividing: rsimd_divmagic_i32 (na.h) for 64 bits. The
+   truncated quotient of x is ((mulhi(m, x) + add * x) >> s) plus one when
+   that is negative. */
+typedef struct {
+  int64_t d, m;
+  int s, add;
+} rsimd_divmagic_i64;
+static inline int rsimd_divmagic_i64_ok(int64_t d) {
+  return d != 0 && d != 1 && d != -1 && d != RSIMD_NA_I64;
+}
+static inline rsimd_divmagic_i64 rsimd_divmagic_i64_make(int64_t d) {
+  const uint64_t two63 = UINT64_C(0x8000000000000000);
+  rsimd_divmagic_i64 g;
+  uint64_t ad = d < 0 ? 0u - (uint64_t) d : (uint64_t) d, t, anc, q1, r1, q2, r2, delta, m;
+  int p = 63;
+  t = two63 + ((uint64_t) d >> 63);
+  anc = t - 1 - t % ad;
+  q1 = two63 / anc;
+  r1 = two63 - q1 * anc;
+  q2 = two63 / ad;
+  r2 = two63 - q2 * ad;
+  do {
+    p++;
+    q1 *= 2;
+    r1 *= 2;
+    if (r1 >= anc) {
+      q1++;
+      r1 -= anc;
+    }
+    q2 *= 2;
+    r2 *= 2;
+    if (r2 >= ad) {
+      q2++;
+      r2 -= ad;
+    }
+    delta = ad - r2;
+  } while (q1 < delta || (q1 == delta && r1 == 0));
+  m = q2 + 1;
+  if (d < 0) m = 0u - m;
+  g.d = d;
+  memcpy(&g.m, &m, sizeof m);
+  g.s = p - 64;
+  g.add = d > 0 && g.m < 0 ? 1 : (d < 0 && g.m > 0 ? -1 : 0);
+  return g;
+}
+/* x %/% g->d (mod = 0) or x %% g->d (mod = 1), as rsimd_intdiv_i64 for an
+   x that is not NA. */
+static inline int64_t rsimd_divmagic_i64_div(int64_t x, const rsimd_divmagic_i64 *g, int mod) {
+  uint64_t u = (uint64_t) rsimd_mulhi_i64(g->m, x);
+  int64_t q, r;
+  if (g->add > 0) u += (uint64_t) x;
+  else if (g->add < 0) u -= (uint64_t) x;
+  q = (int64_t) u;
+  q = q < 0 ? ~(~q >> g->s) : q >> g->s;
+  q += (int64_t) ((uint64_t) q >> 63);
+  r = x - q * g->d;
+  if (r != 0 && (r ^ g->d) < 0) {
+    q -= 1;
+    r += g->d;
+  }
+  return mod ? r : q;
+}
+
+/* %/% (mod = 0) or %% (mod = 1) of elements [i, e) of the operands of an
+   elementwise kernel into out, one division per element, or with g (a
+   scalar divisor of g->d) none; returns the status bits. Inlined with
+   constant arguments, so that the tests of flags, mod and check leave the
+   loop. */
+RSIMD_ALWAYS_INLINE int rsimd_intdiv_i64_loop(const void *x, const void *y, R_xlen_t i, R_xlen_t e,
+                                              const int flags, const int mod, const int check,
+                                              const rsimd_divmagic_i64 *g, int64_t *out) {
+  int dz = 0;
+  if (g) {
+    /* A copy, which the stores to out cannot alias. */
+    const rsimd_divmagic_i64 gc = *g;
+    for (; i < e; i++) {
+      int64_t a = rsimd_i64_get(x, flags, 0, i, check);
+      out[i] = check && a == RSIMD_NA_I64 ? RSIMD_NA_I64 : rsimd_divmagic_i64_div(a, &gc, mod);
+    }
+    return 0;
+  }
+  for (; i < e; i++) {
+    out[i] = rsimd_intdiv_i64(rsimd_i64_get(x, flags, 0, i, check),
+                              rsimd_i64_get(y, flags, 1, i, check), mod, check, &dz);
+  }
+  return dz ? RSIMD_EW_DIV_ZERO : 0;
+}
+/* rsimd_intdiv_i64_loop for any flags, with each form of the operands
+   (int64 or int32 vector, or int64 scalar: an int32 scalar is read as
+   int64 first) inlined with constant flags; a test of the flags in every
+   element costs about as much as the division. */
+static int rsimd_intdiv_i64_loop_any(const void *x, const void *y, R_xlen_t i, R_xlen_t e, int flags,
+                                     int mod, int check, const rsimd_divmagic_i64 *g, int64_t *out) {
+#define RSIMD_INTDIV_I64_CASE(f)                                                           \
+  case f: return rsimd_intdiv_i64_loop(x, y, i, e, f, mod, check, g, out)
+  switch (flags) {
+    RSIMD_INTDIV_I64_CASE(0);
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_SCALAR(1));
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_I32(1));
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_I32(0));
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_I32(0) | RSIMD_EW_I32(1));
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_I32(0) | RSIMD_EW_SCALAR(1));
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_SCALAR(0));
+    RSIMD_INTDIV_I64_CASE(RSIMD_EW_SCALAR(0) | RSIMD_EW_I32(1));
+  default: return rsimd_intdiv_i64_loop(x, y, i, e, flags, mod, check, g, out);
+  }
+#undef RSIMD_INTDIV_I64_CASE
+}
+/* rsimd_intdiv_i64_loop, through rsimd_intdiv_i64_loop_any unless flags
+   is one of the forms inlined with constants. */
+RSIMD_ALWAYS_INLINE int rsimd_intdiv_i64_run(const void *x, const void *y, R_xlen_t i, R_xlen_t e,
+                                             const int flags, const int mod, const int check,
+                                             const rsimd_divmagic_i64 *g, int64_t *out) {
+  if (flags == 0 || flags == RSIMD_EW_SCALAR(1) || flags == RSIMD_EW_I32(1)) {
+    return rsimd_intdiv_i64_loop(x, y, i, e, flags, mod, check, g, out);
+  }
+  return rsimd_intdiv_i64_loop_any(x, y, i, e, flags, mod, check, g, out);
+}
+
+/* The divider for a scalar divisor y that has one (else NULL), in *g.
+   AArch64 divides faster than the divider runs (1e6 elements on the
+   Apple M-series: 660 us against 780 us), so its vector tiers divide;
+   the none tier uses the divider on every machine, and so tests it. */
+#if (defined(__aarch64__) || defined(_M_ARM64)) && !RSIMD_TIER_IS(none)
+#define RSIMD_I64_DIVMAGIC 0
+#else
+#define RSIMD_I64_DIVMAGIC 1
+#endif
+static inline const rsimd_divmagic_i64 *rsimd_intdiv_i64_magic(const void *y, int flags, int check,
+                                                               rsimd_divmagic_i64 *g) {
+  int64_t d;
+  if (!RSIMD_I64_DIVMAGIC || !(flags & RSIMD_EW_SCALAR(1))) return NULL;
+  d = rsimd_i64_get(y, flags, 1, 0, check);
+  if (!rsimd_divmagic_i64_ok(d)) return NULL;
+  *g = rsimd_divmagic_i64_make(d);
+  return g;
+}
+/* A scalar operand k read into *v (as int64, NA_integer_ becoming NA with
+   check); an int32 one is replaced by *v, so that it takes the loops for
+   int64 ones (the others stay, as the loops are faster reading them). */
+static inline const void *rsimd_intdiv_i64_scalar_arg(const void *p, int *flags, int k, int check,
+                                                      int64_t *v) {
+  if (!(*flags & RSIMD_EW_SCALAR(k))) return p;
+  *v = rsimd_i64_get(p, *flags, k, 0, check);
+  if (!(*flags & RSIMD_EW_I32(k))) return p;
+  *flags &= ~RSIMD_EW_I32(k);
+  return v;
+}
+/* The scalar kernel of %/% and %%: rsimd_intdiv_i64_loop over [0, n) with
+   constant arguments for the common cases. */
+static int rsimd_ew_intdiv_i64_scalar(const void *x, const void *y, R_xlen_t n, int flags, int mod,
+                                      int check, int64_t *out) {
+  int64_t x0 = 0, y0 = 0;
+  rsimd_divmagic_i64 gs;
+  const rsimd_divmagic_i64 *g;
+  x = rsimd_intdiv_i64_scalar_arg(x, &flags, 0, check, &x0);
+  y = rsimd_intdiv_i64_scalar_arg(y, &flags, 1, check, &y0);
+  g = rsimd_intdiv_i64_magic(y, flags, check, &gs);
+  if (g) {
+    if (flags == RSIMD_EW_SCALAR(1)) {
+      return rsimd_intdiv_i64_loop(x, y, 0, n, RSIMD_EW_SCALAR(1), mod, check, g, out);
+    }
+    return rsimd_intdiv_i64_loop_any(x, y, 0, n, flags, mod, check, g, out);
+  }
+  if (flags == RSIMD_EW_I32(1)) {
+    return rsimd_intdiv_i64_loop(x, y, 0, n, RSIMD_EW_I32(1), mod, check, NULL, out);
+  }
+  if (flags != 0) return rsimd_intdiv_i64_loop_any(x, y, 0, n, flags, mod, check, NULL, out);
+  if (mod) {
+    return check ? rsimd_intdiv_i64_loop(x, y, 0, n, 0, 1, 1, NULL, out)
+                 : rsimd_intdiv_i64_loop(x, y, 0, n, 0, 1, 0, NULL, out);
+  }
+  return check ? rsimd_intdiv_i64_loop(x, y, 0, n, 0, 0, 1, NULL, out)
+               : rsimd_intdiv_i64_loop(x, y, 0, n, 0, 0, 0, NULL, out);
 }
 
 /* pmin and pmax: NA if either operand is; the _num forms return the other
@@ -624,6 +823,9 @@ int RSIMD_KERNEL(ew2_i64)(int op, const void *x, const void *y, R_xlen_t n, int 
   const int check = rsimd_ew_i64_check(op, o);
   int st = 0;
   R_xlen_t i;
+  if (op == RSIMD_EW_IDIV || op == RSIMD_EW_MOD) {
+    return rsimd_ew_intdiv_i64_scalar(x, y, n, flags, op == RSIMD_EW_MOD, check, out);
+  }
   for (i = 0; i < n; i++) {
     out[i] = rsimd_ew2_i64_1(op, rsimd_i64_get(x, flags, 0, i, check),
                              rsimd_i64_get(y, flags, 1, i, check), check, &st);
@@ -1251,6 +1453,163 @@ int RSIMD_KERNEL(ew1_i64)(int op, const int64_t *x, R_xlen_t n, int64_t *out,
   return 0;
 }
 
+#if (RSIMD_TIER_IS(neon) && defined(SIMDE_ARM_NEON_A64V8_NATIVE)) || RSIMD_TIER_IS(sve) || \
+  RSIMD_TIER_IS(sve2)
+/* Doubles truncated to int64 lanes, saturating (NaN gives 0). */
+RSIMD_INLINE rsimd_vi64 rsimd_i64_cvtt_f64(rsimd_vf64 v) {
+#if RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)
+  return svcvt_s64_f64_x(RSIMD_PT64, v);
+#else
+  return simde__m128i_from_neon_i64(vcvtq_s64_f64(simde__m128d_to_neon_f64(v)));
+#endif
+}
+#define RSIMD_HAVE_I64_CVTT 1
+#endif
+
+#ifndef RSIMD_NO_F64_SIMD
+/* %/% and %% through double lanes. For |x|, |y| <= 2^51 (y != 0) the
+   rounded quotient x / y lies on the same side of every integer as the
+   exact one (which is at least 1/|y| from the integers it is not, a
+   relative 1/|x| > 2^-52, more than the rounding error), so its floor is
+   x %/% y, and x - floor * y is exact. Each block of
+   RSIMD_I64_DIV_BLOCK elements is computed so, then again with
+   rsimd_intdiv_i64_loop if it had an operand outside [-2^51, 2^51), NA
+   included, or a zero divisor. */
+#define RSIMD_I64_DIV_BLOCK 256
+/* int64 lanes in [-2^51, 2^51] to double, and integer doubles of that
+   range to int64 lanes: native where the tier converts (avx512 rounds,
+   which is exact for integers), else through the mantissa of 1.5 * 2^52. */
+RSIMD_ALWAYS_INLINE rsimd_vf64 rsimd_vi64_to_vf64_51(rsimd_vi64 a) {
+#if defined(RSIMD_HAVE_VI64_TO_VF64) || RSIMD_TIER_IS(avx512) || RSIMD_TIER_IS(sve) || \
+  RSIMD_TIER_IS(sve2)
+  return rsimd_vi64_to_vf64(a);
+#else
+  const rsimd_vi64 k = rsimd_vi64_set1(INT64_C(0x4338000000000000));
+  return rsimd_vf64_sub(rsimd_vi64_as_vf64(rsimd_vi64_add(a, k)), rsimd_vf64_set1(0x1.8p52));
+#endif
+}
+RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_vf64_to_vi64_51(rsimd_vf64 v) {
+#if defined(RSIMD_HAVE_I64_CVTT)
+  return rsimd_i64_cvtt_f64(v);
+#elif RSIMD_TIER_IS(avx512)
+  return simde_mm512_cvtpd_epi64(v);
+#else
+  return rsimd_vi64_sub(rsimd_vf64_as_vi64(rsimd_vf64_add(v, rsimd_vf64_set1(0x1.8p52))),
+                        rsimd_vi64_set1(INT64_C(0x4338000000000000)));
+#endif
+}
+/* x %/% y or x %% y of lanes in range (above), from their doubles. */
+RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_vf64_intdiv_i64(rsimd_vf64 a, rsimd_vf64 b, int mod) {
+  rsimd_vf64 q = rsimd_vf64_floor(rsimd_vf64_div(a, b));
+  if (mod) q = rsimd_vf64_sub(a, rsimd_vf64_mul(q, b));
+  return rsimd_vf64_to_vi64_51(q);
+}
+/* Elements [i, e) of the operands through double lanes into out (with
+   compute; else only tested). Returns 1 if the block has an operand
+   outside [-2^51, 2^51) (NA included, which is INT64_MIN) or a zero
+   divisor: the lanes of an OR of the operands biased by 2^51 that have a
+   bit at 2^52 or above. */
+RSIMD_ALWAYS_INLINE int rsimd_intdiv_i64_block(const void *x, const void *y, ptrdiff_t i, ptrdiff_t e,
+                                               const int flags, const int mod, const int check,
+                                               const int compute, rsimd_vi64 bc0, rsimd_vi64 bc1,
+                                               rsimd_vf64 bd, int64_t *out) {
+  const int ys = (flags & RSIMD_EW_SCALAR(1)) != 0;
+  const rsimd_vi64 bias = rsimd_vi64_set1(INT64_C(1) << 51), zero = rsimd_vi64_zero();
+  rsimd_vi64 acc = zero;
+  rsimd_mi64 dz = rsimd_mi64_none();
+  for (; i + RSIMD_LANES_64 <= e; i += RSIMD_LANES_64) {
+    rsimd_vi64 a = rsimd_i64_ld(x, flags, 0, bc0, i, check), b = bc1;
+    acc = rsimd_vi64_or(acc, rsimd_vi64_add(a, bias));
+    if (!ys) {
+      b = rsimd_i64_ld(y, flags, 1, bc1, i, check);
+      acc = rsimd_vi64_or(acc, rsimd_vi64_add(b, bias));
+      dz = rsimd_mi64_or(dz, rsimd_vi64_cmp_eq(b, zero));
+    }
+    if (compute) {
+      rsimd_vi64_storeu(out + i, rsimd_vf64_intdiv_i64(rsimd_vi64_to_vf64_51(a),
+                                                       ys ? bd : rsimd_vi64_to_vf64_51(b), mod));
+    }
+  }
+  if (i < e) {
+    rsimd_p64 pg = rsimd_p64_while(i, e);
+    rsimd_vi64 a = rsimd_i64_ld_p(x, flags, 0, bc0, i, pg, check), b = bc1;
+    acc = rsimd_vi64_or(acc, rsimd_vi64_add(a, bias));
+    if (!ys) {
+      b = rsimd_i64_ld_p(y, flags, 1, bc1, i, pg, check);
+      acc = rsimd_vi64_or(acc, rsimd_vi64_add(b, bias));
+      dz = rsimd_mi64_or(dz, rsimd_vi64_cmp_eq(b, zero));
+    }
+    if (compute) {
+      rsimd_vi64_storeu_p(pg, out + i, rsimd_vf64_intdiv_i64(rsimd_vi64_to_vf64_51(a),
+                                                             ys ? bd : rsimd_vi64_to_vf64_51(b), mod));
+    }
+  }
+  return rsimd_mi64_any(rsimd_vi64_cmp_gt(rsimd_vi64_srl(acc, 52), zero)) || rsimd_mi64_any(dz);
+}
+/* The kernel, inlined with constant flags, mod and check; with a scalar
+   y, the caller has checked that y is in range and not 0, and g is its
+   divider (or NULL) for the blocks done by rsimd_intdiv_i64_loop. After
+   such a block the next is tested before it is computed, so that data
+   mostly out of range is not computed twice. */
+RSIMD_ALWAYS_INLINE int rsimd_ew_intdiv_i64_(const void *x, const void *y, R_xlen_t n, const int flags,
+                                             const int mod, const int check,
+                                             const rsimd_divmagic_i64 *g, int64_t *out) {
+  const rsimd_vi64 bc0 = rsimd_i64_bcast(x, flags, 0, check), bc1 = rsimd_i64_bcast(y, flags, 1, check);
+  const rsimd_vf64 bd = rsimd_vi64_to_vf64_51(bc1);
+  int st = 0, scalar = 0;
+  ptrdiff_t i = 0;
+  for (; i < n && scalar < 8; i += RSIMD_I64_DIV_BLOCK) {
+    const ptrdiff_t e = n - i > RSIMD_I64_DIV_BLOCK ? i + RSIMD_I64_DIV_BLOCK : n;
+    if (scalar && !rsimd_intdiv_i64_block(x, y, i, e, flags, mod, check, 0, bc0, bc1, bd, out)) {
+      scalar = 0;
+    }
+    if (!scalar && !rsimd_intdiv_i64_block(x, y, i, e, flags, mod, check, 1, bc0, bc1, bd, out)) {
+      continue;
+    }
+    scalar++;
+    st |= rsimd_intdiv_i64_run(x, y, i, e, flags, mod, check, g, out);
+  }
+  if (i < n) st |= rsimd_intdiv_i64_run(x, y, i, n, flags, mod, check, g, out);
+  return st;
+}
+#endif
+
+/* %/% (mod = 0) or %% (mod = 1) of int64 operands. */
+static int rsimd_ew_intdiv_i64(const void *x, const void *y, R_xlen_t n, int flags, int mod,
+                               int check, int64_t *out) {
+#ifdef RSIMD_NO_F64_SIMD
+  return rsimd_ew_intdiv_i64_scalar(x, y, n, flags, mod, check, out);
+#else
+  int64_t x0 = 0, y0 = 0;
+  rsimd_divmagic_i64 gs;
+  const rsimd_divmagic_i64 *g;
+  x = rsimd_intdiv_i64_scalar_arg(x, &flags, 0, check, &x0);
+  y = rsimd_intdiv_i64_scalar_arg(y, &flags, 1, check, &y0);
+  g = rsimd_intdiv_i64_magic(y, flags, check, &gs);
+  if (flags & RSIMD_EW_SCALAR(1)) {
+    if (y0 == 0 || y0 < -(INT64_C(1) << 51) || y0 >= (INT64_C(1) << 51)) {
+      return rsimd_ew_intdiv_i64_scalar(x, y, n, flags, mod, check, out);
+    }
+  }
+  if (flags == 0) {
+    if (mod) {
+      return check ? rsimd_ew_intdiv_i64_(x, y, n, 0, 1, 1, NULL, out)
+                   : rsimd_ew_intdiv_i64_(x, y, n, 0, 1, 0, NULL, out);
+    }
+    return check ? rsimd_ew_intdiv_i64_(x, y, n, 0, 0, 1, NULL, out)
+                 : rsimd_ew_intdiv_i64_(x, y, n, 0, 0, 0, NULL, out);
+  }
+  if (flags == RSIMD_EW_SCALAR(1)) {
+    return mod ? rsimd_ew_intdiv_i64_(x, y, n, RSIMD_EW_SCALAR(1), 1, check, g, out)
+               : rsimd_ew_intdiv_i64_(x, y, n, RSIMD_EW_SCALAR(1), 0, check, g, out);
+  }
+  if (flags == RSIMD_EW_I32(1)) {
+    return rsimd_ew_intdiv_i64_(x, y, n, RSIMD_EW_I32(1), mod, check, g, out);
+  }
+  return rsimd_ew_intdiv_i64_(x, y, n, flags, mod, check, g, out);
+#endif
+}
+
 /* Checked add or sub of a and b into r, NA where an operand is NA (with
    check) or the result is out of range; overflow outside the NA lanes
    sets the status. */
@@ -1279,7 +1638,6 @@ int RSIMD_KERNEL(ew2_i64)(int op, const void *x, const void *y, R_xlen_t n, int 
   const rsimd_vi64 bc0 = rsimd_i64_bcast(x, flags, 0, check), bc1 = rsimd_i64_bcast(y, flags, 1, check),
                    bc2 = rsimd_vi64_zero();
   int st = 0;
-  R_xlen_t i;
   (void) z;
   switch (op) {
   case RSIMD_EW_ADD: RSIMD_I64_LOOP(2, RSIMD_I64_CHECKED(r, a, b, rsimd_vi64_add, rsimd_vi64_add_ovf)); break;
@@ -1307,13 +1665,7 @@ int RSIMD_KERNEL(ew2_i64)(int op, const void *x, const void *y, R_xlen_t n, int 
     });
     break;
   case RSIMD_EW_PMAX_NUM: RSIMD_I64_LOOP(2, r = rsimd_vi64_max(a, b)); break;
-  default:
-    /* %/% and %%: no tier divides 64-bit integers in vectors. */
-    for (i = 0; i < n; i++) {
-      out[i] = rsimd_ew2_i64_1(op, rsimd_i64_get(x, flags, 0, i, check),
-                               rsimd_i64_get(y, flags, 1, i, check), check, &st);
-    }
-    break;
+  default: st = rsimd_ew_intdiv_i64(x, y, n, flags, op == RSIMD_EW_MOD, check, out); break;
   }
   return st;
 }
@@ -1556,19 +1908,6 @@ void RSIMD_KERNEL(popcnt_sum_i64)(const int64_t *x, R_xlen_t n, rsimd_reduce_res
 }
 
 /* ---- Conversions --------------------------------------------------------------- */
-
-#if (RSIMD_TIER_IS(neon) && defined(SIMDE_ARM_NEON_A64V8_NATIVE)) || RSIMD_TIER_IS(sve) || \
-  RSIMD_TIER_IS(sve2)
-/* Doubles truncated to int64 lanes, saturating (NaN gives 0). */
-RSIMD_INLINE rsimd_vi64 rsimd_i64_cvtt_f64(rsimd_vf64 v) {
-#if RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)
-  return svcvt_s64_f64_x(RSIMD_PT64, v);
-#else
-  return simde__m128i_from_neon_i64(vcvtq_s64_f64(simde__m128d_to_neon_f64(v)));
-#endif
-}
-#define RSIMD_HAVE_I64_CVTT 1
-#endif
 
 RSIMD_INLINE int RSIMD_KERNEL(convert_i64_)(int op, int mode, const void *x, R_xlen_t n, void *out) {
   const int flags = 0, check = 1;

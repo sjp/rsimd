@@ -4441,6 +4441,70 @@ static void init_i64_inputs(void) {
   lsmall2[2] = INT64_C(2147483648);
 }
 
+/* %/% and %% of integer64 over many blocks of the kernel (the vector
+   tiers divide in double lanes those blocks whose operands are all within
+   +-2^51, and go on in scalar code after 8 blocks that are not), with
+   operands at the edges of that range, NA, zero divisors, and the scalar
+   divisors that take the multiply-by-constant divider. */
+#define NDIV (13 * 256 + 77)
+static void test_intdiv_i64(void) {
+  static int64_t dx[NDIV + 1], dy[NDIV + 1], dout[NDIV + 1], dref[NDIV + 1];
+  static int32_t dyi[NDIV + 1];
+  static const rsimd_opts oc = {0, 1, 0, RSIMD_EXT_BOTH}, onc = {0, 0, 0, RSIMD_EXT_BOTH};
+  const int64_t p51 = INT64_C(1) << 51;
+  const int64_t edges[] = {p51 - 1, -p51, -p51 + 1, p51, -p51 - 1, INT64_MAX, -INT64_MAX,
+                           INT64_MIN, 0, 1, -1, 7, -7};
+  const int64_t divisors[] = {3, -7, 1000, 1, -1, 2, -2, p51 - 1, -p51, p51, INT64_C(1) << 40,
+                              INT64_C(1) << 62, INT64_MAX, -INT64_MAX, INT64_C(6700417),
+                              -INT64_C(1000000007), 0, INT64_MIN};
+  const int ne = (int) (sizeof edges / sizeof edges[0]);
+  const int nd = (int) (sizeof divisors / sizeof divisors[0]);
+  char what[96];
+  int pat, op, c, f, k;
+  ptrdiff_t j;
+  for (pat = 0; pat < 5; pat++) {
+    /* 0: in range; 1: in range with edges, NA and zeros sprinkled; 2: 9
+       blocks out of range, then in range; 3: alternate blocks; 4: full
+       range. */
+    for (j = 0; j < NDIV; j++) {
+      const int64_t r = (int64_t) (next_rand() % (uint64_t) (2 * p51)) - p51;
+      const int64_t s = (int64_t) (next_rand() % 2000001) - 1000000;
+      const int big = pat == 4 || (pat == 2 && j < 9 * 256) || (pat == 3 && (j / 256) % 2 == 0);
+      dx[j] = big ? (int64_t) next_rand() : r;
+      dy[j] = big && j % 3 == 0 ? (int64_t) next_rand() : (s == 0 ? 5 : s);
+      if (j % 4 == 0) dy[j] = r == 0 ? 3 : r;
+      if (pat == 1 && j % 37 == 0) dx[j] = edges[(j / 37) % ne];
+      if (pat == 1 && j % 41 == 0) dy[j] = edges[(j / 41) % ne];
+      dyi[j] = (int32_t) (next_rand() % 2001) - 1000;
+      if (pat == 1 && j % 43 == 0) dyi[j] = j % 2 ? 0 : RSIMD_NA_I32;
+    }
+    for (op = RSIMD_EW_IDIV; op <= RSIMD_EW_MOD; op++) {
+      for (c = 0; c < 2; c++) {
+        for (f = 0; f < 4 + nd; f++) {
+          /* x and y; y int32; x int32 (dyi) by y; a scalar divisor. */
+          const int flags = f == 0 ? 0 : f == 1 ? RSIMD_EW_I32(1) : f == 2 ? RSIMD_EW_I32(0)
+                          : f == 3 ? RSIMD_EW_SCALAR(0) : RSIMD_EW_SCALAR(1);
+          const void *x = f == 2 ? (const void *) dyi : (const void *) dx;
+          const void *y = f == 1 ? (const void *) dyi : f >= 4 ? (const void *) &divisors[f - 4]
+                                                               : (const void *) dy;
+          int st, want = 0;
+          for (j = 0; j <= NDIV; j++) dout[j] = SENTINEL_I64;
+          st = RSIMD_KERNEL(ew2_i64)(op, x, y, NDIV, flags, dout, c ? &oc : &onc);
+          for (j = 0; j < NDIV; j++) {
+            dref[j] = rsimd_ew2_i64_1(op, rsimd_i64_get(x, flags, 0, j, c),
+                                      rsimd_i64_get(y, flags, 1, j, c), c, &want);
+          }
+          k = f >= 4 ? f - 4 : -1;
+          snprintf(what, sizeof what, "intdiv_i64 pattern %d op %d check %d flags %d divisor %d", pat,
+                   op, c, flags, k);
+          check_i64(what, NDIV, dout, dref);
+          check_int(what, NDIV, 0, st, want);
+        }
+      }
+    }
+  }
+}
+
 static void test_int64(ptrdiff_t n) {
   static const rsimd_opts oc = {0, 1, 0, RSIMD_EXT_BOTH}, onc = {0, 0, 0, RSIMD_EXT_BOTH}, orm = {1, 1, 0, RSIMD_EXT_BOTH};
   const rsimd_opts *opts[3] = {&onc, &oc, &orm};
@@ -5173,6 +5237,7 @@ int main(void) {
   test_zip();
 #endif
   test_int_horizontal();
+  test_intdiv_i64();
   test_intdiv_const();
 #ifndef RSIMD_NO_F64_SIMD
   test_math_extras();

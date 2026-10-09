@@ -160,7 +160,8 @@ missing values, predicates, any, all \tab native \tab native \tab native \tab na
 mul (checked) \tab partial \tab native \tab native \tab native \tab native \cr
 mul_wrap \tab partial \tab partial \tab native \tab partial \tab native \cr
 neg, abs, sign \tab native \tab native \tab native \tab native \tab native \cr
-idiv, mod, mul_add, add_mul \tab scalar \tab scalar \tab scalar \tab scalar \tab scalar \cr
+idiv, mod \tab partial \tab partial \tab native \tab native \tab native \cr
+mul_add, add_mul \tab scalar \tab scalar \tab scalar \tab scalar \tab scalar \cr
 cumsum, cummin, cummax \tab scalar \tab scalar \tab scalar \tab scalar \tab scalar \cr
 and, or, xor, not, shl, shr, rotl, rotr \tab native \tab native \tab native \tab native \tab native \cr
 sar \tab partial \tab partial \tab partial \tab partial \tab native \cr
@@ -177,7 +178,16 @@ scalar. Checked multiplication takes the vector path for each vector whose
 operands are all within \eqn{\pm 2^{31}} (and, on SVE, always); the
 elements of a vector with a larger operand are multiplied in scalar
 code, and after eight such vectors in a row the rest of the block being
-processed (up to \eqn{2^{20}} elements) is. \emph{SIMDe NA test}:
+processed (up to \eqn{2^{20}} elements) is. \code{simd_idiv} and
+\code{simd_mod} divide exactly in double lanes each run of 256 elements
+whose operands are all within \eqn{\pm 2^{51}}, none of them \code{NA} and
+no divisor 0; a run with another operand is divided in scalar code, and
+after eight such runs in a row the rest of the block being processed is.
+The scalar code divides by a single divisor (a length-one \code{y}) with a
+multiplication, except on 64-bit ARM, whose division instruction is
+faster; their \emph{partial} is the conversion between integer64 and
+double lanes, which \code{"sse2"} and \code{"avx2"} build from other
+instructions. \emph{SIMDe NA test}:
 the sum's own additions are native SSE2, and only the test for \code{NA}
 (skipped with \code{na_check = FALSE}) uses SIMDe's 64-bit compare.
 \emph{SIMDe overflow test}: the additions and subtractions are native,

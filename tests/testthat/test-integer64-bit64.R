@@ -106,6 +106,69 @@ test_that("elementwise arithmetic matches bit64", {
   }
 })
 
+# Operands for %/% and %%: blocks of the kernel (runs of 256) with all
+# operands within +-2^51 are divided in double lanes, others in scalar code,
+# and after eight of those in a row the rest is.
+intdiv_cases <- function(n, seed) {
+  p51 <- as.integer64(2)^51L
+  edges <- c(p51 - 1L, -p51, -p51 + 1L, p51, -p51 - 1L, lim.integer64(), as.integer64(c(0, 1, -1, 7, -7, NA)))
+  small <- rand_b64(n, seed = seed, bound = 2^51 - 1)
+  big <- rand_b64(n, seed = seed + 1, bound = 2^62)
+  run <- (seq_len(n) - 1) %/% 256
+  mix <- function(pick) {
+    x <- small
+    x[pick] <- big[pick]
+    x
+  }
+  edged <- small
+  edged[seq(1, n, by = 37)] <- rep_len(edges, length(seq(1, n, by = 37)))
+  list(
+    small = small, edged = edged, big = big, big_first = mix(run < 9), alternating = mix(run %% 2 == 0)
+  )
+}
+intdiv_divisors <- function() {
+  p51 <- as.integer64(2)^51L
+  c(
+    as.integer64(c(3, -7, 1000, 1, -1, 2, 6700417, -1000000007, 2^40, 0, NA)), p51 - 1L, -p51, p51,
+    as.integer64(2)^62L, lim.integer64()
+  )
+}
+
+test_that("%/% and %% match bit64 in and out of the double-lane range", {
+  n <- 13 * 256 + 77
+  y <- rand_b64(n, seed = 32, bound = 1e6)
+  y[seq(5, n, by = 101)] <- as.integer64(0)
+  yi <- as.integer(y)
+  ops <- list(list(`%/%`, simd_idiv), list(`%%`, simd_mod))
+  for (x in intdiv_cases(n, seed = 30)) {
+    for (op in ops) {
+      expect_like_bit64(op[[1L]], op[[2L]], x, y)
+      expect_like_bit64(op[[1L]], op[[2L]], x, yi)
+      expect_like_bit64(op[[1L]], op[[2L]], y, x)
+      expect_like_bit64(op[[1L]], op[[2L]], x[1L], y)
+      expect_like_bit64(op[[1L]], op[[2L]], x, -1000L)
+      for (d in as.list(intdiv_divisors())) expect_like_bit64(op[[1L]], op[[2L]], x, d)
+    }
+  }
+})
+
+test_that("%/% and %% match bit64 on long random input (extended)", {
+  skip_unless_extended()
+  n <- 2^20 + 1000
+  ops <- list(list(`%/%`, simd_idiv), list(`%%`, simd_mod))
+  for (seed in 1:3) {
+    y <- rand_b64(n, seed = 40 + seed, bound = 2^(10 * seed))
+    y[y == 0] <- as.integer64(-3)
+    for (x in intdiv_cases(n, seed = 50 + seed)) {
+      for (op in ops) {
+        expect_like_bit64(op[[1L]], op[[2L]], x, y)
+        d <- with_seed(seed, rand_b64(20, seed = 60 + seed, na_frac = 0, bound = 2^(20 * seed)))
+        for (k in seq_along(d)) expect_like_bit64(op[[1L]], op[[2L]], x, d[k])
+      }
+    }
+  }
+})
+
 test_that("comparisons and predicates match bit64", {
   x <- rand_b64(500, seed = 20, bound = 50)
   y <- rand_b64(500, seed = 21, bound = 50)
