@@ -42,11 +42,12 @@ Elsewhere \code{simd_sinpi()} and \code{simd_cospi()} are within 0.5 ULP of
 the exact value (SLEEF's \code{_u05} variants, specified to 0.506 ULP, so
 not always correctly rounded) and \code{simd_tanpi()},
 their ratio, within about 2 ULP. The \code{"none"} implementation reduces
-the same way and then calls the C library's \code{sin()}, \code{cos()} and
-\code{tan()} on a small argument, within about 1 ULP. Base R calls the
-platform's \code{sinpi()} and \code{cospi()} where there are any (and its
-own, less accurate code elsewhere), and computes \code{tanpi(x)} as
-\code{tan(pi * x)} after the reduction, which loses accuracy near the
+the same way and then evaluates its own polynomials for \code{sinpi} and
+\code{cospi}, and calls the C library's \code{tan()} on a small argument for
+\code{tanpi}, within about 1 ULP. Base R calls the platform's
+\code{sinpi()} and \code{cospi()} where there are any (glibc's are up to 2
+ULP off) and its own, less accurate code elsewhere, and computes
+\code{tanpi(x)} as \code{tan(pi * x)} after the reduction, which loses accuracy near the
 poles at the half-integers; results may therefore differ from base R's by
 more than 1 ULP there.
 

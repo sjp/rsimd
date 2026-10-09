@@ -10,10 +10,11 @@
  * except for pow, since base R's ^ never warns.
  *
  * The none tier calls libm, as base R does, except for sinpi, cospi and
- * tanpi, which reduce the argument exactly and then call libm's sin and
- * cos on |t| <= 1/4 or tan on |t| < 1/2 (base R uses the platform's sinpi when there is one and
- * a less accurate fallback otherwise), and exp2 and exp10, which are base
- * R's 2^x and 10^x. It is the reference the SIMD tiers are tested
+ * tanpi, which reduce the argument exactly and then evaluate their own
+ * polynomials on |t| <= 1/4 (sinpi and cospi) or call libm's tan on |t| <
+ * 1/2 (base R uses the platform's sinpi when there is one, glibc's being
+ * up to 2 ULP off, and a less accurate fallback otherwise), and exp2 and
+ * exp10, which are base R's 2^x and 10^x. It is the reference the SIMD tiers are tested
  * against. The SIMD tiers call SLEEF (the RSIMD_SLEEF_* wrappers of
  * common.inc.h) with the same reductions and special cases, and recompute
  * with libm the rare lanes outside the range where SLEEF is accurate:
@@ -128,16 +129,29 @@ static inline double rsimd_math2_na_f64(double r, double x, double y) {
   return r;
 }
 
-/* sin(pi t) and cos(pi t) for |t| <= 1/4, with pi t as the double-double
-   hi + lo, so that libm's sin and cos and the final addition are the only
-   rounding errors. */
-static inline double rsimd_sinpi_small(double t) {
+/* sin(pi t) when k is even and cos(pi t) when k is odd, negated when k & 2
+   is set, for |t| <= 1/4: sin(pi (t + k/2)). With pi t as the double-double
+   hi + lo, sin is hi + (lo + hi^3 P(hi^2)) and cos is 1 - hi^2/2 (with its
+   rounding error carried, as fdlibm's __kernel_cos) + hi^4 Q(hi^2) - hi lo,
+   from their Taylor series to the 17th and 16th power (the next terms are
+   below 1e-18). Both are computed and one is picked with bit operations,
+   so that the kernel has no branch on the data: with one, the quarter that
+   t falls in was mispredicted for random arguments, which cost as much as
+   the rest. Within 0.98 ULP, measured against sinl and cosl in quad
+   precision. */
+static inline double rsimd_sincospi_quarter(double t, unsigned k) {
   double hi = RSIMD_MATH_PI * t, lo = rsimd_fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
-  return sin(hi) + cos(hi) * lo;
-}
-static inline double rsimd_cospi_small(double t) {
-  double hi = RSIMD_MATH_PI * t, lo = rsimd_fma(RSIMD_MATH_PI, t, -hi) + RSIMD_MATH_PI_LO * t;
-  return cos(hi) - sin(hi) * lo;
+  double z = hi * hi, hz = 0.5 * z, w = 1.0 - hz;
+  double sp = -1.0 / 6 + z * (1.0 / 120 + z * (-1.0 / 5040 + z * (1.0 / 362880 + z * (-1.0 / 39916800 + z * (1.0 / 6227020800.0 + z * (-1.0 / 1307674368000.0 + z * (1.0 / 355687428096000.0)))))));
+  double cq = 1.0 / 24 + z * (-1.0 / 720 + z * (1.0 / 40320 + z * (-1.0 / 3628800 + z * (1.0 / 479001600.0 + z * (-1.0 / 87178291200.0 + z * (1.0 / 20922789888000.0))))));
+  double s = hi + (lo + hi * z * sp);
+  double c = w + (((1.0 - w) - hz) + (z * z * cq - hi * lo));
+  uint64_t bs, bc, m = -(uint64_t) (k & 1u);
+  memcpy(&bs, &s, sizeof bs);
+  memcpy(&bc, &c, sizeof bc);
+  bs = ((bc & m) | (bs & ~m)) ^ ((uint64_t) (k & 2u) << 62);
+  memcpy(&s, &bs, sizeof s);
+  return s;
 }
 
 /* tan(pi t) for 0 < t < 1/2: tan(hi + lo) = (th + lo) / (1 - th lo) with
@@ -152,45 +166,34 @@ static inline double rsimd_tanpi_small(double t) {
   return th + (1.0 + th * th) * lo / (1.0 - th * lo);
 }
 
-/* sin(pi x): x reduced exactly modulo 2 into (-1, 1] as base R does, exact
-   at the integers (a zero with the sign of x) and half-integers. */
+/* sin(pi x): x reduced exactly modulo 2 into (-2, 2) as r = x - 2 trunc(x /
+   2), then r = t + q/2 with q = rint(2 r) and |t| <= 1/4, both exact. Exact
+   at the integers (t = 0, q even: a zero with the sign of x, as base R's
+   when it calls the platform's sinpi) and half-integers (t = 0, q odd: cos
+   of 0, so 1 or -1). */
 static inline double rsimd_sinpi_f64(double x) {
-  double r, a, s;
-  if (isnan(x)) return x;
-  if (isinf(x)) return NAN;
-  r = fmod(x, 2.0);
-  if (r <= -1.0) {
-    r += 2.0;
-  } else if (r > 1.0) {
-    r -= 2.0;
-  }
-  if (r == 0.0 || r == 1.0) return copysign(0.0, x);
-  a = fabs(r);
-  if (a == 0.5) {
-    s = 1.0;
-  } else {
-    if (a > 0.5) a = 1.0 - a;
-    s = a <= 0.25 ? rsimd_sinpi_small(a) : rsimd_cospi_small(0.5 - a);
-  }
-  return r < 0 ? -s : s;
+  double r, q, t;
+  unsigned k;
+  if (!(fabs(x) < INFINITY)) return isnan(x) ? x : NAN;
+  r = x - 2.0 * trunc(x * 0.5);
+  q = rint(2.0 * r);
+  t = r - 0.5 * q;
+  k = (unsigned) (int) q;
+  return t == 0.0 && !(k & 1u) ? copysign(0.0, x) : rsimd_sincospi_quarter(t, k);
 }
 
-/* cos(pi x): |x| reduced exactly modulo 2, exact at the integers and
-   half-integers (+0 there). */
+/* cos(pi x) = sin(pi (|x| + 1/2)): |x| reduced as in rsimd_sinpi_f64, with
+   k one more. Exact at the integers and half-integers (+0 there). */
 static inline double rsimd_cospi_f64(double x) {
-  double a, c;
-  int neg;
-  if (isnan(x)) return x;
-  if (isinf(x)) return NAN;
-  a = fmod(fabs(x), 2.0);
-  if (a > 1.0) a = 2.0 - a;
-  if (a == 0.5) return 0.0;
-  if (a == 0.0) return 1.0;
-  if (a == 1.0) return -1.0;
-  neg = a > 0.5;
-  if (neg) a = 1.0 - a;
-  c = a <= 0.25 ? rsimd_cospi_small(a) : rsimd_sinpi_small(0.5 - a);
-  return neg ? -c : c;
+  double r, q, t;
+  unsigned k;
+  if (!(fabs(x) < INFINITY)) return isnan(x) ? x : NAN;
+  r = fabs(x);
+  r = r - 2.0 * trunc(r * 0.5);
+  q = rint(2.0 * r);
+  t = r - 0.5 * q;
+  k = (unsigned) (int) q + 1u;
+  return t == 0.0 && !(k & 1u) ? 0.0 : rsimd_sincospi_quarter(t, k);
 }
 
 /* tan(pi x) as base R's tanpi: x reduced exactly modulo 1 into

@@ -114,6 +114,21 @@ test_that("tanpi keeps its accuracy next to the poles at the half-integers", {
   }
 })
 
+test_that("none's sinpi and cospi are within 1 ULP of SLEEF's 0.5-ULP ones", {
+  # The none tier's own polynomials are within 0.98 ULP of the exact value
+  # (measured in quad precision), so within 1 ULP of the SIMD tiers' SLEEF
+  # results, tighter than the 2 ULP of the general check: across each
+  # quarter, next to the integers and half-integers, and tiny arguments.
+  k <- math_random(2000, -40, 40, seed = 59L)
+  x <- c(
+    math_random(4000, -1e3, 1e3), math_random(2000, -1, 1),
+    round(k) + 2^-(1:40), round(k) - 2^-(1:40), round(k) / 2 + k * 1e-12,
+    math_random(1000, -320, -1, TRUE)
+  )
+  fs <- list(sinpi = simd_sinpi, cospi = simd_cospi)
+  for (name in names(fs)) expect_tiers_close(fs[[name]], x, ulps = 1, label = name, x = x)
+})
+
 test_that("binary functions match none and base R", {
   x <- c(math_specials(), math_random(1500, -300, 300, TRUE))
   y <- c(rev(math_specials()), math_random(1500, -300, 300, TRUE, seed = 7L))

@@ -58,8 +58,9 @@ The exact functions of \link{simd_ilogb}, \code{\link{simd_rootn}},
 \code{\link{simd_rsqrt}} and the approximations of
 \link{simd_recip_approx} do not depend on the mode.
 
-The \code{"none"} implementation always uses the C math library, so the
-mode makes no difference to it, and neither does it to an implementation
+The \code{"none"} implementation always uses the C math library (and its
+own code for \code{sinpi} and \code{cospi}), so the mode makes no
+difference to it, and neither does it to an implementation
 built without SLEEF (see \code{\link{simd_available}}). The mode applies to
 every call, whichever implementation a \code{\link{simd_vec}} is pinned to.
 

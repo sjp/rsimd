@@ -461,7 +461,9 @@ $709 < |x| < 710.48$, where SLEEF's are less accurate, and are within about 2 UL
 there, as base R's are with glibc. The C library
 that base R uses is usually also within 1 ULP, but not always the same
 ULP, so results can differ from base R and between tiers in the last bit.
-The \code{"none"} tier calls the C library, as base R does.
+The \code{"none"} tier calls the C library, as base R does, except for
+\code{simd\_sinpi()} and \code{simd\_cospi()}, which evaluate their own
+polynomials (within 1 ULP; glibc's \code{sinpi} is up to 2 ULP off).
 \code{simd\_exp2m1()}, \code{simd\_exp10m1()}, \code{simd\_log2p1()} and
 \code{simd\_log10p1()}, which neither SLEEF nor C99 has, are computed from
 \code{expm1} and \code{log1p} (SLEEF's, or the C library's on
