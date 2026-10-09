@@ -55,6 +55,14 @@ test_that("shifts by every count match bitwShiftL, bitwShiftR and floor division
   expect_identical(simd_sar(-8L, 1L), -4L)
   expect_identical(simd_shl(1L, 2.7), 4L)
   expect_identical(simd_shl(TRUE, 3L), 8L)
+  # Counts on and off the fast path for plain numbers in range.
+  expect_identical(simd_shl(1L, 30.9), bitwShiftL(1L, 30L))
+  expect_identical(simd_shl(1L, 31.5), NA_integer_)
+  expect_identical(simd_shl(1L, -0.5), 1L)
+  expect_identical(simd_shl(1L, c(k = 2L)), 4L)
+  expect_identical(simd_shl(as.raw(1), 8), as.raw(0))
+  expect_identical(simd_shr(as.raw(0x80), 7.9), as.raw(1))
+  expect_error(simd_shl(1L, factor("a")), "'n' must be a single number", fixed = TRUE)
 })
 
 test_that("rotates by every count match the reference, modulo 32", {
@@ -67,6 +75,11 @@ test_that("rotates by every count match the reference, modulo 32", {
   expect_identical(simd_rotl(x, -1), simd_rotr(x, 1))
   expect_identical(simd_rotl(1L, 31L), NA_integer_)
   expect_error(simd_rotl(1L, NA), "'n' must be a finite number", fixed = TRUE)
+  expect_identical(simd_rotl(x, 31.9), simd_rotl(x, 31L))
+  expect_identical(simd_rotl(x, -0.5), x)
+  expect_identical(simd_rotl(as.raw(0x81), 7.5), as.raw(0xc0))
+  expect_identical(simd_rotl(as.raw(0x81), 9), as.raw(0x03))
+  expect_error(simd_rotl(1L, Inf), "'n' must be a finite number", fixed = TRUE)
 })
 
 test_that("bit counts match the references on random and boundary integers", {

@@ -39,9 +39,6 @@ simd_not <- function(x) {
   invisible()
 }
 
-# TRUE for a bit-op operand that needs .bit_check().
-.bit_odd <- function(x) is.object(x) || is.double(x) || is.complex(x)
-
 # n as a single number truncated toward zero, or an error.
 .count_arg <- function(n) {
   if (!(is.numeric(n) || is.logical(n)) || length(n) != 1L || inherits(n, "integer64")) {
@@ -54,6 +51,11 @@ simd_not <- function(x) {
 # in bitwShiftL()) unless it is in 0..31 (0..63 for integer64); for raw it
 # must be in 0..8.
 .shift_count <- function(n, x) {
+  # A plain number in 0..8 (0..31 unless x is raw) is a valid count.
+  if (!is.object(n) && (is.integer(n) || is.double(n)) && length(n) == 1L && !is.na(n) &&
+    n >= 0 && n < (if (is.raw(x)) 9 else 32)) {
+    return(as.integer(n))
+  }
   n <- .count_arg(n)
   if (is.raw(x)) {
     if (is.na(n) || n < 0 || n > 8) {
@@ -68,6 +70,11 @@ simd_not <- function(x) {
 # The count of a rotate of x, modulo the width (32, 64 for integer64 or 8
 # for raw); a negative count rotates the other way.
 .rotate_count <- function(n, x) {
+  # A plain number in 0..7 (0..31 unless x is raw) is its own count.
+  if (!is.object(n) && (is.integer(n) || is.double(n)) && length(n) == 1L && !is.na(n) &&
+    n >= 0 && n < (if (is.raw(x)) 8 else 32)) {
+    return(as.integer(n))
+  }
   n <- .count_arg(n)
   if (!is.finite(n)) .stop("'n' must be a finite number")
   w <- if (is.raw(x)) 8 else if (inherits(x, "integer64")) 64 else 32
@@ -75,68 +82,79 @@ simd_not <- function(x) {
 }
 
 simd_bit_and <- function(x, y, na_check = NULL) {
-  if (.bit_odd(x) || .bit_odd(y)) .bit_check("simd_bit_and", x, y)
+  if (is.object(x) || is.object(y) || is.double(x) || is.double(y) || is.complex(x) ||
+    is.complex(y)) {
+    .bit_check("simd_bit_and", x, y)
+  }
   .Call(C_simd_bit, x, y, "and", NULL, na_check)
 }
 
 simd_bit_or <- function(x, y, na_check = NULL) {
-  if (.bit_odd(x) || .bit_odd(y)) .bit_check("simd_bit_or", x, y)
+  if (is.object(x) || is.object(y) || is.double(x) || is.double(y) || is.complex(x) ||
+    is.complex(y)) {
+    .bit_check("simd_bit_or", x, y)
+  }
   .Call(C_simd_bit, x, y, "or", NULL, na_check)
 }
 
 simd_bit_xor <- function(x, y, na_check = NULL) {
-  if (.bit_odd(x) || .bit_odd(y)) .bit_check("simd_bit_xor", x, y)
+  if (is.object(x) || is.object(y) || is.double(x) || is.double(y) || is.complex(x) ||
+    is.complex(y)) {
+    .bit_check("simd_bit_xor", x, y)
+  }
   .Call(C_simd_bit, x, y, "xor", NULL, na_check)
 }
 
 simd_bit_not <- function(x, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_bit_not", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_bit_not", x)
   .Call(C_simd_bit, x, NULL, "not", NULL, na_check)
 }
 
 simd_shl <- function(x, n, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_shl", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_shl", x)
   .Call(C_simd_bit, x, NULL, "shl", .shift_count(n, x), na_check)
 }
 
 simd_shr <- function(x, n, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_shr", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_shr", x)
   .Call(C_simd_bit, x, NULL, "shr", .shift_count(n, x), na_check)
 }
 
 simd_sar <- function(x, n, na_check = NULL) {
-  if (.bit_odd(x) || is.raw(x)) .bit_check("simd_sar", x, raw = FALSE)
+  if (is.object(x) || is.double(x) || is.complex(x) || is.raw(x)) {
+    .bit_check("simd_sar", x, raw = FALSE)
+  }
   .Call(C_simd_bit, x, NULL, "sar", .shift_count(n, x), na_check)
 }
 
 simd_rotl <- function(x, n, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_rotl", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_rotl", x)
   .Call(C_simd_bit, x, NULL, "rotl", .rotate_count(n, x), na_check)
 }
 
 simd_rotr <- function(x, n, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_rotr", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_rotr", x)
   .Call(C_simd_bit, x, NULL, "rotr", .rotate_count(n, x), na_check)
 }
 
 simd_popcount <- function(x, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_popcount", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_popcount", x)
   .Call(C_simd_bit, x, NULL, "popcount", NULL, na_check)
 }
 
 simd_lzcnt <- function(x, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_lzcnt", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_lzcnt", x)
   .Call(C_simd_bit, x, NULL, "lzcnt", NULL, na_check)
 }
 
 simd_tzcnt <- function(x, na_check = NULL) {
-  if (.bit_odd(x)) .bit_check("simd_tzcnt", x)
+  if (is.object(x) || is.double(x) || is.complex(x)) .bit_check("simd_tzcnt", x)
   .Call(C_simd_bit, x, NULL, "tzcnt", NULL, na_check)
 }
 
 simd_popcount_total <- function(x, ..., na.rm = FALSE, na_check = NULL) {
   if (...length()) .dots_error("simd_popcount_total")
-  if (.bit_odd(x)) {
+  if (is.object(x) || is.double(x) || is.complex(x)) {
     .check_supported(x, "simd_popcount_total", c("complex", "double"), character(0))
   }
   .Call(C_simd_popcount_total, x, na.rm, na_check)

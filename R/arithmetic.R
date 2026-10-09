@@ -1,10 +1,12 @@
 # Elementwise arithmetic. Each function calls one of four entry points with
 # the op's name, and the C side applies the broadcast rule, picks the kernel
-# and warns. Operands with a class, complex operands and, for the _wrap ops,
-# double operands first go through .ew_args(), which checks the types the
-# C side cannot name the function for and converts integer64 operands
-# mixed with doubles to double, with a warning. Each function makes its own
-# .Call(), so that warnings and errors from the C side name the user's call.
+# and warns. Operands with a class, complex operands (for simd_add, _sub,
+# _mul and _div only beside a non-complex one: the C side takes two complex
+# operands) and, for the _wrap ops, double operands first go through
+# .ew_args(), which checks the types the C side cannot name the function
+# for and converts integer64 operands mixed with doubles to double, with a
+# warning. Each function makes its own .Call(), so that warnings and errors
+# from the C side name the user's call.
 
 # Functions that take complex operands. A double, integer or logical
 # operand of a binary one is converted to complex when the other operand
@@ -105,7 +107,7 @@
 }
 
 simd_add <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
+  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
     p <- .ew_args("simd_add", list(x = x, y = y))
     x <- p[[1L]]
     y <- p[[2L]]
@@ -114,7 +116,7 @@ simd_add <- function(x, y, na_check = NULL) {
 }
 
 simd_sub <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
+  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
     p <- .ew_args("simd_sub", list(x = x, y = y))
     x <- p[[1L]]
     y <- p[[2L]]
@@ -123,7 +125,7 @@ simd_sub <- function(x, y, na_check = NULL) {
 }
 
 simd_mul <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
+  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
     p <- .ew_args("simd_mul", list(x = x, y = y))
     x <- p[[1L]]
     y <- p[[2L]]
@@ -132,7 +134,7 @@ simd_mul <- function(x, y, na_check = NULL) {
 }
 
 simd_div <- function(x, y, na_check = NULL) {
-  if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
+  if (is.object(x) || is.object(y) || is.complex(x) != is.complex(y)) {
     p <- .ew_args("simd_div", list(x = x, y = y))
     x <- p[[1L]]
     y <- p[[2L]]
@@ -297,7 +299,11 @@ simd_lerp <- function(x, y, t, na_check = NULL) {
 # pmin, pmax and clamp have no NA check to skip: na_check is TRUE.
 simd_pmin <- function(x, y, ..., na.rm = FALSE) {
   if (...length()) .dots_error("simd_pmin", "two vectors; nest calls for more", named = "na.rm")
-  op <- if (.arg_flag(na.rm, "na.rm")) "pmin_num" else "pmin"
+  # .arg_flag() inline: a closure call costs as much as the rest.
+  if (!is.logical(na.rm) || length(na.rm) != 1L || is.na(na.rm)) {
+    .stop("'na.rm' must be TRUE or FALSE")
+  }
+  op <- if (na.rm) "pmin_num" else "pmin"
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
     p <- .ew_args("simd_pmin", list(x = x, y = y))
     x <- p[[1L]]
@@ -308,7 +314,11 @@ simd_pmin <- function(x, y, ..., na.rm = FALSE) {
 
 simd_pmax <- function(x, y, ..., na.rm = FALSE) {
   if (...length()) .dots_error("simd_pmax", "two vectors; nest calls for more", named = "na.rm")
-  op <- if (.arg_flag(na.rm, "na.rm")) "pmax_num" else "pmax"
+  # .arg_flag() inline: a closure call costs as much as the rest.
+  if (!is.logical(na.rm) || length(na.rm) != 1L || is.na(na.rm)) {
+    .stop("'na.rm' must be TRUE or FALSE")
+  }
+  op <- if (na.rm) "pmax_num" else "pmax"
   if (is.object(x) || is.object(y) || is.complex(x) || is.complex(y)) {
     p <- .ew_args("simd_pmax", list(x = x, y = y))
     x <- p[[1L]]

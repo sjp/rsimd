@@ -90,6 +90,10 @@ test_that("clamp errors when lo > hi anywhere", {
 
 test_that("bad arguments are rejected", {
   expect_error(simd_pmin(1, 2, na.rm = NA), "'na.rm' must be TRUE or FALSE")
+  expect_error(simd_pmax(1, 2, na.rm = "yes"), "'na.rm' must be TRUE or FALSE", fixed = TRUE)
+  expect_error(simd_pmin(1, 2, na.rm = c(TRUE, TRUE)), "'na.rm' must be TRUE or FALSE",
+    fixed = TRUE
+  )
   expect_error(simd_pmax(1:3, 1:2), "lengths of 'x' (3) and 'y' (2)", fixed = TRUE)
   expect_error(simd_clamp(1:3, 1:2, 3), "'lo' (2)", fixed = TRUE)
   expect_error(simd_pmax(as.raw(1), as.raw(2)), "non-numeric argument to binary operator")
