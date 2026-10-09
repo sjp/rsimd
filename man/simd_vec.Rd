@@ -241,7 +241,12 @@ plain data, and \code{table()}, \code{matrix()}, \code{outer()} and
 leaves a \code{simd_vec}.
 \code{c()} combines with base R's type promotion, except that
 \code{integer64} absorbs the other parts, as in \pkg{bit64}, and the
-parts' pins must agree. \code{length(x) <- n} pads with \code{NA}.
+parts' pins must agree. \code{c()} uses the \code{simd_vec} method only
+when its first argument is a \code{simd_vec}; \code{c(5, x)} returns a
+plain vector, and \code{c(1L, x)} for \code{integer64} data gives
+\pkg{bit64}'s garbage, as for any \code{integer64} (put the
+\code{simd_vec} first, or use \code{c(simd_vec(5), x)}).
+\code{length(x) <- n} pads with \code{NA}.
 \code{rev()}, \code{sort()}, \code{head()} and \code{tail()} work through
 \code{[} and so keep the class; \code{rep()} and \code{unique()} return
 plain vectors.

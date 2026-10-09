@@ -218,6 +218,8 @@ a > 5
 
 Values are wrapped again, while reductions, comparisons and predicates
 return plain values. \code{as.vector()} or \code{as.double()} unwraps.
+\code{c()} keeps the class only when a \code{simd\_vec} comes first:
+\code{c(a, 5)} is a \code{simd\_vec}, \code{c(5, a)} a plain vector.
 
 A \code{simd\_vec} can be \emph{pinned} to one implementation. It then runs
 there whatever the global selection is, and results keep the pin; this is

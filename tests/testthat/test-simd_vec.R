@@ -721,6 +721,13 @@ test_that("c() is TRUE only when every part is known NA-free", {
   expect_error(c(simd_vec(1), list(2)), "'x' must be an atomic vector")
 })
 
+test_that("c() uses the simd_vec method only when a simd_vec comes first", {
+  v <- simd_vec(c(1.5, NA, 3))
+  expect_sv(c(v, 5), c(1.5, NA, 3, 5))
+  expect_identical(c(5, v), c(5, 1.5, NA, 3))
+  expect_sv(c(simd_vec(5), v), c(5, 1.5, NA, 3))
+})
+
 test_that("assignment and length<- keep the class and pin", {
   x <- simd_vec(c(1, 2, 3), impl = "none", check_na = TRUE)
   x[2] <- 10
