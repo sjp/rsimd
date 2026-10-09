@@ -20,7 +20,8 @@ simd_im <- function(z) {
 }
 
 # Arg of complex z; double, integer and logical x are complex with a zero
-# imaginary part, as in base R.
+# imaginary part, as in base R. Adding 0 turns a real -0 into 0, so Arg(-0)
+# is 0 as base R gives for a real x >= 0, not atan2(0, -0) = pi.
 simd_arg <- function(z) {
   .check_supported(z, "simd_arg", "integer64", character(), "z")
   if (!is.complex(z)) {
@@ -28,7 +29,7 @@ simd_arg <- function(z) {
       .check_data(z, "z")
       .stop("simd_arg() does not support 'z' of type ", typeof(z))
     }
-    z <- .sv_like(as.complex(z), z)
+    z <- .sv_like(as.complex(z) + 0, z)
   }
   .Call(C_simd_cmath, z, "arg", NULL)
 }

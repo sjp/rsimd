@@ -31,7 +31,11 @@ every other double; missing parts are returned as they are, so
 For double, integer and logical \code{z}, \code{simd_conj()} and
 \code{simd_re()} return \code{z} as a double vector and \code{simd_im()}
 returns zeros, as base R does; \code{simd_arg()} treats them as complex
-numbers with a zero imaginary part, so it is \code{0} or \code{pi}.
+numbers with a zero imaginary part, so it is \code{0} for \code{z >= 0}
+(including \code{-0}) and \code{pi} for \code{z < 0}, as base R gives.
+Complex \code{z} keeps the sign of a zero real part:
+\code{simd_arg(complex(real = -0, imaginary = 0))} is \code{pi}, as for
+\code{Arg()}.
 
 \code{simd_arg(z)} is \code{atan2(Im(z), Re(z))}, as base R's
 \code{Arg()} computes it with the C library's \code{carg()}. The

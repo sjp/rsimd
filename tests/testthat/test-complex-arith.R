@@ -335,6 +335,19 @@ test_that("abs (Mod) and Arg match base R", {
   expect_identical(simd_arg(c(-1L, 1L)), Arg(c(-1L, 1L)))
   expect_identical(simd_arg(c(TRUE, NA)), Arg(c(TRUE, NA)))
   expect_identical(simd_arg(complex(0)), double(0))
+  # A real -0 is 0 as for base R's Arg(), but a complex -0 real part keeps
+  # its sign, so atan2(0, -0) is pi as in base R.
+  x <- c(-0, 0, -1, 1, NA, NaN, -Inf, Inf)
+  zm <- complex(real = -0, imaginary = c(0, -0))
+  for (tier in c("none", tiers_to_test())) {
+    simd_with_impl(tier, {
+      expect_identical(simd_arg(x), Arg(x), info = tier)
+      expect_identical(1 / simd_arg(c(-0, 0)), c(Inf, Inf), info = tier)
+      expect_identical(simd_arg(zm), Arg(zm), info = tier)
+    })
+  }
+  expect_identical(simd_arg(zm), c(pi, -pi))
+  expect_identical(unclass(simd_arg(simd_vec(x))), Arg(x))
   expect_error(simd_arg("a"), "'z' must be an atomic vector", fixed = TRUE)
   expect_error(simd_arg(as.raw(1)), "simd_arg() does not support 'z' of type raw", fixed = TRUE)
   expect_error(simd_arg(structure(0, class = "integer64")),
