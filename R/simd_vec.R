@@ -382,6 +382,12 @@ mean.simd_vec <- function(x, trim = 0, na.rm = FALSE, ...) {
   simd_mean(x, na.rm = na.rm)
 }
 
+# Registered for stats' generic (NAMESPACE). median.default sorts with [,
+# which keeps the class, so it would return a length-one simd_vec.
+median.simd_vec <- function(x, na.rm = FALSE, ...) {
+  .sv_fallback(function(x) stats::median(x, na.rm = na.rm, ...), list(x), wrap = FALSE)
+}
+
 is.na.simd_vec <- function(x) simd_is_na(x)
 
 # The data, for order() and so sort(): xtfrm.default would unclass(x),

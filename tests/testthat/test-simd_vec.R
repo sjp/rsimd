@@ -1133,6 +1133,14 @@ test_that("setting names, dimensions or dimnames unwraps", {
   v <- c(3, 1, 2, 5)
   expect_identical(quantile(simd_vec(v)), quantile(v))
   expect_identical(summary(simd_vec(v)), summary(v))
+  expect_identical(median(simd_vec(v)), median(v))
+  expect_identical(median(simd_vec(c(v, NA)), na.rm = TRUE), median(v))
+  expect_identical(median(simd_vec(c(v, NA))), NA_real_)
+  expect_identical(median(simd_vec(1:5)), 3L)
+  if (has_bit64()) {
+    w <- simd_as_integer64(c(3, 1, 2, 5))
+    expect_identical(median(simd_vec(w)), median(w))
+  }
   expect_identical(stats::setNames(simd_vec(v), letters[1:4]), stats::setNames(v, letters[1:4]))
   expect_identical(table(simd_vec(v), dnn = NULL), table(v, dnn = NULL))
   expect_identical(matrix(simd_vec(v), 2), matrix(v, 2))

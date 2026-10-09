@@ -236,8 +236,9 @@ value other than \code{NULL} (\code{names<-}, \code{dim<-},
 \code{dimnames<-}) unwraps: the result is the plain data with the value
 set, not a \code{simd_vec}. So \code{quantile(x)}, \code{summary(x)},
 \code{setNames(x, nm)} and \code{lm(x ~ z)} give the same results as for
-plain data, and \code{table()}, \code{matrix()}, \code{outer()} and
-\code{median()} work as before. Setting \code{NULL} (\code{unname(x)})
+plain data, and \code{table()}, \code{matrix()} and \code{outer()} work
+as before. \code{median(x)} runs on the data and also returns what it does
+for plain data. Setting \code{NULL} (\code{unname(x)})
 leaves a \code{simd_vec}.
 \code{c()} combines with base R's type promotion, except that
 \code{integer64} absorbs the other parts, as in \pkg{bit64}, and the
