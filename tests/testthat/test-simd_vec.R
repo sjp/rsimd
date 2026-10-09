@@ -682,6 +682,19 @@ test_that("subsetting keeps TRUE unless a missing element is selected, then FALS
   expect_error(x[1, 2], "incorrect number of dimensions")
 })
 
+test_that("indexing with more than one subscript errors as on a plain vector", {
+  x <- simd_vec(c(1, 2, 3))
+  expect_error(x[, 1], "incorrect number of dimensions")
+  expect_error(x[, ], "incorrect number of dimensions")
+  expect_error(x[1, ], "incorrect number of dimensions")
+  expect_identical(x[, drop = FALSE], x)
+  expect_error(x[[1, 1]], "incorrect number of subscripts")
+  expect_error(x[, 1] <- 5, "incorrect number of subscripts on matrix")
+  expect_error(x[, ] <- 5, "incorrect number of subscripts on matrix")
+  expect_error(x[[1, 1]] <- 5, "improper number of subscripts")
+  expect_sv(x, c(1, 2, 3))
+})
+
 test_that("c() is TRUE only when every part is known NA-free", {
   a <- simd_vec(c(1, 2), check_na = TRUE)
   b <- simd_vec(3, check_na = TRUE)

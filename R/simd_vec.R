@@ -402,10 +402,11 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 # ---- Subsetting, combining, length -----------------------------------------
 
 `[.simd_vec` <- function(x, i, ..., drop = TRUE) {
+  # ...length() counts empty arguments, so x[, 1] and x[, ] fail here too.
+  if (...length() > 0L) .stop("incorrect number of dimensions")
   if (missing(i)) {
     return(x)
   }
-  if (...length() > 0L) .stop("incorrect number of dimensions")
   impl <- attr(x, "rsimd_impl", exact = TRUE)
   # The result of an NA-free x has an NA only where the index is NA or past
   # the end; one pass over the (fresh) result says which, so the index is
@@ -432,7 +433,8 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 
 .sv_na_i64 <- function() simd_as_integer64(NA)
 
-`[<-.simd_vec` <- function(x, i, value) {
+`[<-.simd_vec` <- function(x, i, ..., value) {
+  if (...length() > 0L) .stop("incorrect number of subscripts on matrix")
   # Checked before R coerces the data to the type of value, which would
   # then be blamed on x. NULL keeps base R's "replacement has length zero".
   if (!is.null(value)) .check_data(value, "value")
@@ -471,7 +473,8 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 # x[[i]] <- value is x[i] <- value for a single element, with base R's
 # checks (the default method would keep the attributes, and so a stale
 # NA-free flag).
-`[[<-.simd_vec` <- function(x, i, value) {
+`[[<-.simd_vec` <- function(x, i, ..., value) {
+  if (...length() > 0L) .stop("[[ ]] improper number of subscripts")
   .sv_release(x)
   if (length(i) != 1L) {
     what <- if (length(i)) "more" else "less"
@@ -482,10 +485,11 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
     if (length(value)) .stop("more elements supplied than there are to replace")
     .stop("replacement has length zero")
   }
-  `[<-.simd_vec`(x, i, value)
+  `[<-.simd_vec`(x, i, value = value)
 }
 
 `[[.simd_vec` <- function(x, i, ...) {
+  if (...length() > 0L) .stop("incorrect number of subscripts")
   if (inherits(x, "integer64")) .sv_take(x, seq_along(x)[[i]]) else .subset2(x, i)
 }
 
