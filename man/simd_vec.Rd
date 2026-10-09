@@ -204,7 +204,10 @@ and \code{\link{simd_conj}}.
 \strong{Other methods.} \code{x[i]} keeps the class and the pin
 (\code{drop} is ignored); \code{x[i] <- value} and \code{x[[i]] <- value}
 too (an \code{integer64} object converts \code{value} to
-\code{integer64}); \code{x[[i]]} returns a plain element.
+\code{integer64}). \code{value} must be data \pkg{rsimd} takes, as for an
+operand: a character, list, factor, \code{Date} or other classed
+\code{value} is an error rather than being stored as its codes or
+numbers. \code{x[[i]]} returns a plain element.
 \code{is.na(x)} calls \code{\link{simd_is_na}} and returns a plain
 logical vector.
 \code{match()}, \code{\%in\%} and so \code{setdiff()}, \code{union()}

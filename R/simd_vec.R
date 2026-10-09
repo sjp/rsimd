@@ -429,11 +429,14 @@ anyNA.simd_vec <- function(x, recursive = FALSE) {
 .sv_na_i64 <- function() simd_as_integer64(NA)
 
 `[<-.simd_vec` <- function(x, i, value) {
+  # Checked before R coerces the data to the type of value, which would
+  # then be blamed on x. NULL keeps base R's "replacement has length zero".
+  if (!is.null(value)) .check_data(value, "value")
   .sv_release(x)
   data <- .sv_data_own(x)
   if (is_simd_vec(value)) value <- .sv_strip(value)
   if (inherits(data, "integer64")) {
-    if (!inherits(value, "integer64")) value <- simd_as_integer64(value)
+    if (!is.null(value) && !inherits(value, "integer64")) value <- simd_as_integer64(value)
     data <- unclass(data)
     n <- length(data)
     if (missing(i)) data[] <- unclass(value) else data[i] <- unclass(value)

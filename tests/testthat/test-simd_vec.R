@@ -880,6 +880,25 @@ test_that("[[<- assigns one element and drops the flag", {
   expect_identical(bare(v), simd_as_integer64(c(1, 5, 3, NA, 7, NA, 1)))
 })
 
+test_that("[<- and [[<- reject a value of a type rsimd does not take, naming 'value'", {
+  data <- list(1:3, c(1, 2, 3))
+  if (has_bit64()) data <- c(data, list(simd_as_integer64(1:3)))
+  values <- list(character = "a", list = list(1), factor = factor("z"), Date = Sys.Date())
+  for (d in data) {
+    for (what in names(values)) {
+      msg <- paste0("^'value' must be an atomic vector .*, not ", what, "$")
+      x <- simd_vec(d, check_na = TRUE)
+      expect_error(x[2] <- values[[what]], msg)
+      expect_error(x[] <- values[[what]], msg)
+      expect_error(x[[2]] <- values[[what]], msg)
+      expect_sv(x, d)
+    }
+    x <- simd_vec(d)
+    expect_error(x[2] <- NULL, "replacement has length zero")
+    expect_error(x[[2]] <- NULL, "replacement has length zero")
+  }
+})
+
 test_that("base functions on a flagged simd_vec agree with plain data", {
   batch_expectations({
     data <- list(
