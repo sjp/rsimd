@@ -238,12 +238,14 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_exp_(const int fast, rsimd_vf64 x, rsimd
 
 /* log(x + iy) = log|z| + i atan2(y, x), with log|z| as log1p(x^2 + y^2 -
    1) / 2 for 0.5 <= |z|^2 <= 2, where log(hypot(x, y)) loses accuracy.
-   Parts both below 2^-1000 (z = 0 included) are left out. */
+   Parts both below 2^-1000 (z = 0 included) or either beyond 2^1022
+   (where |z| can overflow) are left out. */
 RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_log_(const int fast, rsimd_vf64 x, rsimd_vf64 y,
                                              rsimd_vf64 *re, rsimd_vf64 *im) {
   const rsimd_vf64 p = rsimd_vf64_add(rsimd_vf64_mul(x, x), rsimd_vf64_mul(y, y));
   const rsimd_mf64 near = rsimd_mf64_and(rsimd_vf64_cmp_ge(p, RSIMD_CM_V(0.5)),
                                          rsimd_vf64_cmp_le(p, RSIMD_CM_V(2.0)));
+  const rsimd_vf64 m = rsimd_cm_maxabs_(x, y);
   rsimd_vf64 r = rsimd_vf64_zero();
   if (!rsimd_mf64_all(near)) r = RSIMD_CM_F1(log, RSIMD_CM_F2(hypot, x, y));
   if (rsimd_mf64_any(near)) {
@@ -252,8 +254,10 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_cm_log_(const int fast, rsimd_vf64 x, rsimd
   }
   *re = r;
   *im = RSIMD_CM_F2(atan2, y, x);
-  /* SLEEF's hypot loses accuracy on subnormal parts. */
-  return rsimd_vf64_cmp_lt(rsimd_cm_maxabs_(x, y), RSIMD_CM_V(0x1p-1000));
+  /* SLEEF's hypot loses accuracy on subnormal parts, and overflows where
+     |z| > DBL_MAX. */
+  return rsimd_mf64_or(rsimd_vf64_cmp_lt(m, RSIMD_CM_V(0x1p-1000)),
+                       rsimd_vf64_cmp_gt(m, RSIMD_CM_V(0x1p1022)));
 }
 
 /* sqrt(x + iy) with t = sqrt((|x| + |z|) / 2): t + i y / 2t for x >= 0,

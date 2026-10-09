@@ -354,6 +354,71 @@ test_that("general powers, log with a base and atan2 are within the bounds", {
   }
 })
 
+test_that("every function is right where |z| overflows from finite parts", {
+  # Parts near DBL_MAX, equal and unequal, whose modulus exceeds DBL_MAX
+  # (or comes close): log|z| must stay finite, as base R's does.
+  big <- with_seed(33L, {
+    k <- 500L
+    p <- function() sample(c(-1, 1), k, TRUE) * 2^stats::runif(k, 1022, 1024 - 1e-9)
+    c(
+      complex(real = p(), imaginary = p()),
+      complex(real = p(), imaginary = p() * 10^-stats::runif(k, 0, 300)),
+      complex(real = p() * 10^-stats::runif(k, 0, 300), imaginary = p()),
+      complex(real = c(1.5e308, -1.4e308, 1.2e308), imaginary = c(1.5e308, -1.4e308, 1.2e308)),
+      complex(real = .Machine$double.xmax, imaginary = c(0, -0, 1, .Machine$double.xmax))
+    )
+  })
+  w <- c(0.5, -0.5, 1 / 3, 2.5 + 1i, -1e-3i)
+  pairs <- function(z) {
+    list(
+      log2 = simd_log2(z), log10 = simd_log10(z), logb = simd_log(z, 2 + 1i),
+      logb_z = simd_log(3 + 0i, z), pow = lapply(w, function(v) simd_pow(z, v))
+    )
+  }
+  for (acc in c("accurate", "fast")) {
+    fast <- acc == "fast"
+    with_accuracy(acc, {
+      for (f in cm_fns) {
+        res <- with_each_tier(function() suppressWarnings(simd_fn(f)(big)))
+        ref_tier <- cm_ref_tier(names(res))
+        for (tier in setdiff(names(res), c("none", ref_tier))) {
+          expect_null(cm_mismatch(res[[tier]], res[[ref_tier]], cm_tol(f, fast), big),
+            label = paste(f, acc, tier)
+          )
+        }
+        if (f == "log") {
+          for (tier in names(res)) {
+            expect_true(all(is.finite(Re(res[[tier]]))), label = paste("log", acc, tier))
+          }
+        }
+      }
+      res <- with_each_tier(function() suppressWarnings(pairs(big)))
+      ref_tier <- cm_ref_tier(names(res))
+      for (tier in setdiff(names(res), c("none", ref_tier))) {
+        got <- res[[tier]]
+        ref <- res[[ref_tier]]
+        for (f in c("log2", "log10")) {
+          expect_null(cm_mismatch(got[[f]], ref[[f]], cm_tol("log", fast) + 1, big),
+            label = paste(f, acc, tier)
+          )
+        }
+        expect_null(cm_mismatch(got$logb, ref$logb, cm_tol("logb", fast), big),
+          label = paste("logb", acc, tier)
+        )
+        expect_null(cm_mismatch(got$logb_z, ref$logb_z, cm_tol("logb", fast), big),
+          label = paste("logb_z", acc, tier)
+        )
+        for (j in seq_along(w)) {
+          scale <- 1 + Mod(w[[j]] * log(big))
+          expect_null(cm_mismatch(got$pow[[j]], ref$pow[[j]], cm_tol("pow", fast) * scale, big,
+            zeros = FALSE
+          ), label = paste("pow", w[[j]], acc, tier))
+        }
+      }
+    })
+  }
+})
+
 test_that("log2, log10, log(z, base) and atan2 follow base R's rules", {
   z <- cm_inputs(200L)
   simd_with_impl("none", {
