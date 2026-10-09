@@ -1071,8 +1071,29 @@ static inline rsimd_vi64 rsimd_i64_bcast(const void *p, int flags, int k, int ch
   } while (0)
 #define RSIMD_I64_LOOP(nargs, expr)                                                        \
   RSIMD_I64_LOOP_T(nargs, int64_t, rsimd_vi64_storeu, rsimd_vi64_storeu_p, expr)
+/* As RSIMD_I64_LOOP_T for int32 results, two vectors to a store. */
+#define RSIMD_I64_LOOP32_(fl, nargs, expr)                                                 \
+  do {                                                                                     \
+    ptrdiff_t i = 0;                                                                       \
+    RSIMD_CHUNK_LOOP_I32X2(i, n, out, {                                                    \
+      rsimd_vi64 a = rsimd_i64_ldt(x, fl, 0, bc0, i, tail_, pg, check), b = bc1, c = bc2;  \
+      if ((nargs) > 1) b = rsimd_i64_ldt(y, fl, 1, bc1, i, tail_, pg, check);              \
+      if ((nargs) > 2) c = rsimd_i64_ldt(z, fl, 2, bc2, i, tail_, pg, check);              \
+      (void) b;                                                                            \
+      (void) c;                                                                            \
+      expr;                                                                                \
+    });                                                                                    \
+  } while (0)
 #define RSIMD_I64_LOOP32(nargs, expr)                                                      \
-  RSIMD_I64_LOOP_T(nargs, int32_t, rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, expr)
+  do {                                                                                     \
+    if (flags == 0) {                                                                      \
+      RSIMD_I64_LOOP32_(0, nargs, expr);                                                   \
+    } else if (flags == RSIMD_EW_SCALAR(1)) {                                              \
+      RSIMD_I64_LOOP32_(RSIMD_EW_SCALAR(1), nargs, expr);                                  \
+    } else {                                                                               \
+      RSIMD_I64_LOOP32_(flags, nargs, expr);                                               \
+    }                                                                                      \
+  } while (0)
 
 #if RSIMD_TIER_IS(sve) || RSIMD_TIER_IS(sve2)
 /* Checked product of a and b from the high half of the product. */
@@ -1743,11 +1764,17 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(pred_i64_)(const int op, const int64_t *x, 
                                                 int mode, int32_t *out) {
   const rsimd_mi64 none = rsimd_mi64_none();
   ptrdiff_t i = 0;
+  if (mode == RSIMD_PRED_ELT) {
+    RSIMD_CHUNK_LOOP_I32X2(i, n, out,
+                           r = rsimd_lgl_vi64m(rsimd_pred_vi64(op, RSIMD_LDT(rsimd_vi64_loadu,
+                                                                             rsimd_vi64_loadu_p,
+                                                                             x, i)),
+                                               none));
+    return 0;
+  }
   RSIMD_CHUNK_LOOP(64, i, n, {
     rsimd_mi64 m = rsimd_pred_vi64(op, RSIMD_LDT(rsimd_vi64_loadu, rsimd_vi64_loadu_p, x, i));
-    if (mode == RSIMD_PRED_ELT) {
-      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, out + i, rsimd_lgl_vi64m(m, none));
-    } else if (mode == RSIMD_PRED_ANY) {
+    if (mode == RSIMD_PRED_ANY) {
       if (rsimd_mi64_any(m)) return 1;
     } else if (!rsimd_mi64_all(m)) {
       return 0;
@@ -2066,6 +2093,7 @@ void RSIMD_KERNEL(hamming_bits_i64)(const int64_t *x, const int64_t *y, R_xlen_t
 
 #undef RSIMD_I64_LOOP
 #undef RSIMD_I64_LOOP32
+#undef RSIMD_I64_LOOP32_
 #undef RSIMD_I64_LOOP_T
 #undef RSIMD_I64_LOOP_
 

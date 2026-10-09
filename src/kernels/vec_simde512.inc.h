@@ -391,6 +391,12 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
 RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v) {
   simde_mm256_mask_storeu_epi32(p, pg, simde_mm512_cvtepi64_epi32(v));
 }
+/* The low halves of the lanes of a, then of b, as one 512-bit store. */
+RSIMD_INLINE void rsimd_vi64x2_storeu_i32(int32_t *p, rsimd_vi64 a, rsimd_vi64 b) {
+  const simde__m512i idx = simde_mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8,
+                                                 6, 4, 2, 0);
+  simde_mm512_storeu_si512((void *) p, simde_mm512_permutex2var_epi32(a, idx, b));
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) {
   return simde_mm512_roundscale_pd(a, SIMDE_MM_FROUND_TO_NEG_INF | SIMDE_MM_FROUND_NO_EXC);
 }

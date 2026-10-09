@@ -278,6 +278,12 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) { svst1w_s64(R
 RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v) {
   svst1w_s64(pg, p, v);
 }
+/* The low halves of the lanes of a, then of b: st1w narrows as it stores,
+   so two stores cost no more than a pairing permute and one. */
+RSIMD_INLINE void rsimd_vi64x2_storeu_i32(int32_t *p, rsimd_vi64 a, rsimd_vi64 b) {
+  svst1w_s64(RSIMD_PT64, p, a);
+  svst1w_s64(RSIMD_PT64, p + svcntd(), b);
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return svrintm_f64_x(RSIMD_PT64, a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return svrintp_f64_x(RSIMD_PT64, a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) { return svrintz_f64_x(RSIMD_PT64, a); }

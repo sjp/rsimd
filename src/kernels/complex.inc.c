@@ -520,6 +520,15 @@ RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(pred_c128_)(const int op, const Rcomplex *x
   ptrdiff_t i = 0;
   rsimd_vf64 re, im;
   rsimd_mf64 m;
+  if (mode == RSIMD_PRED_ELT) {
+    for (; i + 2 * W <= n; i += 2 * W) {
+      rsimd_vi64 r0;
+      rsimd_c128_load_(x, i, &re, &im);
+      r0 = rsimd_lgl_vi64(rsimd_pred_vc128(op, re, im), none);
+      rsimd_c128_load_(x, i + W, &re, &im);
+      rsimd_vi64x2_storeu_i32(out + i, r0, rsimd_lgl_vi64(rsimd_pred_vc128(op, re, im), none));
+    }
+  }
   for (; i + W <= n; i += W) {
     rsimd_c128_load_(x, i, &re, &im);
     m = rsimd_pred_vc128(op, re, im);
@@ -882,6 +891,23 @@ void RSIMD_KERNEL(prod_c128)(const Rcomplex *x, R_xlen_t n, rsimd_cprod_state *s
 #define RSIMD_SKIP_scan_c128 1
 #define RSIMD_SKIP_formula_c128 1
 
+/* The logical lanes of x == y (op RSIMD_CMP_EQ) or x != y for the vector
+   at i, a scalar operand (sx, sy) being the broadcast bxr/bxi or byr/byi. */
+RSIMD_ALWAYS_INLINE rsimd_vi64 rsimd_cmp_vc128(const int op, const Rcomplex *x,
+                                              const Rcomplex *y, ptrdiff_t i, int sx, int sy,
+                                              rsimd_vf64 xr, rsimd_vf64 xi, rsimd_vf64 yr,
+                                              rsimd_vf64 yi) {
+  rsimd_mf64 m, na;
+  if (!sx) rsimd_c128_load_(x, i, &xr, &xi);
+  if (!sy) rsimd_c128_load_(y, i, &yr, &yi);
+  m = op == RSIMD_CMP_EQ
+        ? rsimd_mf64_and(rsimd_vf64_cmp_eq(xr, yr), rsimd_vf64_cmp_eq(xi, yi))
+        : rsimd_mf64_or(rsimd_vf64_cmp_ne(xr, yr), rsimd_vf64_cmp_ne(xi, yi));
+  na = rsimd_mf64_or(rsimd_mf64_or(rsimd_vf64_is_nan(xr), rsimd_vf64_is_nan(xi)),
+                     rsimd_mf64_or(rsimd_vf64_is_nan(yr), rsimd_vf64_is_nan(yi)));
+  return rsimd_lgl_vi64(m, na);
+}
+
 RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(cmp_c128_)(const int op, const Rcomplex *x,
                                                  const Rcomplex *y, R_xlen_t n, int flags,
                                                  int *out) {
@@ -890,17 +916,13 @@ RSIMD_ALWAYS_INLINE void RSIMD_KERNEL(cmp_c128_)(const int op, const Rcomplex *x
   const rsimd_vf64 bxr = rsimd_vf64_set1(x[0].r), bxi = rsimd_vf64_set1(x[0].i),
                    byr = rsimd_vf64_set1(y[0].r), byi = rsimd_vf64_set1(y[0].i);
   ptrdiff_t i = 0;
+  for (; i + 2 * W <= n; i += 2 * W) {
+    rsimd_vi64 r0 = rsimd_cmp_vc128(op, x, y, i, sx, sy, bxr, bxi, byr, byi);
+    rsimd_vi64x2_storeu_i32(out + i, r0,
+                            rsimd_cmp_vc128(op, x, y, i + W, sx, sy, bxr, bxi, byr, byi));
+  }
   for (; i + W <= n; i += W) {
-    rsimd_vf64 xr = bxr, xi = bxi, yr = byr, yi = byi;
-    rsimd_mf64 m, na;
-    if (!sx) rsimd_c128_load_(x, i, &xr, &xi);
-    if (!sy) rsimd_c128_load_(y, i, &yr, &yi);
-    m = op == RSIMD_CMP_EQ
-          ? rsimd_mf64_and(rsimd_vf64_cmp_eq(xr, yr), rsimd_vf64_cmp_eq(xi, yi))
-          : rsimd_mf64_or(rsimd_vf64_cmp_ne(xr, yr), rsimd_vf64_cmp_ne(xi, yi));
-    na = rsimd_mf64_or(rsimd_mf64_or(rsimd_vf64_is_nan(xr), rsimd_vf64_is_nan(xi)),
-                       rsimd_mf64_or(rsimd_vf64_is_nan(yr), rsimd_vf64_is_nan(yi)));
-    rsimd_vi64_storeu_i32(out + i, rsimd_lgl_vi64(m, na));
+    rsimd_vi64_storeu_i32(out + i, rsimd_cmp_vc128(op, x, y, i, sx, sy, bxr, bxi, byr, byi));
   }
   for (; i < n; i++) {
     Rcomplex u = x[sx ? 0 : i], v = y[sy ? 0 : i];

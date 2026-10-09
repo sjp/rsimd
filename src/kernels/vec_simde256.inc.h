@@ -281,6 +281,15 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
   simde__m256i low = simde_mm256_permutevar8x32_epi32(v, simde_mm256_set_epi32(7, 5, 3, 1, 6, 4, 2, 0));
   simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm256_castsi256_si128(low));
 }
+/* The low halves of the lanes of a, then of b, as one 256-bit store: the
+   shuffle interleaves them by 128-bit half, the permute puts a's first. */
+RSIMD_INLINE void rsimd_vi64x2_storeu_i32(int32_t *p, rsimd_vi64 a, rsimd_vi64 b) {
+  simde__m256 r = simde_mm256_shuffle_ps(simde_mm256_castsi256_ps(a), simde_mm256_castsi256_ps(b),
+                                         SIMDE_MM_SHUFFLE(2, 0, 2, 0));
+  simde_mm256_storeu_si256((simde__m256i *) (void *) p,
+                           simde_mm256_permute4x64_epi64(simde_mm256_castps_si256(r),
+                                                         SIMDE_MM_SHUFFLE(3, 1, 2, 0)));
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return simde_mm256_floor_pd(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return simde_mm256_ceil_pd(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) {

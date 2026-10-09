@@ -259,6 +259,32 @@ RSIMD_INLINE int rsimd_popcount32(uint32_t x) {
     if (tail_) ST_P(pg, p, v);                                                   \
     else ST(p, v);                                                               \
   } while (0)
+/* As RSIMD_CHUNK_LOOP(64, ...) for a body that sets the rsimd_vi64 r
+   (declared by the loop) from the vector at i, storing r as int32
+   elements at out + i: whole pairs of vectors run the body twice and store
+   both results with one rsimd_vi64x2_storeu_i32, which narrows two 64-bit
+   vectors with one permute instead of one each. */
+#define RSIMD_CHUNK_LOOP_I32X2(i, n, out, ...)                                   \
+  do {                                                                           \
+    for (; (i) + 2 * RSIMD_LANES_64 <= (n); (i) += RSIMD_LANES_64) {             \
+      const int tail_ = 0;                                                       \
+      const rsimd_p64 pg = rsimd_p64_true();                                     \
+      rsimd_vi64 r, r0_;                                                         \
+      (void) tail_;                                                              \
+      (void) pg;                                                                 \
+      { __VA_ARGS__; }                                                           \
+      r0_ = r;                                                                   \
+      (i) += RSIMD_LANES_64;                                                     \
+      { __VA_ARGS__; }                                                           \
+      rsimd_vi64x2_storeu_i32((int32_t *) (out) + (i) - RSIMD_LANES_64, r0_, r); \
+    }                                                                            \
+    RSIMD_CHUNK_LOOP(64, i, n, {                                                 \
+      rsimd_vi64 r;                                                              \
+      { __VA_ARGS__; }                                                           \
+      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p,                  \
+                (int32_t *) (out) + (i), r);                                     \
+    });                                                                          \
+  } while (0)
 
 /* Upper-case aliases. */
 #define RSIMD_PRED64 rsimd_p64_while

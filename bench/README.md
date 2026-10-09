@@ -133,9 +133,13 @@ Things that are expected and not a problem:
 - **At n = 1e3 the speedups shrink or invert.** Every rsimd call pays a fixed few
   microseconds of R-side work (argument and type checks, the tier synchronisation and
   `.Call`). Base R primitives such as `x + y` and `anyNA(x)` pay well under a microsecond.
-- **Memory-bound ops are near parity with base R at large n.** `add`, `fma`, `is_na`
-  and `as_integer` at 1e7 are limited by memory bandwidth and by allocating the result,
-  which both sides do. The win over `none` stays visible at 1e5.
+- **Memory-bound ops are near parity with base R at large n.** `add` and `fma` at 1e7
+  are limited by memory bandwidth and by allocating the result, which both sides do;
+  `simd_add`, `simd_mul`, `simd_sum`, `simd_any_na` and `simd_dot` already move data at
+  about what one core can read from memory, so parity with base R there is final. The
+  win over `none` stays visible at 1e5. `is_na` and `as_integer` write a half-size
+  integer result and also pay to narrow each 64-bit lane to 32 bits, so they keep a
+  modest lead at 1e7 (about 1.7× and 1.4× on an Apple M-series core under Linux).
 - **`sum` against base R depends on the platform's `long double`.** Base R accumulates
   double sums in `long double`. On x86-64 that is the 80-bit x87 format, which is slow
   but in hardware. On arm64 Linux it is 128-bit quad precision done in software, so base

@@ -1645,6 +1645,14 @@ static void test_convert(ptrdiff_t n) {
   for (j = 0; j < n; j++) iref[j] = (int32_t) (uint32_t) (uint64_t) la[j];
   check_i32("i64 storeu_i32", n, iout, iref);
 
+  /* Pairs of vectors through vi64x2_storeu_i32, the rest one at a time. */
+  reset_out();
+  {
+    ptrdiff_t i = 0;
+    RSIMD_CHUNK_LOOP_I32X2(i, n, iout, r = RSIMD_LDT(rsimd_vi64_loadu, rsimd_vi64_loadu_p, la, i));
+  }
+  check_i32("i64 chunk loop i32x2", n, iout, iref);
+
   /* Fill values of inactive lanes. */
   if (n % RSIMD_LANES_64 != 0) {
     ptrdiff_t i = n - n % RSIMD_LANES_64;

@@ -396,9 +396,25 @@ RSIMD_INLINE void rsimd_s128_storel(void *p, simde__m128i v) {
   int64_t w = simde_mm_cvtsi128_si64(v);
   memcpy(p, &w, sizeof w);
 }
+/* The low halves of the lanes of v; on arm64 one narrowing (xtn) and of a,
+   then b, one unzip (uzp1), which SIMDe's shuffles do not compile to. */
+#if defined(__aarch64__) || defined(_M_ARM64)
+RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
+  vst1_s32(p, vmovn_s64(simde__m128i_to_neon_i64(v)));
+}
+RSIMD_INLINE void rsimd_vi64x2_storeu_i32(int32_t *p, rsimd_vi64 a, rsimd_vi64 b) {
+  vst1q_s32(p, vuzp1q_s32(simde__m128i_to_neon_i32(a), simde__m128i_to_neon_i32(b)));
+}
+#else
 RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
   rsimd_s128_storel(p, simde_mm_shuffle_epi32(v, SIMDE_MM_SHUFFLE(2, 2, 2, 0)));
 }
+RSIMD_INLINE void rsimd_vi64x2_storeu_i32(int32_t *p, rsimd_vi64 a, rsimd_vi64 b) {
+  simde__m128 r = simde_mm_shuffle_ps(simde_mm_castsi128_ps(a), simde_mm_castsi128_ps(b),
+                                      SIMDE_MM_SHUFFLE(2, 0, 2, 0));
+  simde_mm_storeu_si128((simde__m128i *) (void *) p, simde_mm_castps_si128(r));
+}
+#endif
 #ifndef RSIMD_NO_F64_SIMD
 #if defined(__aarch64__) || defined(_M_ARM64)
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return simde_mm_floor_pd(a); }

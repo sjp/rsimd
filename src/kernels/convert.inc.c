@@ -238,9 +238,9 @@ static inline void RSIMD_KERNEL(f64_to_lgl_)(const double *x, R_xlen_t n, int32_
   rsimd_lgl_vi64(rsimd_mf64_not(rsimd_mf64_or(rsimd_vf64_is_nan(v),                         \
                                               rsimd_vf64_cmp_eq(v, rsimd_vf64_zero()))),    \
                  rsimd_vf64_is_nan(v))
-  RSIMD_CHUNK_LOOP(64, i, n, {
+  RSIMD_CHUNK_LOOP_I32X2(i, n, out, {
     rsimd_vf64 v = RSIMD_LDT(rsimd_vf64_loadu, rsimd_vf64_loadu_p, x, i);
-    RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, out + i, RSIMD_CVT_LGL64(v));
+    r = RSIMD_CVT_LGL64(v);
   });
 #undef RSIMD_CVT_LGL64
 }

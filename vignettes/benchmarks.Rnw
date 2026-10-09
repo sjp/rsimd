@@ -216,10 +216,10 @@ code.
   base R computes with more R-level work, from a single element. The
   operators and \code{Math} methods of a \code{simd\_vec} add a few
   microseconds per call on top of the \code{simd\_*()} function.
-\item \emph{Memory-bound operations.} \code{add}, \code{fma} and
-  \code{is\_na} read and write whole vectors. At $10^7$ elements they are
-  limited by memory bandwidth, for base R as much as for \pkg{rsimd}, so the
-  gain over base R is small. The \code{none} tier, the scalar code a CPU
+\item \emph{Memory-bound operations.} \code{add} and \code{fma} read and
+  write whole vectors. At $10^7$ elements they are limited by memory
+  bandwidth, for base R as much as for \pkg{rsimd}, so the gain over base R
+  is small. \code{is\_na} writes a half-size result and keeps a modest lead. The \code{none} tier, the scalar code a CPU
   without SIMD runs, is no faster than base R there, so base R is the
   baseline to read for them.
 \item \emph{Compute-bound operations.} Reductions, \code{pmax} and the

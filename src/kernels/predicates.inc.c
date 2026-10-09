@@ -237,7 +237,15 @@ RSIMD_ALWAYS_INLINE rsimd_mf64 rsimd_pred_vf64(const int op, rsimd_vf64 v) {
 RSIMD_ALWAYS_INLINE int RSIMD_KERNEL(pred_f64_)(const int op, const double *x, R_xlen_t n,
                                                 int mode, int32_t *out) {
   const rsimd_mf64 none = rsimd_mf64_none();
-  (void) none;
+  if (mode == RSIMD_PRED_ELT) {
+    ptrdiff_t i = 0;
+    RSIMD_CHUNK_LOOP_I32X2(i, n, out,
+                           r = rsimd_lgl_vi64(rsimd_pred_vf64(op, RSIMD_LDT(rsimd_vf64_loadu,
+                                                                            rsimd_vf64_loadu_p,
+                                                                            x, i)),
+                                              none));
+    return 0;
+  }
   RSIMD_PRED_LOOP(64, rsimd_mf64, rsimd_vf64_loadu, rsimd_vf64_loadu_p, rsimd_pred_vf64,
                   rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, rsimd_lgl_vi64);
 }

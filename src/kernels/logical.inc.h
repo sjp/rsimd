@@ -12,7 +12,7 @@
  *     be NULL) with RSIMD_EW_SCALAR(k) broadcast flags.
  *   - RSIMD_LANE64_LOOP: a loop over double or int32 operands (flags
  *     RSIMD_EW_SCALAR(k), RSIMD_EW_I32(k)) writing int32 elements from
- *     64-bit lanes.
+ *     64-bit lanes, two vectors to a store (RSIMD_CHUNK_LOOP_I32X2).
  * Both loops are RSIMD_CHUNK_LOOP (common.inc.h): in the predicated last
  * vector the inactive lanes repeat the first active element of each
  * operand.
@@ -73,13 +73,11 @@ RSIMD_INLINE rsimd_vi64 rsimd_lgl_vi64(rsimd_mf64 t, rsimd_mf64 na) {
 #define RSIMD_LANE64_LOOP(fl, ...)                                                         \
   do {                                                                                     \
     ptrdiff_t i = 0;                                                                       \
-    RSIMD_CHUNK_LOOP(64, i, n, {                                                           \
+    RSIMD_CHUNK_LOOP_I32X2(i, n, out, {                                                    \
       rsimd_vf64 a = rsimd_ew_ldt(x, fl, 0, bc0, i, tail_, pg, 1);                         \
       rsimd_vf64 b = y == NULL ? bc1 : rsimd_ew_ldt(y, fl, 1, bc1, i, tail_, pg, 1);       \
-      rsimd_vi64 r;                                                                        \
       (void) b;                                                                            \
       __VA_ARGS__;                                                                         \
-      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, (int32_t *) out + i, r);   \
     });                                                                                    \
   } while (0)
 /* As RSIMD_LANE64_LOOP, reading the operands through rsimd_ew_dptr(). */
@@ -90,12 +88,10 @@ RSIMD_INLINE rsimd_vi64 rsimd_lgl_vi64(rsimd_mf64 t, rsimd_mf64 na) {
     RSIMD_EW_DPTRS(x, y, NULL);                                                            \
     (void) p1_;                                                                            \
     (void) p2_;                                                                            \
-    RSIMD_CHUNK_LOOP(64, i, n, {                                                           \
+    RSIMD_CHUNK_LOOP_I32X2(i, n, out, {                                                    \
       rsimd_vf64 a = RSIMD_EW_DLD(0), b = RSIMD_EW_DLD(1);                                 \
-      rsimd_vi64 r;                                                                        \
       (void) b;                                                                            \
       __VA_ARGS__;                                                                         \
-      RSIMD_STT(rsimd_vi64_storeu_i32, rsimd_vi64_storeu_i32_p, (int32_t *) out + i, r);   \
       if (!tail_) RSIMD_EW_DNEXT();                                                        \
     });                                                                                    \
   } while (0)

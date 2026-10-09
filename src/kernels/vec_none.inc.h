@@ -267,6 +267,10 @@ RSIMD_INLINE void rsimd_vi64_storeu_i32(int32_t *p, rsimd_vi64 v) {
 RSIMD_INLINE void rsimd_vi64_storeu_i32_p(rsimd_p64 pg, int32_t *p, rsimd_vi64 v) {
   if (pg) rsimd_vi64_storeu_i32(p, v);
 }
+RSIMD_INLINE void rsimd_vi64x2_storeu_i32(int32_t *p, rsimd_vi64 a, rsimd_vi64 b) {
+  rsimd_vi64_storeu_i32(p, a);
+  rsimd_vi64_storeu_i32(p + 1, b);
+}
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_floor(rsimd_vf64 a) { return floor(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_ceil(rsimd_vf64 a) { return ceil(a); }
 RSIMD_INLINE rsimd_vf64 rsimd_vf64_trunc(rsimd_vf64 a) { return trunc(a); }
