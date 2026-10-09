@@ -146,6 +146,13 @@ Things that are expected and not a problem:
 - **`exp` on arm64 is close to base R.** glibc's aarch64 `exp` is already fast, and SLEEF's
   `u10` `exp` does not beat it by much. On x86-64, SLEEF against a scalar libm loop shows
   the largest gains in the suite.
+- **`sin`, `cos` and `tan` gain more over base R at large n than in cache.** Scalar libm
+  routines that use lookup tables slow down per element once the input and output no
+  longer fit in L1, because the tables compete with the data, while SLEEF's table-free
+  vector code stays flat. On an Apple M-series core running Linux, base R's `sin` costs
+  about 7 ns per element at n = 1e4 and 12–13 ns from 1e5, so `simd_sin` is about 1.4×
+  faster at 1e4 but 2.5× at 1e5 and above. The larger ratio measures the libm slowdown as
+  well as SIMD. Other platforms' libms may not show the step.
 
 ### Indicative targets
 

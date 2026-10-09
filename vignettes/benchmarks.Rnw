@@ -226,7 +226,14 @@ code.
   conversion gain most at $10^5$ elements and above.
 \item \emph{Elementary functions.} \code{exp} gains over base R only as far
   as the platform's C math library is slower than SLEEF's vector code; on
-  some platforms the C library is already fast.
+  some platforms the C library is already fast. Scalar C library routines
+  that use lookup tables, such as \code{sin}, \code{cos} and \code{tan},
+  can slow down per element once the vectors no longer fit in the
+  first-level cache, while SLEEF's vector code does not, so the speed-ups
+  at $10^5$ elements and above can be larger than in cache. On an Apple
+  M-series core running Linux, \code{simd\_sin} is about 1.4 times as fast
+  as base R's \code{sin} at $10^4$ elements but 2.5 times at $10^5$ and
+  above.
 \item \emph{Base R's \code{long double}.} On arm64 Linux, base R's
   \code{sum()}, \code{mean()} and \code{sum(x * y)} accumulate in 128-bit
   \code{long double}, which the CPU does not have and which is computed in
