@@ -79,10 +79,16 @@ test_that("%/% and %% are the exact floor and floored remainder", {
   expect_identical(r[1:2], c(1, 5)) # 2^60 = 8^20 and 2^8 are 1 and 4 mod 7
   expect_simd_identical(simd_idiv, big, d)
   # Exact remainders where base R gives 0 (the quotient exceeds its long
-  # double) or NaN (x / y overflows), from Python's fractions module.
+  # double) or NaN (x / y overflows), from Python's fractions module. The
+  # operands are written in hex: without long double R's parser can miss
+  # 1e300 by an ULP or more (on arm64 macOS it reads 0x1.7e43c880075ap+996,
+  # whose remainder mod 7 is 3).
+  e300 <- 0x1.7e43c8800759cp+996 # 1e300
+  e310 <- 0x1.2688b70e62bp-1022 / 256 # 1e-310
+  tiny <- 2^-1074 # 5e-324
   expect_tiers_give(
     c(1, 6, 0, 0, 0x0.00bf3a6dc49ebp-1022), simd_mod,
-    c(1e300, -1e300, 1, 1e300, -1), c(7, 7, 5e-324, 5e-324, 1e-310)
+    c(e300, -e300, 1, e300, -1), c(7, 7, tiny, tiny, e310)
   )
 })
 

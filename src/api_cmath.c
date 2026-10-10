@@ -179,11 +179,13 @@ static double complex z_cacosh(double complex z) {
 /* C99's clog, finite wherever z is: Windows' clog takes log(hypot(x, y)),
    which overflows where |z| > DBL_MAX, so beyond 2^1022 log|z| is taken
    of z / 2 (exact there but for a subnormal part) plus log 2, and the
-   angle of z itself. */
+   angle of z itself. Infinite and NaN parts go to clog as in base R,
+   whose special values (and NaN payloads) carg need not reproduce. */
 #ifdef _WIN32
 static double complex z_clog(double complex z) {
   double complex r;
-  if (fmax(fabs(creal(z)), fabs(cimag(z))) <= 0x1p1022) return clog(z);
+  double m = fmax(fabs(creal(z)), fabs(cimag(z)));
+  if (!(m > 0x1p1022 && isfinite(creal(z)) && isfinite(cimag(z)))) return clog(z);
   __real__ r = creal(clog(0.5 * z)) + M_LN2;
   __imag__ r = carg(z);
   return r;

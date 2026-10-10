@@ -303,67 +303,16 @@ static inline double rsimd_idiv_f64(double x, double y) {
   if ((res < 0 && y > 0) || (res > 0 && y < 0)) k -= 1;
   return k + 0.0;
 }
-/* fmod(x, y) for finite x and finite nonzero y with |x| >= 2^52 |y|,
-   computed exactly on the integer significands (as musl does) instead of
-   trusting the platform's fmod with large quotients: macOS's gave 3 for
-   fmod(1e300, 7), where the exact remainder is 1. */
-static inline double rsimd_fmod_big_f64(double x, double y) {
-  uint64_t ux, uy, m, my, d;
-  int ex, ey;
-  memcpy(&ux, &x, sizeof ux);
-  memcpy(&uy, &y, sizeof uy);
-  ex = (int) (ux >> 52 & 0x7ff);
-  ey = (int) (uy >> 52 & 0x7ff);
-  /* Significands with the implicit bit at bit 52; subnormals normalised
-     with their exponents lowered to match. */
-  m = ux & ((UINT64_C(1) << 52) - 1);
-  my = uy & ((UINT64_C(1) << 52) - 1);
-  if (ex) {
-    m |= UINT64_C(1) << 52;
-  } else {
-    ex = 1;
-    while (!(m >> 52)) m <<= 1, ex--;
-  }
-  if (ey) {
-    my |= UINT64_C(1) << 52;
-  } else {
-    ey = 1;
-    while (!(my >> 52)) my <<= 1, ey--;
-  }
-  /* Long division one bit at a time; m stays below 2 my. */
-  for (; ex > ey; ex--) {
-    d = m - my;
-    if (!(d >> 63)) m = d;
-    if (m == 0) return 0.0 * x;
-    m <<= 1;
-  }
-  d = m - my;
-  if (!(d >> 63)) m = d;
-  if (m == 0) return 0.0 * x;
-  while (!(m >> 52)) m <<= 1, ex--;
-  /* The remainder is below |y|, so at most |y|'s exponent: a normal or,
-     when ex <= 0, a subnormal shifted down exactly (its low bits are 0). */
-  if (ex > 0) {
-    m = (m - (UINT64_C(1) << 52)) | (uint64_t) ex << 52;
-  } else {
-    m >>= 1 - ex;
-  }
-  m |= ux & (UINT64_C(1) << 63);
-  memcpy(&x, &m, sizeof x);
-  return x;
-}
 /* Base R's x %% y for doubles (myfmod), exactly: x - floor(x / y) * y
    with the real quotient, rounded once, which has the sign of y. fmod is
-   exact (rsimd's own for quotients of 2^52 and more), and adding y to a
-   remainder of the wrong sign rounds once. Zero is +0, except that an
-   infinite y returns x (or y when x has the other sign), as base R does;
-   x %% 0 and Inf %% y are NaN. */
+   exact, and adding y to a remainder of the wrong sign rounds once. Zero
+   is +0, except that an infinite y returns x (or y when x has the other
+   sign), as base R does; x %% 0 and Inf %% y are NaN. */
 static inline double rsimd_mod_f64(double x, double y) {
   double r;
   if (isnan(x) || isnan(y)) return x + y;
   if (isinf(y) && isfinite(x)) return (x < 0 && y > 0) || (x > 0 && y < 0) ? y : x;
-  r = isfinite(x) && y != 0 && fabs(x) * 0x1p-52 >= fabs(y) ? rsimd_fmod_big_f64(x, y)
-                                                             : fmod(x, y);
+  r = fmod(x, y);
   if ((r < 0 && y > 0) || (r > 0 && y < 0)) r += y;
   return r + 0.0;
 }
