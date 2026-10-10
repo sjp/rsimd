@@ -11,7 +11,7 @@ cm_fns <- c(
 # rsimd's bounds in ULPs (accurate, fast) as ?simd_exp states them, plus 6
 # for the C library's own error: the tests compare with the none tier.
 cm_bound <- list(
-  sqrt = c(2, 3), exp = c(2.5, 3), log = c(3, 5.5), sin = c(3, 4), cos = c(3, 4),
+  sqrt = c(2, 3), exp = c(2.5, 3), log = c(2.5, 4.5), sin = c(3, 4), cos = c(3, 4),
   tan = c(4.5, 6), sinh = c(3, 4), cosh = c(3, 4), tanh = c(5, 6), asin = c(3.5, 4.5),
   acos = c(3.5, 4.5), atan = c(3, 3.5), asinh = c(3.5, 4.5), acosh = c(3.5, 4.5),
   atanh = c(3, 3.5), pow = c(3, 5), logb = c(4.5, 6.5), atan2 = c(3.5, 4)

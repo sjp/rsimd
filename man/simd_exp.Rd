@@ -117,7 +117,7 @@ on every platform, \code{NA} and \code{NaN} results and base R's warning
 The other implementations compute each element with both parts finite from
 SLEEF's real functions (for example \eqn{e^x(\cos y + i \sin y)} for
 \code{exp}, \eqn{\log|z| + i\,\mathrm{atan2}(y, x)} for \code{log} with
-\eqn{\log|z|} as \code{log1p(x^2 + y^2 - 1) / 2} near \eqn{|z| = 1},
+\eqn{\log|z|} as \code{log1p(x^2 + y^2 - 1) / 2} for \eqn{1/2 \le |z| \le 2},
 Kahan's formula for \code{tan} and \code{tanh}, and Hull, Fairgrieve and
 Tang's algorithm for \code{asin} and \code{acos}). On the lines where base
 R has its own branch-cut code for \code{asin}, \code{acos}, \code{asinh},
@@ -141,7 +141,7 @@ within about 5 ULP.
   function \tab accurate \tab fast \cr
   \code{sqrt} \tab 2 \tab 3 \cr
   \code{exp} \tab 2.5 \tab 3 \cr
-  \code{log} \tab 3 \tab 5.5 \cr
+  \code{log} \tab 2.5 \tab 4.5 \cr
   \code{log} with a base, \code{log2}, \code{log10} \tab 4.5 \tab 6.5 \cr
   \code{sin}, \code{cos}, \code{sinh}, \code{cosh} \tab 3 \tab 4 \cr
   \code{tan} \tab 4.5 \tab 6 \cr

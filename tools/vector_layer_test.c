@@ -4311,7 +4311,7 @@ static void cm_check(int op, int fast, ptrdiff_t n, int flags, double bound) {
 static const double cm_bound[RSIMD_CM_COUNT + RSIMD_CM2_COUNT][2] = {
   {2, 3},     /* sqrt */
   {2.5, 3},   /* exp */
-  {3, 5.5},   /* log */
+  {2.5, 4.5}, /* log */
   {3, 4},     /* sin */
   {3, 4},     /* cos */
   {4.5, 6},   /* tan */
@@ -4382,12 +4382,36 @@ static void test_cmath_cut_modes(void) {
   cm_base.asin_cut = RSIMD_CUT_UNFUSED;
 }
 
+/* log, and log with a base, at |z| near 0.6 and 1.6, where |log|z|| is
+   small enough that log(hypot(x, y)) would magnify the fast hypot's error
+   past the fast bound, in every lane. */
+static void test_cmath_log_hard(void) {
+  static const double hard[][2] = {{0x1.97e1833a3dac6p+0, 0x1.86597b0eff23p-20},
+                                    {0x1.92db028c711ep+0, -0x1.bfcf9e8144a6fp-3},
+                                    {0x1.3aa96912ea65ap-1, 0x1.8ceb4065fe4f8p-4}};
+  const ptrdiff_t nh = (ptrdiff_t) (sizeof hard / sizeof hard[0]);
+  ptrdiff_t i, n = 2 * RSIMD_LANES_64 * nh;
+  int fast;
+  for (fast = 0; fast < 2; fast++) {
+    for (i = 0; i < n; i++) {
+      cmx[i].r = hard[i % nh][0];
+      cmx[i].i = hard[i % nh][1];
+      cmy[i].r = hard[(i + 1) % nh][0];
+      cmy[i].i = hard[(i + 1) % nh][1];
+    }
+    cm_check(RSIMD_CM_LOG, fast, n, 0, cm_bound[RSIMD_CM_LOG][fast]);
+    cm_check(RSIMD_CM_COUNT + RSIMD_CM2_LOGB, fast, n, 0,
+             cm_bound[RSIMD_CM_COUNT + RSIMD_CM2_LOGB][fast]);
+  }
+}
+
 /* Many more inputs at full length, for the error statistics, then whole
    powers in the unfused multiply variant (x86-64 builds of R). */
 static void test_cmath_sweep(void) {
   const char *e = getenv("RSIMD_CMATH_REPS");
   int rep, reps = e ? atoi(e) : 2;
   for (rep = 0; rep < reps; rep++) test_cmath_fns(CM_M);
+  test_cmath_log_hard();
   test_cmath_cut_modes();
   cm_arith.mul_re = cm_arith.mul_im = RSIMD_CMUL_UNFUSED;
   cm_arith.div = RSIMD_CDIV_UNFUSED;
