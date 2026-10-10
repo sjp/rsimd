@@ -176,6 +176,12 @@ test_that("simd_pow() is bit-identical to base R's ^ with a scalar exponent and 
   for (b in setdiff(v, c(0.5, -1))) {
     want <- na_merged(suppressWarnings(v^b), v, b)
     want[v %in% 1 | b %in% 0] <- 1
+    # rsimd takes R 4.6.0's products for x^3 and x^4 with |x| <= 11; older
+    # R calls pow() there.
+    if (b %in% c(3, 4) && getRversion() < "4.6.0") {
+      s <- is.finite(v) & abs(v) <= 11
+      want[s] <- if (b == 3) v[s] * v[s] * v[s] else v[s] * v[s] * v[s] * v[s]
+    }
     want_i <- na_merged(suppressWarnings(xi^b), xi, b)
     want_i[xi %in% 1 | b %in% 0] <- 1
     special <- is.na(v) | is.na(b) | !is.finite(v) | !is.finite(b) | v %in% c(0, 1) |

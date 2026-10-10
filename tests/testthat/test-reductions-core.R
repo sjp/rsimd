@@ -758,10 +758,11 @@ test_that("finite = TRUE drops infinities and missing values on every tier", {
   )
   for (n in c(6L, 37L, 3e4L + 3L)) {
     x <- with_seed(n, runif(n, -100, 100))
+    edges <- unique(pmin(c(1L, n, 1024:1025, n - 1L), n))
     # Infinities at the ends, at a block edge and in the tail; an infinity
     # of each sign alone; missing values among them; no infinity at all.
     cases <- list(
-      replace(x, unique(pmin(c(1L, n, 1024:1025, n - 1L), n)), c(Inf, -Inf)),
+      replace(x, edges, rep_len(c(Inf, -Inf), length(edges))),
       replace(x, n %/% 2L + 1L, Inf), replace(x, 1L, -Inf),
       replace(x, unique(c(2L, n)), c(NA, NaN)),
       replace(x, unique(c(1L, 3L, n)), c(Inf, NA, -Inf)), x
