@@ -182,10 +182,12 @@ test_that("R/ raises no call-less errors", {
   skip_if_not(dir.exists(dir), "needs a source checkout")
   # Only the load-time warnings in aaa-onload.R, which have no user call.
   files <- setdiff(list.files(dir, "[.]R$", full.names = TRUE), file.path(dir, "aaa-onload.R"))
-  hits <- unlist(lapply(files, function(f) {
+  # An installed package's R/ (as under covr) holds only the lazy-load database.
+  skip_if(length(files) == 0, "needs the R/ sources")
+  hits <- as.character(unlist(lapply(files, function(f) {
     lines <- readLines(f)
     paste0(basename(f), ":", grep("call. = FALSE", lines, fixed = TRUE))
-  }))
+  })))
   hits <- hits[!grepl(":$", hits)]
   expect_identical(hits, character(), label = paste(hits, collapse = ", "))
 })
