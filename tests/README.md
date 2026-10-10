@@ -64,7 +64,7 @@ The `helper-*.R` files are loaded before the tests:
 | `NOT_CRAN=true` | Runs the tests marked `skip_on_cran()`, such as subprocess tests and the C lint, and makes the kernel tests loop over every available tier. Without it (as on CRAN, outside an interactive session) they test only the best tier and `none`. |
 | `RSIMD_EXTENDED_TESTS=true` | Also runs the long and randomised tests. They take a few seconds more. |
 | `RSIMD_TEST_SUBSET=quick` | Caps input lengths at 1000 and drops the long length, for slow environments (valgrind, emulators) and the `fast` CI job; the cases around every vector width are kept. |
-| `RSIMD_TEST_SUBSET=tier_emulation` | As `quick`, and skips tests that start a subprocess (an emulator does not follow it). |
+| `RSIMD_TEST_SUBSET=tier_emulation` | As `quick`, and skips tests that start a subprocess (QEMU user mode runs it natively, SDE slowly). |
 | `RSIMD_TEST_TIERS=avx512,none` | The kernel tests loop over these tiers only (`none` is always added as the oracle); a tier that is not available is an error. |
 | `RSIMD_IMPL`, `RSIMD_CPU_FEATURES_MASK`, `RSIMD_DISABLE_TIERS`, `RSIMD_DEBUG_STRIDE` | Change the implementation in use, the CPU features detected, the tiers built and the chunk size (see `?rsimd_options`). |
 

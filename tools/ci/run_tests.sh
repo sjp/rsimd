@@ -18,7 +18,8 @@
 # tests/README.md). With --runner, R's own executable (R_HOME/bin/exec/R) is
 # started directly under the emulator with the environment R's front-end
 # script would set, because emulators do not reliably follow the exec chain
-# from Rscript. Subprocesses started by the tests then run natively.
+# from Rscript. Subprocesses started by the tests then run natively under
+# QEMU user mode, and slowly under SDE, which follows them.
 
 set -eu
 

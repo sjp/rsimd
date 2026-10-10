@@ -4,7 +4,8 @@
 #   "quick"          input lengths are capped at 1000 (the tail and block
 #                    cases around every vector width are kept);
 #   "tier_emulation" as "quick", and tests that start a subprocess are
-#                    skipped (an emulator does not follow them).
+#                    skipped (QEMU user mode runs them natively, SDE
+#                    slowly).
 # RSIMD_TEST_TIERS (comma-separated, e.g. "avx512,none") restricts the
 # tiers the kernel tests loop over; "none" is always added as the oracle.
 test_subset <- function() {

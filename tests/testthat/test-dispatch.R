@@ -312,19 +312,29 @@ test_that("an option set in a calling handler of an rsimd call is honoured insid
 test_that("an interrupt between chunks leaves the next call's state clean", {
   skip_on_cran()
   skip_on_os("windows")
-  skip_if_not_installed("callr")
-  rs <- callr::r_session$new()
+  skip_if_no_subprocess()
+  # Under an emulator such as SDE, which follows subprocesses, the session
+  # takes seconds to start and the loop to begin.
+  rs <- callr::r_session$new(wait_timeout = 120000)
   on.exit(rs$close(), add = TRUE)
-  rs$call(function() {
+  started <- tempfile()
+  on.exit(unlink(started), add = TRUE)
+  rs$call(function(started) {
     tiers <- rsimd::simd_available()
     # A pinned operand switches the table for the call; the interrupt
     # leaves the call with it still switched.
     x <- rsimd::simd_vec(as.double(seq_len(5e7)), impl = tiers[[length(tiers)]])
-    tryCatch(repeat rsimd::simd_sum(x), interrupt = function(e) "interrupted")
-  })
-  Sys.sleep(1)
+    tryCatch(repeat {
+      rsimd::simd_sum(x)
+      if (!file.exists(started)) file.create(started)
+    }, interrupt = function(e) "interrupted")
+  }, list(started))
+  # Interrupt only once the loop has run, so the interrupt lands inside it.
+  deadline <- Sys.time() + 120
+  while (!file.exists(started) && Sys.time() < deadline) Sys.sleep(0.1)
+  expect_true(file.exists(started))
   rs$interrupt()
-  expect_identical(rs$poll_process(10000), "ready")
+  expect_identical(rs$poll_process(60000), "ready")
   expect_identical(rs$read()$result, "interrupted")
   res <- rs$run(function() {
     list(
@@ -341,7 +351,7 @@ test_that("an interrupt between chunks leaves the next call's state clean", {
 test_that("forked workers inherit the selection; callr sessions start from RSIMD_IMPL", {
   skip_on_cran()
   skip_on_os("windows")
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   old_impl <- getOption("rsimd.impl")
   on.exit(simd_use(old_impl), add = TRUE)
   child <- function() list(rsimd::simd_current(), rsimd:::.debug_active(1))
@@ -359,9 +369,12 @@ test_that("forked workers inherit the selection; callr sessions start from RSIMD
   expect_identical(.debug_active(1), "none")
 
   # A callr session is a fresh process: RSIMD_IMPL, not the parent's
-  # selection.
+  # selection. Under QEMU user mode it runs natively, so its best tier is
+  # its own, not the parent's.
   env <- function(impl) c(callr::rcmd_safe_env(), RSIMD_IMPL = impl)
-  expect_identical(callr::r(child, env = env("")), list(best, best))
+  res <- callr::r(function(child) list(child(), rsimd::simd_available()[1]), list(child),
+                  env = env(""))
+  expect_identical(res[[1]], list(res[[2]], res[[2]]))
   simd_use("auto")
   expect_identical(callr::r(child, env = env("none")), list("none", "none"))
 })

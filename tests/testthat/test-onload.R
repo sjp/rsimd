@@ -124,7 +124,7 @@ test_that("invalid options set before library(rsimd) warn and fall back", {
 })
 
 test_that("unloading the namespace unloads the shared library", {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   child <- function() {
     loadNamespace("rsimd")
     loaded <- "rsimd" %in% names(getLoadedDLLs())

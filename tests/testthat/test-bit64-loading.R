@@ -5,7 +5,7 @@
 
 test_that("creating integer64 loads bit64 when it is installed but not loaded", {
   skip_if_not_installed("bit64")
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   child <- function() {
     library(rsimd)
     # An integer64 vector made without bit64, as readRDS() would give it.
@@ -45,7 +45,7 @@ test_that("creating integer64 loads bit64 when it is installed but not loaded", 
 })
 
 test_that("without bit64 only integer64 results error, with an install hint", {
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   skip_on_cran()
   # A library holding rsimd but not bit64.
   lib <- tempfile("lib")
@@ -98,7 +98,7 @@ test_that("without bit64 only integer64 results error, with an install hint", {
 
 test_that("an rsimd call from a hook on bit64's loading leaves the outer call intact", {
   skip_if_not_installed("bit64")
-  skip_if_not_installed("callr")
+  skip_if_no_subprocess()
   child <- function() {
     library(rsimd)
     raw64 <- structure(unclass(simd_as_integer64(c(3, -1))), class = "integer64")
