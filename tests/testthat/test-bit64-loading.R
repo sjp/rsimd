@@ -51,7 +51,13 @@ test_that("without bit64 only integer64 results error, with an install hint", {
   lib <- tempfile("lib")
   dir.create(lib)
   link <- file.path(lib, "rsimd")
-  if (!file.symlink(find.package("rsimd"), link)) skip("cannot symlink rsimd")
+  # On Windows a junction: unlink() removes a directory link only as one.
+  linked <- if (.Platform$OS.type == "windows") {
+    get("Sys.junction", baseenv())(find.package("rsimd"), link)
+  } else {
+    file.symlink(find.package("rsimd"), link)
+  }
+  if (!linked) skip("cannot link rsimd")
   child <- function() {
     library(rsimd)
     # integer64 3, from its bits: simd_as_integer64() itself needs bit64.

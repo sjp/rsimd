@@ -20,7 +20,9 @@
  * it is built from cacos as the vector kernels build it.
  *
  * On Windows, base R has no working ctanh and computes tanh as
- * -i tan(iz); so does rsimd there. */
+ * -i tan(iz); so does rsimd there. Windows' clog overflows to an infinite
+ * real part where |z| exceeds DBL_MAX; rsimd scales z there first, so log
+ * stays finite as it does elsewhere. */
 
 #include <complex.h>
 #include <math.h>
@@ -174,12 +176,28 @@ static double complex z_cacosh(double complex z) {
 #define z_cacosh cacosh
 #endif
 
+/* C99's clog, finite wherever z is: Windows' clog takes log(hypot(x, y)),
+   which overflows where |z| > DBL_MAX, so beyond 2^1022 log|z| is taken
+   of z / 2 (exact there but for a subnormal part) plus log 2, and the
+   angle of z itself. */
+#ifdef _WIN32
+static double complex z_clog(double complex z) {
+  double complex r;
+  if (fmax(fabs(creal(z)), fabs(cimag(z))) <= 0x1p1022) return clog(z);
+  __real__ r = creal(clog(0.5 * z)) + M_LN2;
+  __imag__ r = carg(z);
+  return r;
+}
+#else
+#define z_clog clog
+#endif
+
 static double complex z_asinh(double complex z) { return -I * z_asin(z * I); }
 
 static double complex z_atanh(double complex z) { return -I * z_atan(z * I); }
 
 static void z_logbase(const Rcomplex *z, const Rcomplex *base, Rcomplex *r) {
-  from_c99(clog(to_c99(z)) / clog(to_c99(base)), r);
+  from_c99(z_clog(to_c99(z)) / z_clog(to_c99(base)), r);
 }
 
 static void z_atan2(const Rcomplex *csn, const Rcomplex *ccs, Rcomplex *r) {
@@ -210,7 +228,7 @@ static void z_atan2(const Rcomplex *csn, const Rcomplex *ccs, Rcomplex *r) {
 
 CBASE1(b_sqrt, csqrt(z))
 CBASE1(b_exp, cexp(z))
-CBASE1(b_log, clog(z))
+CBASE1(b_log, z_clog(z))
 CBASE1(b_sin, csin(z))
 CBASE1(b_cos, ccos(z))
 CBASE1(b_tan, z_tan(z))
