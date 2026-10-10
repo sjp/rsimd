@@ -889,10 +889,15 @@ test_that("NaN in rescanned blocks still lets a later NA decide, and alone gives
       }
     }
   }
-  # With na.rm the NaN are still counted out (whole numbers: exact sums).
-  y <- as.double(sample.int(1000L, n, TRUE))
+  # With na.rm the NaN are still counted out. Whole numbers make the sums
+  # exact, so in fast mode (no refinement) the mean is the exact sum over
+  # the count rounded once; base R's mean() is that only with long double.
+  options(rsimd.precision = "fast")
+  y <- with_seed(n, as.double(sample.int(1000L, n, TRUE)))
   y[nan_at$every_64] <- NaN
-  expect_tiers_give(mean(y, na.rm = TRUE), function(v) simd_mean(v, na.rm = TRUE), y)
+  expect_tiers_give(
+    sum(y, na.rm = TRUE) / sum(!is.na(y)), function(v) simd_mean(v, na.rm = TRUE), y
+  )
   expect_tiers_give(min(y, na.rm = TRUE), function(v) simd_min(v, na.rm = TRUE), y)
   expect_tiers_give(which.max(y), simd_which_max, y)
 })
