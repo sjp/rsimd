@@ -2174,10 +2174,14 @@ static void test_reduce(ptrdiff_t n) {
         }
 #define REF_CHECK                                                                \
   snprintf(what, sizeof what, "prod_f64 v%d narm%d way%d", variant, narm, way);  \
-  check_flags(what, n, &r, &want);                                               \
-  n_checks++;                                                                    \
-  if (!(bits(r.f64) == bits(want.f64) || (isnan(r.f64) && isnan(want.f64))))     \
-    fail(what, n, 3, "product differs");
+  if (want.saw_na && !narm) {                                                    \
+    check_stopped(what, n, &r);                                                  \
+  } else {                                                                       \
+    check_flags(what, n, &r, &want);                                             \
+    n_checks++;                                                                  \
+    if (!(bits(r.f64) == bits(want.f64) || (isnan(r.f64) && isnan(want.f64))))   \
+      fail(what, n, 3, "product differs");                                       \
+  }
         TWO_WAYS(r, reduce_init(&r, 1.0), RSIMD_KERNEL(prod_f64)(rd + off, len, &r, &o))
 #undef REF_CHECK
 
@@ -2434,6 +2438,10 @@ static void test_prod2(ptrdiff_t n) {
               }
               snprintf(what, sizeof what, "prod2_f64 op%d v%d flags%d narm%d check%d way%d", op,
                        variant, f, narm, check, way);
+              if (want.saw_na && !narm) {
+                check_stopped(what, n, &r);
+                continue;
+              }
               if (chk) check_flags(what, n, &r, &want);
               n_checks++;
               if (!(bits(r.f64) == bits(want.f64) || (isnan(r.f64) && isnan(want.f64)))) {
