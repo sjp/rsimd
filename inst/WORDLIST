@@ -1,5 +1,6 @@
 acos
 acosh
+ALTREP
 anyNA
 arg
 Arg
@@ -33,6 +34,7 @@ double's
 DQ
 eq
 expm
+extremum
 Fairgrieve
 fallbacks
 fma
@@ -40,6 +42,7 @@ FMA
 FRECPE
 FRSQRTE
 glibc
+glibc's
 Hanek
 hypot
 idiv
@@ -107,6 +110,7 @@ th
 tzcnt
 ULP
 Unfused
+underflowed
 var
 vec
 VL
