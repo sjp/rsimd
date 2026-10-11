@@ -2,8 +2,9 @@
 
 | | |
 |---|---|
-| Timestamp (UTC) | 2026-10-07T06:49:13Z |
-| rsimd | 0.1.0 (git 8a2d3e839cdb544674eb5fd938b645cac69469fd) |
+| Timestamp (UTC) | 2026-10-11T22:03:29Z |
+| rsimd | 0.1.0 (git d95c7863d200e98e30b6f9679a28d91f9d7d1615) |
+| rsimd library | `/Users/runner/work/_temp/Library/rsimd` (built R 4.6.1; aarch64-apple-darwin23; 2026-10-11 21:53:30 UTC; unix) |
 | R | R version 4.6.1 (2026-06-24) |
 | Compiler | `clang -arch arm64` |
 | CFLAGS | `-falign-functions=64 -Wall -g -O2` |
@@ -12,7 +13,7 @@
 | CPU features | neon, fp16, dotprod |
 | Tiers | neon, none (auto: neon) |
 | bench | 1.1.4 |
-| Run time | 467 s |
+| Run time | 550 s |
 
 Cells show the median time per call, then in parentheses the speedup versus the `none` tier (`n`) and versus base R (`b`); above 1× is faster. ⚠ marks a SIMD tier less than 1.1× faster than `none` on a compute-bound op at n ≥ 1e5, which suggests it is running scalar code. Timings are informational: they vary between machines and runs, and at n = 1e3 the fixed per-call overhead dominates.
 
@@ -24,9 +25,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.984 µs (2.9× n, 2.3× b) | 2.83 µs (0.78× b) | 2.21 µs |
-| 1e5 | 15.2 µs (13.7× n, 10.9× b) | 208 µs (0.79× b) | 165 µs |
-| 1e7 | 1.87 ms (11.5× n, 9.2× b) | 21.5 ms (0.80× b) | 17.2 ms |
+| 1e3 | 0.943 µs (3.5× n, 1.9× b) | 3.32 µs (0.54× b) | 1.8 µs |
+| 1e5 | 17.7 µs (28.1× n, 13.7× b) | 496 µs (0.49× b) | 243 µs |
+| 1e7 | 2.77 ms (11.7× n, 7.5× b) | 32.5 ms (0.64× b) | 20.8 ms |
 
 ### sum (integer)
 
@@ -34,9 +35,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.943 µs (1.5× n, 0.87× b) | 1.39 µs (0.59× b) | 0.82 µs |
-| 1e5 | 13.4 µs (3.7× n, 4.9× b) | 50 µs (1.3× b) | 66.1 µs |
-| 1e7 | 1.36 ms (3.8× n, 4.9× b) | 5.19 ms (1.3× b) | 6.74 ms |
+| 1e3 | 1.03 µs (1.2× n, 0.80× b) | 1.27 µs (0.65× b) | 0.82 µs |
+| 1e5 | 26.2 µs (2.3× n, 4.5× b) | 59.1 µs (2.0× b) | 118 µs |
+| 1e7 | 3.03 ms (2.0× n, 2.6× b) | 5.91 ms (1.3× b) | 7.78 ms |
 
 ### mean (double)
 
@@ -44,9 +45,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.984 µs (3.0× n, 3.8× b) | 2.99 µs (1.3× b) | 3.77 µs |
-| 1e5 | 14.9 µs (14.0× n, 13.5× b) | 209 µs (1.0× b) | 201 µs |
-| 1e7 | 1.92 ms (11.1× n, 11.3× b) | 21.4 ms (1.0× b) | 21.8 ms |
+| 1e3 | 0.943 µs (3.4× n, 4.0× b) | 3.2 µs (1.2× b) | 3.77 µs |
+| 1e5 | 17.8 µs (17.6× n, 12.8× b) | 314 µs (0.72× b) | 227 µs |
+| 1e7 | 3.22 ms (10.3× n, 8.1× b) | 33.3 ms (0.79× b) | 26.2 ms |
 
 ### dot (double)
 
@@ -54,9 +55,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base | blas |
 |---|---|---|---|---|
-| 1e3 | 1.31 µs (2.8× n, 1.8× b) | 3.69 µs (0.63× b) | 2.34 µs | 2.34 µs (1.0× b) |
-| 1e5 | 23.8 µs (11.3× n, 8.5× b) | 268 µs (0.76× b) | 203 µs | 211 µs (1.0× b) |
-| 1e7 | 3.37 ms (8.4× n, 9.8× b) | 28.2 ms (1.2× b) | 33.2 ms | 22.9 ms (1.4× b) |
+| 1e3 | 1.27 µs (3.3× n, 1.7× b) | 4.14 µs (0.52× b) | 2.17 µs | 2.3 µs (0.95× b) |
+| 1e5 | 22.5 µs (14.0× n, 10.2× b) | 315 µs (0.73× b) | 229 µs | 227 µs (1.0× b) |
+| 1e7 | 5.11 ms (8.0× n, 8.5× b) | 41 ms (1.1× b) | 43.5 ms | 31 ms (1.4× b) |
 
 ### add (double)
 
@@ -64,9 +65,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.93 µs (1.5× n, 0.46× b) | 2.93 µs (0.30× b) | 0.882 µs |
-| 1e5 | 33.5 µs (4.0× n, 0.83× b) | 135 µs (0.21× b) | 27.8 µs |
-| 1e7 | 5.41 ms (2.7× n, 1.0× b) | 14.4 ms (0.37× b) | 5.27 ms |
+| 1e3 | 1.6 µs (1.2× n, 0.28× b) | 1.97 µs (0.23× b) | 0.451 µs |
+| 1e5 | 39.8 µs (2.7× n, 0.80× b) | 107 µs (0.30× b) | 31.9 µs |
+| 1e7 | 77.8 ms (0.19× n, 0.11× b) | 14.9 ms (0.55× b) | 8.22 ms |
 
 ### add (integer)
 
@@ -74,9 +75,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.44 µs (1.8× n, 2.0× b) | 2.58 µs (1.1× b) | 2.87 µs |
-| 1e5 | 36.8 µs (4.2× n, 7.4× b) | 153 µs (1.8× b) | 272 µs |
-| 1e7 | 4.71 ms (3.4× n, 5.4× b) | 16.1 ms (1.6× b) | 25.6 ms |
+| 1e3 | 1.64 µs (1.8× n, 1.8× b) | 3.03 µs (1.0× b) | 2.99 µs |
+| 1e5 | 38.3 µs (4.8× n, 7.8× b) | 184 µs (1.6× b) | 298 µs |
+| 1e7 | 28.2 ms (4.0× n, 2.2× b) | 114 ms (0.54× b) | 60.9 ms |
 
 ### fma (double)
 
@@ -84,9 +85,39 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.6 µs (2.0× n, 0.72× b) | 3.2 µs (0.36× b) | 1.15 µs |
-| 1e5 | 39.9 µs (5.1× n, 1.7× b) | 202 µs (0.34× b) | 68.8 µs |
-| 1e7 | 7.88 ms (2.6× n, 1.4× b) | 20.5 ms (0.53× b) | 10.8 ms |
+| 1e3 | 1.8 µs (1.5× n, 0.61× b) | 2.66 µs (0.42× b) | 1.11 µs |
+| 1e5 | 46.2 µs (3.7× n, 1.8× b) | 169 µs (0.50× b) | 84.2 µs |
+| 1e7 | 28.4 ms (1.4× n, 0.86× b) | 39.7 ms (0.62× b) | 24.5 ms |
+
+### scalar_sub (double)
+
+`simd_sub(1, x)` vs base `1 - x`
+
+| n | neon | none | base |
+|---|---|---|---|
+| 1e3 | 1.68 µs (1.3× n, 0.24× b) | 2.26 µs (0.18× b) | 0.41 µs |
+| 1e5 | 44 µs (3.0× n, 0.47× b) | 133 µs (0.16× b) | 20.7 µs |
+| 1e7 | 8.62 ms (2.5× n, 0.60× b) | 21.1 ms (0.24× b) | 5.15 ms |
+
+### fma_scalar (double)
+
+`simd_fma(x, 2, 1)` vs base `x * 2 + 1`
+
+| n | neon | none | base |
+|---|---|---|---|
+| 1e3 | 1.76 µs (1.5× n, 0.47× b) | 2.62 µs (0.31× b) | 0.82 µs |
+| 1e5 | 46.3 µs (3.4× n, 1.4× b) | 158 µs (0.42× b) | 65.8 µs |
+| 1e7 | 6.47 ms (3.6× n, 1.9× b) | 23.4 ms (0.52× b) | 12.1 ms |
+
+### lt_scalar (double)
+
+`simd_lt(x, 0)` vs base `x < 0`
+
+| n | neon | none | base |
+|---|---|---|---|
+| 1e3 | 1.48 µs (1.7× n, 0.94× b) | 2.5 µs (0.56× b) | 1.39 µs |
+| 1e5 | 34.1 µs (4.6× n, 3.9× b) | 156 µs (0.85× b) | 133 µs |
+| 1e7 | 7.1 ms (3.3× n, 2.8× b) | 23.6 ms (0.85× b) | 20.1 ms |
 
 ### pmax (double)
 
@@ -94,9 +125,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.84 µs (1.6× n, 3.1× b) | 2.93 µs (1.9× b) | 5.66 µs |
-| 1e5 | 30.2 µs (3.9× n, 19.8× b) | 117 µs (5.1× b) | 600 µs |
-| 1e7 | 4.78 ms (2.5× n, 22.8× b) | 12 ms (9.1× b) | 109 ms |
+| 1e3 | 1.72 µs (1.1× n, 3.1× b) | 1.89 µs (2.8× b) | 5.37 µs |
+| 1e5 | 37.2 µs (1.0× n, 18.7× b) ⚠ | 38.5 µs (18.1× b) | 697 µs |
+| 1e7 | 23 ms (0.32× n, 3.4× b) ⚠ | 7.41 ms (10.6× b) | 78.2 ms |
 
 ### exp (double)
 
@@ -104,9 +135,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 2.87 µs (1.1× n, 1.2× b) | 3.28 µs (1.1× b) | 3.44 µs |
-| 1e5 | 213 µs (3.0× n, 3.3× b) | 646 µs (1.1× b) | 702 µs |
-| 1e7 | 27.2 ms (2.7× n, 2.8× b) | 72.3 ms (1.1× b) | 76.6 ms |
+| 1e3 | 2.67 µs (1.4× n, 1.4× b) | 3.69 µs (1.0× b) | 3.81 µs |
+| 1e5 | 217 µs (3.1× n, 3.6× b) | 669 µs (1.2× b) | 784 µs |
+| 1e7 | 25.1 ms (3.1× n, 3.4× b) | 77.3 ms (1.1× b) | 85.3 ms |
 
 ### any_na (double)
 
@@ -114,9 +145,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.697 µs (1.3× n, 0.59× b) | 0.902 µs (0.45× b) | 0.41 µs |
-| 1e5 | 12.3 µs (2.8× n, 2.6× b) | 34.2 µs (0.95× b) | 32.3 µs |
-| 1e7 | 1.9 ms (1.8× n, 2.0× b) | 3.34 ms (1.1× b) | 3.71 ms |
+| 1e3 | 0.533 µs (1.5× n, 0.85× b) | 0.779 µs (0.58× b) | 0.451 µs |
+| 1e5 | 12.1 µs (3.0× n, 2.8× b) | 36.4 µs (0.94× b) | 34.3 µs |
+| 1e7 | 2.15 ms (1.8× n, 1.9× b) | 3.79 ms (1.1× b) | 4.08 ms |
 
 ### any_na (integer)
 
@@ -124,9 +155,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.574 µs (1.6× n, 0.86× b) | 0.902 µs (0.55× b) | 0.492 µs |
-| 1e5 | 5.86 µs (6.1× n, 7.3× b) | 36 µs (1.2× b) | 42.7 µs |
-| 1e7 | 1.17 ms (3.6× n, 3.8× b) | 4.26 ms (1.1× b) | 4.48 ms |
+| 1e3 | 0.492 µs (1.7× n, 1.2× b) | 0.82 µs (0.70× b) | 0.574 µs |
+| 1e5 | 6.11 µs (6.1× n, 8.0× b) | 37.4 µs (1.3× b) | 48.7 µs |
+| 1e7 | 1.2 ms (3.8× n, 4.4× b) | 4.57 ms (1.2× b) | 5.3 ms |
 
 ### is_na (double)
 
@@ -134,9 +165,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.11 µs (2.1× n, 0.56× b) | 2.3 µs (0.27× b) | 0.615 µs |
-| 1e5 | 31 µs (5.5× n, 1.7× b) | 170 µs (0.30× b) | 51.7 µs |
-| 1e7 | 27 ms (0.83× n, 0.21× b) | 22.4 ms (0.26× b) | 5.77 ms |
+| 1e3 | 0.984 µs (2.4× n, 0.71× b) | 2.38 µs (0.29× b) | 0.697 µs |
+| 1e5 | 17.6 µs (11.1× n, 3.6× b) | 195 µs (0.32× b) | 63.3 µs |
+| 1e7 | 13.4 ms (2.1× n, 0.59× b) | 27.6 ms (0.28× b) | 7.86 ms |
 
 ### which (logical)
 
@@ -144,9 +175,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.44 µs (1.1× n, 1.0× b) | 1.56 µs (0.93× b) | 1.46 µs |
-| 1e5 | 74.5 µs (1.1× n, 3.6× b) | 82.9 µs (3.3× b) | 271 µs |
-| 1e7 | 9.06 ms (4.4× n, 5.6× b) | 39.9 ms (1.3× b) | 51.1 ms |
+| 1e3 | 1.52 µs (1.1× n, 1.1× b) | 1.6 µs (1.0× b) | 1.64 µs |
+| 1e5 | 94.5 µs (1.2× n, 4.1× b) | 117 µs (3.3× b) | 383 µs |
+| 1e7 | 15.8 ms (1.2× n, 4.2× b) | 19.6 ms (3.4× b) | 65.8 ms |
 
 ### count (logical)
 
@@ -154,9 +185,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.738 µs (1.6× n, 1.1× b) | 1.15 µs (0.71× b) | 0.82 µs |
-| 1e5 | 10.7 µs (4.7× n, 5.9× b) | 50.3 µs (1.3× b) | 63.8 µs |
-| 1e7 | 1.97 ms (3.2× n, 4.0× b) | 6.23 ms (1.3× b) | 7.91 ms |
+| 1e3 | 0.779 µs (1.5× n, 1.1× b) | 1.19 µs (0.72× b) | 0.861 µs |
+| 1e5 | 12 µs (4.6× n, 6.3× b) | 55.1 µs (1.4× b) | 75.8 µs |
+| 1e7 | 2.47 ms (2.3× n, 3.2× b) | 5.65 ms (1.4× b) | 7.83 ms |
 
 ### max_abs (double)
 
@@ -164,9 +195,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.11 µs (2.0× n, 1.1× b) | 2.21 µs (0.53× b) | 1.17 µs |
-| 1e5 | 22.7 µs (5.7× n, 3.6× b) | 129 µs (0.64× b) | 82.2 µs |
-| 1e7 | 2.45 ms (5.8× n, 15.8× b) | 14.3 ms (2.7× b) | 38.6 ms |
+| 1e3 | 1.11 µs (2.1× n, 1.2× b) | 2.34 µs (0.58× b) | 1.35 µs |
+| 1e5 | 20.2 µs (7.1× n, 4.7× b) | 144 µs (0.66× b) | 95.2 µs |
+| 1e7 | 2.83 ms (6.4× n, 10.8× b) | 18 ms (1.7× b) | 30.6 ms |
 
 ### which_max_abs (double)
 
@@ -174,9 +205,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.902 µs (2.5× n, 4.8× b) | 2.25 µs (1.9× b) | 4.35 µs |
-| 1e5 | 22.3 µs (6.0× n, 18.8× b) | 134 µs (3.1× b) | 420 µs |
-| 1e7 | 2.53 ms (5.5× n, 18.5× b) | 14 ms (3.3× b) | 46.7 ms |
+| 1e3 | 0.861 µs (2.5× n, 5.6× b) | 2.13 µs (2.3× b) | 4.84 µs |
+| 1e5 | 19 µs (7.7× n, 25.2× b) | 147 µs (3.3× b) | 478 µs |
+| 1e7 | 3.17 ms (5.5× n, 17.8× b) | 17.3 ms (3.2× b) | 56.2 ms |
 
 ### as_integer (double)
 
@@ -184,9 +215,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 2.3 µs (1.4× n, 0.38× b) | 3.32 µs (0.26× b) | 0.861 µs |
-| 1e5 | 66.2 µs (2.5× n, 1.1× b) | 169 µs (0.42× b) | 71.2 µs |
-| 1e7 | 31.3 ms (0.61× n, 0.24× b) | 19.2 ms (0.38× b) | 7.38 ms |
+| 1e3 | 3.24 µs (1.5× n, 0.28× b) | 4.76 µs (0.19× b) | 0.902 µs |
+| 1e5 | 74.4 µs (2.5× n, 1.1× b) | 189 µs (0.42× b) | 80.1 µs |
+| 1e7 | 23.9 ms (1.3× n, 0.58× b) | 31.1 ms (0.45× b) | 13.9 ms |
 
 ### hamming (double)
 
@@ -194,9 +225,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.76 µs (1.6× n, 1.3× b) | 2.83 µs (0.83× b) | 2.34 µs |
-| 1e5 | 37.4 µs (3.6× n, 5.0× b) | 135 µs (1.4× b) | 189 µs |
-| 1e7 | 4.12 ms (3.3× n, 5.3× b) | 13.5 ms (1.6× b) | 21.8 ms |
+| 1e3 | 1.68 µs (1.6× n, 1.3× b) | 2.71 µs (0.79× b) | 2.13 µs |
+| 1e5 | 38.2 µs (3.7× n, 5.4× b) | 142 µs (1.5× b) | 208 µs |
+| 1e7 | 4.15 ms (4.3× n, 7.5× b) | 17.9 ms (1.7× b) | 31.2 ms |
 
 ### hamming (integer)
 
@@ -204,9 +235,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.64 µs (2.1× n, 1.6× b) | 3.49 µs (0.75× b) | 2.62 µs |
-| 1e5 | 24.7 µs (8.8× n, 8.9× b) | 219 µs (1.0× b) | 219 µs |
-| 1e7 | 2.43 ms (9.2× n, 11.7× b) | 22.2 ms (1.3× b) | 28.5 ms |
+| 1e3 | 1.6 µs (2.2× n, 1.6× b) | 3.49 µs (0.72× b) | 2.5 µs |
+| 1e5 | 25.3 µs (9.1× n, 9.1× b) | 230 µs (1.0× b) | 231 µs |
+| 1e7 | 2.75 ms (8.4× n, 10.3× b) | 23.2 ms (1.2× b) | 28.4 ms |
 
 ### is_whole (double)
 
@@ -214,9 +245,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.23 µs (2.1× n, 2.0× b) | 2.54 µs (1.0× b) | 2.46 µs |
-| 1e5 | 42.7 µs (4.0× n, 5.2× b) | 172 µs (1.3× b) | 224 µs |
-| 1e7 | 9.68 ms (1.9× n, 3.0× b) | 18.6 ms (1.6× b) | 28.9 ms |
+| 1e3 | 1.11 µs (2.1× n, 2.3× b) | 2.38 µs (1.1× b) | 2.58 µs |
+| 1e5 | 37.1 µs (4.7× n, 6.8× b) | 174 µs (1.5× b) | 253 µs |
+| 1e7 | 6.13 ms (2.7× n, 4.2× b) | 16.7 ms (1.6× b) | 26 ms |
 
 ### is_pow2 (double)
 
@@ -224,9 +255,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.23 µs (3.6× n, 11.6× b) | 4.47 µs (3.2× b) | 14.3 µs |
-| 1e5 | 44.8 µs (17.2× n, 33.2× b) | 773 µs (1.9× b) | 1.49 ms |
-| 1e7 | 4.7 ms (17.7× n, 33.3× b) | 83.4 ms (1.9× b) | 157 ms |
+| 1e3 | 1.23 µs (3.6× n, 12.0× b) | 4.43 µs (3.3× b) | 14.7 µs |
+| 1e5 | 42.4 µs (18.8× n, 39.1× b) | 798 µs (2.1× b) | 1.66 ms |
+| 1e7 | 4.97 ms (16.8× n, 42.4× b) | 83.6 ms (2.5× b) | 211 ms |
 
 ### recip_approx (double)
 
@@ -234,9 +265,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.27 µs (1.0× n, 0.55× b) | 1.31 µs (0.53× b) | 0.697 µs |
-| 1e5 | 45.9 µs (0.50× n, 0.44× b) | 22.8 µs (0.89× b) | 20.3 µs |
-| 1e7 | 4.38 ms (0.71× n, 0.72× b) | 3.13 ms (1.0× b) | 3.17 ms |
+| 1e3 | 1.27 µs (0.84× n, 0.35× b) | 1.07 µs (0.42× b) | 0.451 µs |
+| 1e5 | 45.6 µs (0.56× n, 0.51× b) | 25.3 µs (0.92× b) | 23.2 µs |
+| 1e7 | 9.46 ms (3.3× n, 0.66× b) | 31.5 ms (0.20× b) | 6.26 ms |
 
 ### rsqrt (double)
 
@@ -244,9 +275,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 2.03 µs (1.0× n, 2.7× b) | 1.97 µs (2.8× b) | 5.45 µs |
-| 1e5 | 60 µs (1.0× n, 8.6× b) | 61.7 µs (8.3× b) | 513 µs |
-| 1e7 | 5.89 ms (1.1× n, 8.8× b) | 6.2 ms (8.4× b) | 52.1 ms |
+| 1e3 | 1.35 µs (1.0× n, 4.0× b) | 1.31 µs (4.1× b) | 5.37 µs |
+| 1e5 | 66.2 µs (1.1× n, 9.3× b) | 74.3 µs (8.3× b) | 614 µs |
+| 1e7 | 9.04 ms (0.77× n, 8.7× b) | 6.99 ms (11.3× b) | 78.9 ms |
 
 ### rsqrt_approx (double)
 
@@ -254,9 +285,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.35 µs (1.0× n, 3.8× b) | 1.39 µs (3.7× b) | 5.21 µs |
-| 1e5 | 59.8 µs (1.1× n, 9.0× b) ⚠ | 63 µs (8.5× b) | 537 µs |
-| 1e7 | 6.38 ms (1.0× n, 8.9× b) ⚠ | 6.69 ms (8.5× b) | 57 ms |
+| 1e3 | 1.31 µs (1.0× n, 4.1× b) | 1.31 µs (4.1× b) | 5.41 µs |
+| 1e5 | 71.3 µs (1.0× n, 8.8× b) ⚠ | 72.1 µs (8.7× b) | 629 µs |
+| 1e7 | 6.83 ms (0.95× n, 10.0× b) ⚠ | 6.47 ms (10.5× b) | 68 ms |
 
 ### rootn (double)
 
@@ -264,9 +295,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 30.7 µs (1.2× n, 0.38× b) | 35.9 µs (0.32× b) | 11.5 µs |
-| 1e5 | 2.68 ms (1.1× n, 0.47× b) | 2.98 ms (0.43× b) | 1.27 ms |
-| 1e7 | 290 ms (1.1× n, 0.43× b) ⚠ | 310 ms (0.40× b) | 125 ms |
+| 1e3 | 31.6 µs (1.1× n, 0.37× b) | 33.9 µs (0.35× b) | 11.8 µs |
+| 1e5 | 2.9 ms (1.2× n, 0.44× b) | 3.37 ms (0.38× b) | 1.27 ms |
+| 1e7 | 303 ms (1.1× n, 0.43× b) | 335 ms (0.39× b) | 129 ms |
 
 ### mul (complex)
 
@@ -274,9 +305,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 4.63 µs (1.3× n, 0.50× b) | 6.11 µs (0.38× b) | 2.34 µs |
-| 1e5 | 87.7 µs (2.4× n, 1.6× b) | 211 µs (0.65× b) | 138 µs |
-| 1e7 | 98.9 ms (0.23× n, 0.14× b) | 22.6 ms (0.60× b) | 13.6 ms |
+| 1e3 | 2.38 µs (0.83× n, 0.64× b) | 1.97 µs (0.77× b) | 1.52 µs |
+| 1e5 | 91.2 µs (1.0× n, 1.6× b) | 91 µs (1.6× b) | 148 µs |
+| 1e7 | 139 ms (0.11× n, 0.12× b) | 14.8 ms (1.1× b) | 16.2 ms |
 
 ### div (complex)
 
@@ -284,9 +315,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 17.6 µs (1.0× n, 0.82× b) | 18.1 µs (0.79× b) | 14.4 µs |
-| 1e5 | 1.39 ms (1.0× n, 1.0× b) ⚠ | 1.46 ms (1.0× b) | 1.43 ms |
-| 1e7 | 143 ms (1.1× n, 1.1× b) ⚠ | 150 ms (1.0× b) | 156 ms |
+| 1e3 | 15 µs (1.0× n, 0.95× b) | 15.5 µs (0.92× b) | 14.2 µs |
+| 1e5 | 1.73 ms (1.5× n, 1.0× b) | 2.57 ms (0.66× b) | 1.69 ms |
+| 1e7 | 221 ms (1.0× n, 0.88× b) ⚠ | 227 ms (0.86× b) | 196 ms |
 
 ### prod (complex)
 
@@ -294,9 +325,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 2.38 µs (3.8× n, 1.2× b) | 9.06 µs (0.31× b) | 2.79 µs |
-| 1e5 | 140 µs (6.0× n, 1.9× b) | 844 µs (0.31× b) | 266 µs |
-| 1e7 | 17 ms (5.0× n, 1.6× b) | 85.2 ms (0.32× b) | 27.2 ms |
+| 1e3 | 2.3 µs (4.0× n, 1.2× b) | 9.14 µs (0.30× b) | 2.79 µs |
+| 1e5 | 143 µs (6.2× n, 1.9× b) | 880 µs (0.31× b) | 275 µs |
+| 1e7 | 13.4 ms (5.9× n, 2.0× b) | 79.5 ms (0.34× b) | 27 ms |
 
 ### abs (complex)
 
@@ -304,9 +335,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 5.78 µs (0.50× n, 0.40× b) | 2.91 µs (0.79× b) | 2.3 µs |
-| 1e5 | 492 µs (0.41× n, 0.41× b) ⚠ | 200 µs (1.0× b) | 200 µs |
-| 1e7 | 139 ms (0.17× n, 0.16× b) ⚠ | 24.3 ms (0.90× b) | 22 ms |
+| 1e3 | 5.45 µs (0.50× n, 0.38× b) | 2.71 µs (0.77× b) | 2.09 µs |
+| 1e5 | 517 µs (0.42× n, 0.40× b) ⚠ | 216 µs (1.0× b) | 207 µs |
+| 1e7 | 86.4 ms (0.39× n, 0.28× b) ⚠ | 33.9 ms (0.70× b) | 23.8 ms |
 
 ### pow_int (complex)
 
@@ -314,9 +345,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 4.22 µs (2.2× n, 1.1× b) | 9.31 µs (0.52× b) | 4.84 µs |
-| 1e5 | 183 µs (4.0× n, 2.6× b) | 725 µs (0.65× b) | 474 µs |
-| 1e7 | 24.8 ms (3.2× n, 2.1× b) | 79.3 ms (0.66× b) | 52.4 ms |
+| 1e3 | 3.85 µs (1.6× n, 1.3× b) | 6.23 µs (0.80× b) | 4.96 µs |
+| 1e5 | 210 µs (2.1× n, 2.3× b) | 449 µs (1.1× b) | 487 µs |
+| 1e7 | 89.3 ms (0.49× n, 0.52× b) | 43.5 ms (1.1× b) | 46.4 ms |
 
 ### sum_narm (double)
 
@@ -324,9 +355,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.15 µs (2.5× n, 1.6× b) | 2.83 µs (0.65× b) | 1.84 µs |
-| 1e5 | 34.8 µs (5.8× n, 4.8× b) | 202 µs (0.82× b) | 166 µs |
-| 1e7 | 3.65 ms (5.7× n, 5.0× b) | 20.8 ms (0.88× b) | 18.3 ms |
+| 1e3 | 1.23 µs (2.5× n, 1.4× b) | 3.03 µs (0.57× b) | 1.72 µs |
+| 1e5 | 39.3 µs (6.3× n, 4.5× b) | 246 µs (0.71× b) | 175 µs |
+| 1e7 | 3.57 ms (6.3× n, 4.4× b) | 22.4 ms (0.70× b) | 15.7 ms |
 
 ### min (double)
 
@@ -334,9 +365,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.984 µs (2.1× n, 0.79× b) | 2.09 µs (0.37× b) | 0.779 µs |
-| 1e5 | 18.8 µs (7.1× n, 3.5× b) | 134 µs (0.50× b) | 66.3 µs |
-| 1e7 | 2.59 ms (5.6× n, 2.7× b) | 14.4 ms (0.49× b) | 7.07 ms |
+| 1e3 | 0.902 µs (2.1× n, 0.86× b) | 1.93 µs (0.40× b) | 0.779 µs |
+| 1e5 | 22.7 µs (6.3× n, 3.0× b) | 144 µs (0.48× b) | 68.7 µs |
+| 1e7 | 1.84 ms (7.5× n, 3.7× b) | 13.8 ms (0.49× b) | 6.72 ms |
 
 ### min (integer)
 
@@ -344,9 +375,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.861 µs (3.1× n, 1.2× b) | 2.67 µs (0.40× b) | 1.07 µs |
-| 1e5 | 13.7 µs (14.6× n, 7.4× b) | 199 µs (0.51× b) | 102 µs |
-| 1e7 | 1.42 ms (15.3× n, 7.4× b) | 21.6 ms (0.48× b) | 10.5 ms |
+| 1e3 | 0.82 µs (3.1× n, 1.4× b) | 2.58 µs (0.43× b) | 1.11 µs |
+| 1e5 | 14.9 µs (14.4× n, 7.4× b) | 214 µs (0.52× b) | 110 µs |
+| 1e7 | 1.36 ms (13.9× n, 7.8× b) | 18.8 ms (0.56× b) | 10.6 ms |
 
 ### is_finite_all (double)
 
@@ -354,9 +385,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.779 µs (3.7× n, 2.6× b) | 2.91 µs (0.70× b) | 2.05 µs |
-| 1e5 | 22.5 µs (10.4× n, 8.4× b) | 233 µs (0.81× b) | 189 µs |
-| 1e7 | 2.5 ms (11.3× n, 13.9× b) | 28.2 ms (1.2× b) | 34.8 ms |
+| 1e3 | 0.615 µs (4.2× n, 4.0× b) | 2.58 µs (1.0× b) | 2.46 µs |
+| 1e5 | 28.2 µs (10.3× n, 8.4× b) | 290 µs (0.82× b) | 237 µs |
+| 1e7 | 2.3 ms (11.5× n, 16.5× b) | 26.4 ms (1.4× b) | 38 ms |
 
 ### bit_and (raw)
 
@@ -364,9 +395,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.44 µs (1.5× n, 0.86× b) | 2.21 µs (0.56× b) | 1.23 µs |
-| 1e5 | 5.7 µs (17.9× n, 21.3× b) | 102 µs (1.2× b) | 121 µs |
-| 1e7 | 3.35 ms (3.9× n, 4.2× b) | 13.1 ms (1.1× b) | 13.9 ms |
+| 1e3 | 0.902 µs (2.0× n, 1.5× b) | 1.85 µs (0.73× b) | 1.35 µs |
+| 1e5 | 5.99 µs (18.9× n, 25.8× b) | 113 µs (1.4× b) | 155 µs |
+| 1e7 | 2.31 ms (4.7× n, 6.9× b) | 10.9 ms (1.5× b) | 15.9 ms |
 
 ### popcount_total (raw)
 
@@ -374,9 +405,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.984 µs (1.0× n, 13.5× b) | 0.943 µs (14.0× b) | 13.2 µs |
-| 1e5 | 7.38 µs (1.1× n, 165.9× b) | 8.12 µs (150.8× b) | 1.22 ms |
-| 1e7 | 638 µs (1.1× n, 219.6× b) ⚠ | 700 µs (200.0× b) | 140 ms |
+| 1e3 | 0.779 µs (1.1× n, 20.2× b) | 0.861 µs (18.2× b) | 15.7 µs |
+| 1e5 | 8.24 µs (1.2× n, 204.9× b) | 9.72 µs (173.8× b) | 1.69 ms |
+| 1e7 | 604 µs (1.2× n, 186.2× b) | 711 µs (158.1× b) | 112 ms |
 
 ## Inputs with 1% NA (precision "fast")
 
@@ -386,9 +417,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.11 µs (2.5× n, 1.6× b) | 2.79 µs (0.65× b) | 1.8 µs |
-| 1e5 | 1.6 µs (7.2× n, 103.9× b) | 11.6 µs (14.4× b) | 166 µs |
-| 1e7 | 1.48 µs (6.3× n, 13307.7× b) | 9.31 µs (2110.5× b) | 19.6 ms |
+| 1e3 | 1.03 µs (3.2× n, 1.8× b) | 3.28 µs (0.55× b) | 1.8 µs |
+| 1e5 | 1.56 µs (8.0× n, 117.4× b) | 12.5 µs (14.7× b) | 183 µs |
+| 1e7 | 1.31 µs (8.2× n, 12474.0× b) | 10.7 µs (1523.5× b) | 16.4 ms |
 
 ### sum (integer)
 
@@ -396,9 +427,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.984 µs (0.87× n, 0.25× b) | 0.861 µs (0.29× b) | 0.246 µs |
-| 1e5 | 1.31 µs (0.62× n, 0.16× b) | 0.82 µs (0.25× b) | 0.205 µs |
-| 1e7 | 1.43 µs (0.66× n, 0.17× b) | 0.943 µs (0.26× b) | 0.246 µs |
+| 1e3 | 0.984 µs (0.83× n, 0.21× b) | 0.82 µs (0.25× b) | 0.205 µs |
+| 1e5 | 1.8 µs (0.43× n, 0.11× b) | 0.779 µs (0.26× b) | 0.205 µs |
+| 1e7 | 1.76 µs (0.47× n, 0.14× b) | 0.82 µs (0.30× b) | 0.246 µs |
 
 ### any_na (double)
 
@@ -406,9 +437,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.574 µs (1.1× n, 0.21× b) | 0.615 µs (0.20× b) | 0.123 µs |
-| 1e5 | 0.574 µs (1.1× n, 0.14× b) | 0.615 µs (0.13× b) | 0.082 µs |
-| 1e7 | 0.533 µs (1.1× n, 0.23× b) | 0.574 µs (0.21× b) | 0.123 µs |
+| 1e3 | 0.492 µs (1.0× n, 0.25× b) | 0.492 µs (0.25× b) | 0.123 µs |
+| 1e5 | 0.451 µs (1.2× n, 0.18× b) | 0.533 µs (0.15× b) | 0.082 µs |
+| 1e7 | 0.451 µs (1.0× n, 0.27× b) | 0.451 µs (0.27× b) | 0.123 µs |
 
 ### any_na (integer)
 
@@ -416,9 +447,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.492 µs (1.0× n, 0.25× b) | 0.492 µs (0.25× b) | 0.123 µs |
-| 1e5 | 0.533 µs (1.1× n, 0.15× b) | 0.574 µs (0.14× b) | 0.082 µs |
-| 1e7 | 0.533 µs (1.2× n, 0.23× b) | 0.615 µs (0.20× b) | 0.123 µs |
+| 1e3 | 0.451 µs (1.0× n, 0.27× b) | 0.451 µs (0.27× b) | 0.123 µs |
+| 1e5 | 0.41 µs (1.1× n, 0.20× b) | 0.451 µs (0.18× b) | 0.082 µs |
+| 1e7 | 0.41 µs (1.1× n, 0.30× b) | 0.451 µs (0.27× b) | 0.123 µs |
 
 ### sum_narm (double)
 
@@ -426,9 +457,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.25 µs (2.3× n, 1.4× b) | 2.83 µs (0.61× b) | 1.72 µs |
-| 1e5 | 34.3 µs (6.1× n, 4.8× b) | 208 µs (0.80× b) | 166 µs |
-| 1e7 | 3.61 ms (6.7× n, 5.0× b) | 24.3 ms (0.73× b) | 17.9 ms |
+| 1e3 | 1.15 µs (2.9× n, 1.5× b) | 3.28 µs (0.54× b) | 1.76 µs |
+| 1e5 | 36.3 µs (7.7× n, 4.9× b) | 279 µs (0.63× b) | 177 µs |
+| 1e7 | 3.63 ms (6.8× n, 4.6× b) | 24.7 ms (0.67× b) | 16.6 ms |
 
 ### min (double)
 
@@ -436,9 +467,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 1.07 µs (1.9× n, 0.77× b) | 2.01 µs (0.41× b) | 0.82 µs |
-| 1e5 | 1.56 µs (3.9× n, 48.2× b) | 6.11 µs (12.3× b) | 75 µs |
-| 1e7 | 1.56 µs (4.1× n, 5327.1× b) | 6.42 µs (1293.5× b) | 8.3 ms |
+| 1e3 | 1.07 µs (2.0× n, 0.81× b) | 2.13 µs (0.40× b) | 0.861 µs |
+| 1e5 | 1.56 µs (3.9× n, 50.6× b) | 6.15 µs (12.8× b) | 78.8 µs |
+| 1e7 | 1.56 µs (3.9× n, 4783.6× b) | 6.15 µs (1211.8× b) | 7.45 ms |
 
 ### min (integer)
 
@@ -446,9 +477,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | neon | none | base |
 |---|---|---|---|
-| 1e3 | 0.861 µs (3.1× n, 0.24× b) | 2.67 µs (0.08× b) | 0.205 µs |
-| 1e5 | 1.27 µs (6.9× n, 0.13× b) | 8.82 µs (0.02× b) | 0.164 µs |
-| 1e7 | 1.27 µs (7.1× n, 0.19× b) | 8.98 µs (0.03× b) | 0.246 µs |
+| 1e3 | 0.984 µs (2.8× n, 0.25× b) | 2.79 µs (0.09× b) | 0.246 µs |
+| 1e5 | 1.44 µs (6.3× n, 0.11× b) | 8.98 µs (0.02× b) | 0.164 µs |
+| 1e7 | 1.23 µs (6.8× n, 0.17× b) | 8.36 µs (0.02× b) | 0.205 µs |
 
 ## Precision modes (n = 1e7)
 
@@ -458,9 +489,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| fast | 1.83 ms (12.3× n, 10.1× b) | 22.5 ms (0.82× b) | 18.5 ms |
-| pairwise | 2.23 ms (12.1× n, 7.8× b) | 26.9 ms (0.65× b) | 17.5 ms |
-| compensated | 5.62 ms (4.7× n, 3.2× b) | 26.5 ms (0.67× b) | 17.9 ms |
+| fast | 1.35 ms (16.1× n, 11.5× b) | 21.8 ms (0.71× b) | 15.5 ms |
+| pairwise | 1.41 ms (16.8× n, 11.2× b) | 23.6 ms (0.67× b) | 15.7 ms |
+| compensated | 3.94 ms (5.0× n, 3.9× b) | 19.5 ms (0.80× b) | 15.5 ms |
 
 ### dot (double)
 
@@ -468,9 +499,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base | blas |
 |---|---|---|---|---|
-| fast | 4.2 ms (7.8× n, 14.4× b) | 33 ms (1.8× b) | 60.5 ms | 24.1 ms (2.5× b) |
-| pairwise | 3.97 ms (7.7× n, 12.9× b) | 30.3 ms (1.7× b) | 51 ms | 22.1 ms (2.3× b) |
-| compensated | 6.76 ms (4.7× n, 3.5× b) | 31.7 ms (0.74× b) | 23.4 ms | 22.4 ms (1.0× b) |
+| fast | 3.59 ms (7.8× n, 9.4× b) | 28.1 ms (1.2× b) | 33.6 ms | 19.7 ms (1.7× b) |
+| pairwise | 2.91 ms (10.0× n, 7.6× b) | 29 ms (0.76× b) | 22.2 ms | 21.6 ms (1.0× b) |
+| compensated | 4.58 ms (5.6× n, 4.6× b) | 25.4 ms (0.83× b) | 21.2 ms | 21.2 ms (1.0× b) |
 
 ## Math accuracy modes (n = 1e7)
 
@@ -480,8 +511,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 80.3 ms (1.1× n, 1.2× b) | 89.9 ms (1.1× b) | 95.1 ms |
-| fast | 50 ms (1.8× n, 1.9× b) | 88.5 ms (1.1× b) | 93.5 ms |
+| accurate | 76.1 ms (1.1× n, 1.1× b) | 80.4 ms (1.0× b) | 83.7 ms |
+| fast | 44.1 ms (1.8× n, 1.9× b) | 79.5 ms (1.1× b) | 84.4 ms |
 
 ### log (double)
 
@@ -489,8 +520,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 36.6 ms (1.0× n, 0.95× b) | 35.9 ms (1.0× b) | 34.7 ms |
-| fast | 24.3 ms (1.4× n, 1.5× b) | 34.4 ms (1.1× b) | 36.6 ms |
+| accurate | 35.5 ms (0.88× n, 1.0× b) | 31.4 ms (1.1× b) | 35.1 ms |
+| fast | 28.7 ms (1.6× n, 1.4× b) | 45.4 ms (0.89× b) | 40.4 ms |
 
 ### tanh (double)
 
@@ -498,8 +529,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 98.9 ms (1.0× n, 0.88× b) | 101 ms (0.86× b) | 87.3 ms |
-| fast | 36.2 ms (2.2× n, 2.4× b) | 80.7 ms (1.1× b) | 86.3 ms |
+| accurate | 89.1 ms (0.93× n, 0.91× b) | 82.7 ms (1.0× b) | 81.5 ms |
+| fast | 34.2 ms (2.3× n, 2.6× b) | 78.1 ms (1.1× b) | 87.5 ms |
 
 ### atan2 (double)
 
@@ -507,8 +538,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 115 ms (2.6× n, 2.8× b) | 295 ms (1.1× b) | 321 ms |
-| fast | 55.9 ms (5.0× n, 4.9× b) | 280 ms (1.0× b) | 275 ms |
+| accurate | 73.4 ms (3.7× n, 3.8× b) | 269 ms (1.0× b) | 279 ms |
+| fast | 34.9 ms (7.4× n, 8.0× b) | 257 ms (1.1× b) | 280 ms |
 
 ### hypot (double)
 
@@ -516,8 +547,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 52 ms (0.69× n, 1.1× b) | 35.8 ms (1.7× b) | 59.3 ms |
-| fast | 12.8 ms (2.8× n, 4.8× b) | 36 ms (1.7× b) | 61.8 ms |
+| accurate | 52.9 ms (0.62× n, 1.0× b) | 33 ms (1.7× b) | 55 ms |
+| fast | 14.1 ms (2.7× n, 4.3× b) | 37.9 ms (1.6× b) | 60.8 ms |
 
 ### pow (double)
 
@@ -525,8 +556,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 174 ms (1.0× n, 1.0× b) | 173 ms (1.0× b) | 169 ms |
-| fast | 174 ms (1.0× n, 1.0× b) | 174 ms (1.0× b) | 169 ms |
+| accurate | 122 ms (1.1× n, 1.5× b) | 136 ms (1.4× b) | 189 ms |
+| fast | 166 ms (0.89× n, 1.1× b) | 147 ms (1.2× b) | 181 ms |
 
 ### asinh (double)
 
@@ -534,8 +565,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 60.9 ms (0.94× n, 0.93× b) | 57.5 ms (1.0× b) | 56.5 ms |
-| fast | 57.5 ms (1.0× n, 1.0× b) | 57.4 ms (1.0× b) | 56.5 ms |
+| accurate | 61.5 ms (1.1× n, 0.87× b) | 64.7 ms (0.82× b) | 53.3 ms |
+| fast | 54 ms (1.0× n, 1.0× b) | 56.1 ms (0.94× b) | 52.6 ms |
 
 ### sqrt (complex)
 
@@ -543,8 +574,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 110 ms (0.43× n, 0.32× b) | 47.6 ms (0.73× b) | 34.9 ms |
-| fast | 31.7 ms (1.1× n, 1.1× b) | 35.9 ms (0.94× b) | 33.8 ms |
+| accurate | 129 ms (0.32× n, 0.32× b) | 40.9 ms (1.0× b) | 41.8 ms |
+| fast | 32 ms (1.2× n, 1.0× b) | 37.6 ms (0.86× b) | 32.4 ms |
 
 ### exp (complex)
 
@@ -552,8 +583,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 86.4 ms (2.7× n, 2.7× b) | 230 ms (1.0× b) | 230 ms |
-| fast | 58.2 ms (3.9× n, 3.9× b) | 230 ms (1.0× b) | 230 ms |
+| accurate | 81 ms (2.6× n, 2.7× b) | 214 ms (1.0× b) | 216 ms |
+| fast | 59.9 ms (4.6× n, 5.1× b) | 277 ms (1.1× b) | 306 ms |
 
 ### log (complex)
 
@@ -561,8 +592,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 253 ms (1.6× n, 1.6× b) | 396 ms (1.0× b) | 405 ms |
-| fast | 121 ms (3.3× n, 3.3× b) | 395 ms (1.0× b) | 402 ms |
+| accurate | 342 ms (1.4× n, 1.5× b) | 469 ms (1.1× b) | 519 ms |
+| fast | 154 ms (2.7× n, 3.0× b) | 408 ms (1.1× b) | 457 ms |
 
 ### sin (complex)
 
@@ -570,8 +601,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 135 ms (1.3× n, 1.3× b) | 181 ms (1.0× b) | 173 ms |
-| fast | 113 ms (1.6× n, 1.7× b) | 179 ms (1.0× b) | 186 ms |
+| accurate | 138 ms (1.4× n, 1.3× b) | 190 ms (0.92× b) | 175 ms |
+| fast | 115 ms (1.6× n, 1.5× b) | 183 ms (1.0× b) | 176 ms |
 
 ### asin (complex)
 
@@ -579,8 +610,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 260 ms (2.2× n, 2.3× b) | 582 ms (1.0× b) | 607 ms |
-| fast | 231 ms (2.6× n, 2.6× b) | 593 ms (1.0× b) | 598 ms |
+| accurate | 268 ms (2.2× n, 2.2× b) | 594 ms (1.0× b) | 602 ms |
+| fast | 237 ms (2.8× n, 2.5× b) | 655 ms (0.90× b) | 588 ms |
 
 ### asin_cut (complex)
 
@@ -588,8 +619,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 131 ms (1.1× n, 1.0× b) | 141 ms (1.0× b) | 135 ms |
-| fast | 107 ms (1.3× n, 1.3× b) | 141 ms (1.0× b) | 135 ms |
+| accurate | 137 ms (1.0× n, 1.1× b) | 143 ms (1.1× b) | 152 ms |
+| fast | 119 ms (1.2× n, 1.3× b) | 143 ms (1.1× b) | 157 ms |
 
 ### pow (complex)
 
@@ -597,8 +628,8 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | mode | neon | none | base |
 |---|---|---|---|
-| accurate | 427 ms (1.7× n, 1.6× b) | 713 ms (0.93× b) | 667 ms |
-| fast | 237 ms (3.5× n, 3.8× b) | 838 ms (1.1× b) | 909 ms |
+| accurate | 451 ms (1.6× n, 1.8× b) | 707 ms (1.1× b) | 796 ms |
+| fast | 321 ms (2.3× n, 3.0× b) | 742 ms (1.3× b) | 963 ms |
 
 ## Per-call overhead (auto tier)
 
@@ -608,9 +639,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto | bare |
 |---|---|---|---|
-| 1e0 | 0.164 µs | 0.902 µs (0.18× b) | 0.779 µs (0.21× b) |
-| 1e1 | 0.164 µs | 0.861 µs (0.19× b) | 0.697 µs (0.24× b) |
-| 1e2 | 0.943 µs | 0.902 µs (1.0× b) | 0.82 µs (1.2× b) |
+| 1e0 | 0.164 µs | 0.779 µs (0.21× b) | 0.533 µs (0.31× b) |
+| 1e1 | 0.164 µs | 0.779 µs (0.21× b) | 0.615 µs (0.27× b) |
+| 1e2 | 0.328 µs | 0.861 µs (0.38× b) | 0.615 µs (0.53× b) |
 
 ### add (double)
 
@@ -618,9 +649,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto |
 |---|---|---|
-| 1e0 | 0.082 µs | 1.15 µs (0.07× b) |
-| 1e1 | 0.082 µs | 0.943 µs (0.09× b) |
-| 1e2 | 0.164 µs | 1.44 µs (0.11× b) |
+| 1e0 | 0.041 µs | 0.902 µs (0.05× b) |
+| 1e1 | 0.082 µs | 1.07 µs (0.08× b) |
+| 1e2 | 0.164 µs | 1.19 µs (0.14× b) |
 
 ### exp (double)
 
@@ -628,9 +659,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto |
 |---|---|---|
-| 1e0 | 0.041 µs | 0.738 µs (0.06× b) |
-| 1e1 | 0.082 µs | 0.82 µs (0.10× b) |
-| 1e2 | 0.41 µs | 2.23 µs (0.18× b) |
+| 1e0 | 0.041 µs | 0.697 µs (0.06× b) |
+| 1e1 | 0.082 µs | 0.697 µs (0.12× b) |
+| 1e2 | 0.492 µs | 0.984 µs (0.50× b) |
 
 ### eq (double)
 
@@ -638,9 +669,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto |
 |---|---|---|
-| 1e0 | 0.246 µs | 0.943 µs (0.26× b) |
-| 1e1 | 0.123 µs | 0.902 µs (0.14× b) |
-| 1e2 | 0.246 µs | 1.15 µs (0.21× b) |
+| 1e0 | 0.041 µs | 0.984 µs (0.04× b) |
+| 1e1 | 0.123 µs | 0.984 µs (0.13× b) |
+| 1e2 | 0.287 µs | 1.15 µs (0.25× b) |
 
 ### as_integer (double)
 
@@ -648,9 +679,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto |
 |---|---|---|
-| 1e0 | 0.082 µs | 1.76 µs (0.05× b) |
-| 1e1 | 0.082 µs | 1.21 µs (0.07× b) |
-| 1e2 | 0.205 µs | 1.27 µs (0.16× b) |
+| 1e0 | 0.041 µs | 0.943 µs (0.04× b) |
+| 1e1 | 0.082 µs | 1.11 µs (0.07× b) |
+| 1e2 | 0.205 µs | 1.31 µs (0.16× b) |
 
 ### dot (double)
 
@@ -658,9 +689,9 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto |
 |---|---|---|
-| 1e0 | 0.246 µs | 1.19 µs (0.21× b) |
-| 1e1 | 1.07 µs | 3.85 µs (0.28× b) |
-| 1e2 | 0.656 µs | 3.89 µs (0.17× b) |
+| 1e0 | 0.205 µs | 1.11 µs (0.19× b) |
+| 1e1 | 0.287 µs | 1.23 µs (0.23× b) |
+| 1e2 | 0.574 µs | 1.31 µs (0.44× b) |
 
 ### mul (complex)
 
@@ -668,7 +699,17 @@ Cells show the median time per call, then in parentheses the speedup versus the 
 
 | n | base | auto |
 |---|---|---|
-| 1e0 | 0.082 µs | 3.18 µs (0.03× b) |
-| 1e1 | 0.164 µs | 9.92 µs (0.02× b) |
-| 1e2 | 0.943 µs | 10.6 µs (0.09× b) |
+| 1e0 | 0.082 µs | 0.984 µs (0.08× b) |
+| 1e1 | 0.123 µs | 1.07 µs (0.12× b) |
+| 1e2 | 0.287 µs | 2.79 µs (0.10× b) |
+
+### add (integer64)
+
+`simd_add(xi64, yi64)` vs base `xi64 + yi64`
+
+| n | base | auto |
+|---|---|---|
+| 1e0 | 31.7 µs | 2.99 µs (10.6× b) |
+| 1e1 | 32.2 µs | 3.16 µs (10.2× b) |
+| 1e2 | 41.4 µs | 3.73 µs (11.1× b) |
 
