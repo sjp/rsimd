@@ -61,7 +61,7 @@ jobs:
       - name: Restore TinyTeX
         if: inputs.vignettes
         id: tinytex
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.os == 'Linux' && '~/.TinyTeX' || runner.os == 'macOS' && '~/Library/TinyTeX' || '~/AppData/Roaming/TinyTeX' }}
           key: tinytex-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.manual }}-${{ hashFiles('tools/ci/latex-packages.txt') }}
