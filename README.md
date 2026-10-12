@@ -13,7 +13,6 @@ At run time the package detects which instruction sets the CPU supports and pick
 the best available implementation. You can also choose one by name, including a
 plain scalar implementation that serves as the reference.
 
-
 ## Installation
 
 ```r
