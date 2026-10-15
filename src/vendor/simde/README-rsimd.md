@@ -8,8 +8,8 @@ native NEON instructions on arm64.
 
 `VERSION` records the upstream repository, commit and `SIMDE_VERSION`. `COPYING` is
 SIMDe's MIT licence; `inst/COPYRIGHTS` lists the per-file copyright holders and the
-files that are CC0-1.0. Apart from this README and `VERSION`, every file is
-byte-identical to upstream.
+files that are CC0-1.0. Apart from this README, `VERSION` and the removed diagnostic
+pragmas (see below), every file is byte-identical to upstream.
 
 ## What is vendored
 
@@ -52,12 +52,15 @@ Kernels for the `avx512` tier must use intrinsics these headers provide, or guar
 
 ## Diagnostic pragmas
 
-A few upstream headers (`hedley.h`, `simde-common.h`, `x86/mmx.h`, `x86/sse.h`,
-`x86/sse2.h`) contain `#pragma GCC diagnostic ignored` or `#pragma clang diagnostic
-ignored` lines. They are scoped by push/pop pragmas, limited to SIMDe's own code, and
-mostly silence clang-only or pedantic diagnostics (`-Wvariadic-macros`,
-`-Wvector-conversion`, `-Wc11-extensions` and similar). `R CMD check` reports them in
-a NOTE. They are kept so that the vendored files stay identical to upstream.
+`tools/vendor_simde.sh` deletes the lines that start with `#pragma GCC diagnostic
+ignored` or `#pragma clang diagnostic ignored`, which `R CMD check` would otherwise
+report in a NOTE. (SIMDe's other suppressions, written `#  pragma` or through
+`_Pragma` in Hedley's and SIMDe's `*_DIAGNOSTIC_*` macros, are not reported and are
+kept.) At the vendored commit these are five `-Wvector-conversion`
+lines in `x86/mmx.h` (for clang before 10 on 32-bit NEON) and one `-Wc11-extensions`
+line in `x86/sse2.h` (for AltiVec). Each was the only line of an `#if
+HEDLEY_HAS_WARNING(...)` block inside a push/pop pair, so the generated code is
+unchanged; the `VERSION` file records the number of lines removed.
 
 ## Updating
 

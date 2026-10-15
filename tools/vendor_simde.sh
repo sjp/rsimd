@@ -4,7 +4,8 @@
 # Maintainer tool; it is not run at install time and needs network access.
 # It fetches SIMDe at the pinned commit, computes the include closure of
 # tools/simde_probe.c and replaces src/vendor/simde with exactly those headers,
-# plus COPYING and a VERSION file. The hand-written README-rsimd.md in that
+# with the `#pragma GCC/clang diagnostic ignored` lines removed, plus COPYING
+# and a VERSION file. The hand-written README-rsimd.md in that
 # directory is kept. It also refreshes the SIMDe section of inst/COPYRIGHTS.
 #
 # The closure is computed with `gcc -M` and with a textual #include scan; when
@@ -137,6 +138,22 @@ while IFS= read -r f; do
   mkdir -p "$stage/$(dirname "$f")"
   cp "$src/$f" "$stage/$f"
 done < "$tmp/closure.txt"
+
+# Remove the pragmas that suppress diagnostics, which R CMD check reports in a
+# NOTE (it matches R's tools:::.check_pragmas pattern). Each is the only line
+# of an `#if HEDLEY_HAS_WARNING(...)` block inside a push/pop pair, so the
+# block is left empty and the code is unchanged.
+pragma_re='^[[:space:]]*#pragma (GCC|clang) diagnostic ignored'
+npragmas=0
+while IFS= read -r f; do
+  n=$(grep -Ec "$pragma_re" "$stage/$f" || true)
+  [ "$n" -gt 0 ] || continue
+  grep -Ev "$pragma_re" "$stage/$f" > "$tmp/edited" || true
+  cp "$tmp/edited" "$stage/$f"
+  echo "  $f: removed $n diagnostic pragma(s)"
+  npragmas=$((npragmas + n))
+done < "$tmp/closure.txt"
+
 cp "$src/COPYING" "$stage/COPYING"
 if [ -f "$dest/README-rsimd.md" ]; then
   cp "$dest/README-rsimd.md" "$stage/README-rsimd.md"
@@ -149,6 +166,7 @@ commit date: $commit_date
 SIMDE_VERSION: $simde_version
 headers: $nfiles
 header bytes: $nbytes
+edits: $npragmas diagnostic-suppressing pragma lines removed
 EOF
 find "$stage" -type f -exec chmod 644 {} +
 

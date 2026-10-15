@@ -51,7 +51,8 @@ CFLAGS = -g -O2 -Wall -Wextra -pedantic -Wstrict-prototypes -Wconversion
 ```
 
 The package's own files must compile without warnings with GCC and clang. The
-vendored SIMDe and SLEEF headers are kept identical to upstream: they warn under
+vendored SIMDe and SLEEF headers are kept close to upstream (the vendoring
+scripts list their edits): they warn under
 `-Wextra` and `-Wconversion`, though not under CRAN's `-Wall -pedantic`. R's own
 `R_ext/Boolean.h` also warns under `-pedantic` before C23.
 

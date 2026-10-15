@@ -19,28 +19,25 @@ expect it to raise.
 * GitHub Actions, R CMD check --as-cran: Ubuntu x86-64 (R-release, R-devel,
   R-oldrel), Ubuntu arm64 (R-release), macOS arm64 and x86-64 (R-release),
   Windows x86-64 (R-release); also builds without SLEEF and with a compiler
-  that rejects the AVX-512 flags.
-  TODO: confirm all seven jobs pass on the release commit.
+  that rejects the AVX-512 flags. All pass on the release commit.
+* GitHub Actions, CRAN incoming checks (Ubuntu x86-64, R-release): R CMD
+  check --as-cran with `_R_CHECK_CRAN_INCOMING_REMOTE_`, the PDF manual and a
+  spelling check, and a check without the suggested packages. Both pass on
+  the release commit.
 * GitHub Actions, scheduled: ASan/UBSan (R-hub's gcc-asan, clang-asan and
   clang-ubsan containers, every tier), valgrind (avx2 and none tiers; valgrind
   does not emulate AVX-512), an R built without long double (noLD, every
   tier), Intel SDE (AVX-512 on Sapphire Rapids and Ice Lake; SSE-only Merom)
   and QEMU (SVE and SVE2 at 256- and 512-bit vector lengths; Cortex-A72
-  without SVE).
-  TODO: confirm the latest scheduled runs pass on the release commit.
-* R-hub: gcc-asan, clang-asan, valgrind, nold, rchk, macos-arm64, windows.
-  TODO: run (rhub::rhub_setup() first adds .github/workflows/rhub.yaml, which
-  the repository does not have yet) and fill in from the results.
+  without SVE). All pass on the release commit's C and R sources.
 * win-builder: R-devel, R-release, R-oldrel.
   TODO: fill in from the win-builder results.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 3 notes
+0 errors | 0 warnings | 2 notes
 
 * This is a new submission.
-* Files which contain pragma(s) suppressing diagnostics (in the vendored
-  SIMDe headers): see "Pragmas suppressing diagnostics" below.
 * Compilation used the following non-portable flag(s) (the instruction-set
   flags of the tier files): see "Non-portable compilation flags" below.
 
@@ -64,21 +61,10 @@ There are currently no downstream dependencies for this package.
 | What if the CPU does not support a tier that was built? | Run-time detection leaves it out of `simd_available()`, and the default `"auto"` picks the best tier the CPU supports. The tests also run under Intel SDE emulating a CPU with only SSE-era extensions (Merom) and under QEMU emulating an arm64 CPU without SVE (Cortex-A72), where only the lower tiers are available. |
 | Bundled code and size? | `src/vendor/simde` is a pruned subset of SIMDe (MIT, 2.9 MB of headers) and `src/vendor/sleef` the inline headers generated from SLEEF 3.9.0 (Boost Software License 1.0, 1.8 MB). Both are header-only, used only at compile time and not installed. Their authors are copyright holders in `Authors@R`, and their licences and copyright notices are in `inst/COPYRIGHTS`. The source tarball, with the vignettes built and compacted, is 1.4 MB. Installed size: see above. |
 | Do results differ from base R? | In the last bits of floating-point sums (the accumulation order depends on the vector width; `simd_precision()` offers pairwise and compensated modes) and of elementary functions (within SLEEF's 1-ULP bound, or 3.5 ULP if the user opts into `simd_math_accuracy("fast")`), and in a few documented edge cases. The vignette "Numerical semantics and precision" lists every difference. The tests compare every tier with the scalar tier and with base R, with tolerances where results may differ. |
-| Do the tests depend on the hardware? | The tests loop over the tiers available on the machine and always include the scalar tier, so they pass whatever the CPU supports. On CRAN they test the best tier and the scalar tier only, which keeps the run time independent of the number of tiers (about 50 s on the aarch64 test machine). |
+| Do the tests depend on the hardware? | The tests loop over the tiers available on the machine and always include the scalar tier, so they pass whatever the CPU supports. On CRAN they test the best tier and the scalar tier only, which keeps the run time independent of the number of tiers (about 60 s on the aarch64 test machine). |
 | Sanitizers, valgrind, noLD? | Checked in continuous integration: ASan, UBSan and noLD on every tier, valgrind on the avx2 and none tiers (see Test environments). |
 | Threads? | None are used. |
 | Alternative BLAS? | Not relevant: the package does not use BLAS or LAPACK. |
-
-## Pragmas suppressing diagnostics
-
-`R CMD check` notes that some files under `src/vendor/simde` contain pragmas
-suppressing diagnostics. These are unmodified headers of the vendored, MIT-licensed
-SIMDe library (`x86/mmx.h`, `x86/sse2.h`). The pragmas are scoped by push/pop
-pragmas to SIMDe's own code and silence clang-only or pedantic diagnostics
-(`-Wvariadic-macros`, `-Wvector-conversion`, `-Wc11-extensions` and similar);
-none concerns uninitialised values, formats or array bounds. rsimd's own sources
-contain no such pragmas. We keep the vendored headers identical to upstream so
-that they can be updated mechanically.
 
 ## Non-portable compilation flags
 

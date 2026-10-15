@@ -5,3 +5,4 @@ commit date: 2026-09-30
 SIMDE_VERSION: 0.8.4
 headers: 96
 header bytes: 2990005
+edits: 6 diagnostic-suppressing pragma lines removed
