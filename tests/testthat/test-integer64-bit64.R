@@ -134,12 +134,21 @@ intdiv_divisors <- function() {
   )
 }
 
+# bit64's %% computes x - y * floor(x / y), which overflows (undefined
+# behaviour, flagged by UBSan) when x and y differ in sign and x is near
+# +-(2^63 - 1). Adding y to x there leaves the remainder unchanged and
+# keeps bit64's intermediates in range.
+b64_mod <- function(x, y) {
+  shift <- !is.na(x) & !is.na(y) & y != 0L & (x < 0L) != (y < 0L)
+  (x + y * as.integer64(shift)) %% y
+}
+
 test_that("%/% and %% match bit64 in and out of the double-lane range", {
   n <- 13 * 256 + 77
   y <- rand_b64(n, seed = 32, bound = 1e6)
   y[seq(5, n, by = 101)] <- as.integer64(0)
   yi <- as.integer(y)
-  ops <- list(list(`%/%`, simd_idiv), list(`%%`, simd_mod))
+  ops <- list(list(`%/%`, simd_idiv), list(b64_mod, simd_mod))
   for (x in intdiv_cases(n, seed = 30)) {
     for (op in ops) {
       expect_like_bit64(op[[1L]], op[[2L]], x, y)
@@ -155,7 +164,7 @@ test_that("%/% and %% match bit64 in and out of the double-lane range", {
 test_that("%/% and %% match bit64 on long random input (extended)", {
   skip_unless_extended()
   n <- 2^20 + 1000
-  ops <- list(list(`%/%`, simd_idiv), list(`%%`, simd_mod))
+  ops <- list(list(`%/%`, simd_idiv), list(b64_mod, simd_mod))
   for (seed in 1:3) {
     y <- rand_b64(n, seed = 40 + seed, bound = 2^(10 * seed))
     y[y == 0] <- as.integer64(-3)
