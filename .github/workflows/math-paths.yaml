@@ -2,7 +2,7 @@
 # (bench/math_paths.R) on the arm64 runners, on demand only: the
 # arm64 tiers hand some functions to the C math library (RSIMD_MATH1_LIBM in
 # src/kernels/math.inc.c) only where libm was measured faster on every core,
-# and this job measures Neoverse (ubuntu-24.04-arm) and Apple with macOS's
+# and this job measures Neoverse (ubuntu-26.04-arm) and Apple with macOS's
 # libm (macos-latest). It times two builds: the package as it is, and one
 # configured with RSIMD_NO_MATH_LIBM=1, whose SIMD tiers use SLEEF for every
 # function; an op belongs on the list where the first build's neon (and
@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04-arm, macos-latest]
+        os: [ubuntu-26.04-arm, macos-latest]
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
     defaults:

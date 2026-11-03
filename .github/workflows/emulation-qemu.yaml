@@ -15,7 +15,7 @@ permissions: read-all
 
 jobs:
   qemu:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     name: qemu ${{ matrix.name }}
     timeout-minutes: 120
     strategy:

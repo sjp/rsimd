@@ -8,6 +8,12 @@
 # SDE may not be redistributed, so it is downloaded from Intel at run time by
 # tools/ci/get_sde.sh and cached. The repository variables SDE_URL and
 # SDE_SHA256 select a newer release without editing the workflow.
+#
+# ubuntu-latest (Ubuntu 26.04) installs amd64v3 packages: its dynamic loader
+# and libraries use AVX, and its GCC targets x86-64-v3, so nothing built or
+# run there is SSE2-class. The Merom job therefore runs in Docker's
+# ubuntu:26.04 image, whose packages and GCC are baseline x86-64 (it is
+# privileged, so that it can relax ptrace for SDE as the others do).
 on:
   schedule:
     - cron: "37 5 * * 0"
@@ -26,9 +32,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { knob: spr, impl: avx512, subset: tier_emulation, test-tiers: avx512, expect-impl: avx512, expect-tiers: avx512 }
-          - { knob: icx, impl: avx512, subset: tier_emulation, test-tiers: avx512, expect-impl: avx512, expect-tiers: avx512 }
-          - { knob: mrm, impl: "", subset: quick, test-tiers: "", expect-impl: sse2, expect-tiers: sse2 }
+          - { knob: spr, impl: avx512, subset: tier_emulation, test-tiers: avx512, expect-impl: avx512, expect-tiers: avx512, image: "" }
+          - { knob: icx, impl: avx512, subset: tier_emulation, test-tiers: avx512, expect-impl: avx512, expect-tiers: avx512, image: "" }
+          - { knob: mrm, impl: "", subset: quick, test-tiers: "", expect-impl: sse2, expect-tiers: sse2, image: "ubuntu:26.04" }
+    container:
+      image: ${{ matrix.image }}
+      options: ${{ matrix.image != '' && '--privileged' || '' }}
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       SDE_URL: ${{ vars.SDE_URL }}
@@ -37,6 +46,21 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Prepare the baseline container
+        if: matrix.image != ''
+        run: |
+          apt-get update -q
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            sudo ca-certificates curl git xz-utils lsb-release gcc
+
+      - name: Confirm the compiler targets baseline x86-64
+        if: matrix.image != ''
+        run: |
+          if echo | gcc -dM -E - | grep -q '__AVX__'; then
+            echo "gcc targets AVX by default; the Merom run needs baseline x86-64" >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
 
       - uses: r-lib/actions/setup-r@v2

@@ -18,9 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             cross: gcc-aarch64-linux-gnu
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             cross: gcc-x86-64-linux-gnu
     steps:
       - uses: actions/checkout@v7
