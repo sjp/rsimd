@@ -210,7 +210,7 @@ The `benchmarks` workflow (`.github/workflows/benchmarks.yaml`) runs the suite e
 Saturday, and on demand from "Run workflow" with optional `quick`, `ops` and `sizes`
 inputs and a `suite` input: `primitives` (the default, `run.R`), `scenarios`
 (`scenarios/run.R`) or `both`. The scenario jobs install matrixStats, moments, DescTools,
-energy and data.table for the reference columns. It runs on `ubuntu-latest` (x86-64), `ubuntu-24.04-arm` and `macos-14`. Each job
+energy and data.table for the reference columns. It runs on `ubuntu-latest` (x86-64), `ubuntu-26.04-arm` and `macos-14`. Each job
 uploads `bench/results/` as an artifact kept for 90 days and appends `latest.md` (and
 `scenarios-latest.md`) to the job summary. The workflow never commits results.
 
@@ -246,7 +246,7 @@ Rscript bench/math_paths.R --ops log,pow --rounds 7 --n 1e5
 Each timing is the median of the rounds' medians, with the implementations taking turns
 within a round. The table goes to stdout and, with a csv of every timing, to
 `bench/results/math-paths-<timestamp>.md`. The `math-paths` workflow runs it on demand on
-`ubuntu-24.04-arm` (Neoverse) and `macos-latest`. A function stays on the libm list in
+`ubuntu-26.04-arm` (Neoverse) and `macos-latest`. A function stays on the libm list in
 `src/kernels/math.inc.c` only while libm wins on every core measured.
 
 ## Smoke scripts
