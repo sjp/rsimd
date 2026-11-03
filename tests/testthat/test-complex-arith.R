@@ -96,8 +96,10 @@ test_that("the load-time probe picks a variant for each operation", {
   v <- simd_complex_variants()
   expect_identical(names(v), c("mul", "div", "cumprod"))
   expect_true(all(nzchar(v)))
-  # GCC on aarch64 contracts by default, and libgcc 12+ divides.
+  # GCC on aarch64 contracts by default, and libgcc 12+ divides. The NaN
+  # results come from the compiler's operators or the package's (Annex G).
   if (R.version$arch == "aarch64" && Sys.info()[["sysname"]] == "Linux") {
+    v <- sub("; Annex G", "", v, fixed = TRUE)
     expect_identical(v[["mul"]], "fma(a, c, -bd), fma(b, c, ad)")
     expect_identical(v[["div"]], "libgcc, fused")
     expect_identical(v[["cumprod"]], "fma(-b, d, ac), fma(b, c, ad)")
@@ -137,6 +139,55 @@ test_that("Annex G special values and extreme magnitudes match base R", {
     simd_mul(complex(real = Inf, imaginary = NaN), 1 + 1i),
     complex(real = Inf, imaginary = NaN) * (1 + 1i)
   )
+})
+
+test_that("the package's own Annex G operators reproduce base R's", {
+  # The compiler that builds rsimd need not round as R's did (Ubuntu
+  # 26.04's GCC targets x86-64-v3 and fuses, Posit's R does not), so the
+  # probe can pick operators that do not come from the compiler; here it
+  # must, whichever compiler built R.
+  skip_on_cran()
+  skip_if_no_subprocess()
+  x <- rand_z(5000, seed = 3L, wide = TRUE)
+  y <- rand_z(5000, seed = 4L, wide = TRUE)
+  p <- grid_pairs(c(annex_g, extremes))
+  x <- c(x, p$x)
+  y <- c(y, p$y)
+  a <- complex(real = 1 + (2 * 1:20 + 1) * 2^-31, imaginary = 0)
+  k <- with_seed(5L, sample(-12:12, length(x), TRUE))
+  child <- function(x, y, a, k, tiers) {
+    library(rsimd)
+    lapply(stats::setNames(nm = intersect(tiers, simd_available())), function(t) {
+      simd_with_impl(t, list(
+        variants = simd_complex_variants(), mul = simd_mul(x, y), div = simd_div(x, y),
+        pow = simd_pow(x, k), logb = suppressWarnings(simd_log(x[1:500], y[1:500])),
+        atan2 = suppressWarnings(simd_atan2(x[1:500], y[1:500])), asin = simd_asin(a),
+        acos = simd_acos(a), asinh = simd_asinh(a * 1i)
+      ))
+    })
+  }
+  env <- c(callr::rcmd_safe_env(), RSIMD_DEBUG_OWN_COMPLEX_OPS = "true")
+  there <- callr::r(child, list(x, y, a, k, tiers_to_test()), env = env)
+  v <- there[["none"]]$variants
+  expect_match(v[["mul"]], "Annex G", fixed = TRUE)
+  expect_match(v[["div"]], "Annex G", fixed = TRUE)
+  # Where the operands hold both NA and NaN, which one base R's quotient
+  # keeps depends on its C library (see above).
+  parts <- cbind(Re(x), Im(x), Re(y), Im(y))
+  plain <- !(rowSums(is.na(parts) & !is.nan(parts)) > 0 & rowSums(is.nan(parts)) > 0)
+  for (tier in names(there)) {
+    r <- there[[tier]]
+    expect_true(same_values(r$mul, x * y), info = tier)
+    expect_true(same_values(r$div[plain], (x / y)[plain]), info = tier)
+    expect_true(same_values(r$pow, x^k), info = tier)
+  }
+  # The functions that only the none tier computes as base R does.
+  r <- there[["none"]]
+  expect_true(same_values(r$logb, suppressWarnings(log(x[1:500], y[1:500]))))
+  expect_true(same_values(r$atan2, suppressWarnings(atan2(x[1:500], y[1:500]))))
+  expect_true(same_values(r$asin, asin(a)))
+  expect_true(same_values(r$acos, acos(a)))
+  expect_true(same_values(r$asinh, asinh(a * 1i)))
 })
 
 test_that("scalars broadcast on either side, and other types are promoted", {

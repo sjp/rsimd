@@ -68,12 +68,16 @@ choice. A product's parts are \eqn{ac - bd} and \eqn{ad + bc} with one
 product of each fused or not; division follows the scaled Smith's method of
 GCC's runtime (GCC 12 and later). Elements whose result has a missing part
 (infinite operands, a zero divisor, missing values) are recomputed with
-base R's own operator. Where no variant matches (for example division on
-macOS, whose runtime uses another algorithm), every element is computed with
-the C compiler's complex operator as compiled into \pkg{rsimd}, which is
-slower than base R. It is base R's operator only when \pkg{rsimd} was built
-by the same compiler release with the same flags as R, so the results may
-then differ from base R's in the last bit.
+base R's own operator: the C compiler's complex operator as compiled into
+\pkg{rsimd} where that reproduces base R's results, else \pkg{rsimd}'s own
+operator following C11 Annex G in the chosen variant's rounding (named
+\code{"Annex G"}). The C compiler need not round as the one that built R
+did: on Ubuntu 26.04, for example, the system GCC targets x86-64-v3 and
+fuses multiply-adds, while R from CRAN or Posit is built for baseline
+x86-64. Where no variant matches (for example division on macOS, whose
+runtime uses another algorithm), every element is computed with that
+operator, which is slower than base R, and the results may differ from
+base R's in the last bit.
 
 \pkg{bit64} \code{integer64} operands (with integer64, integer or logical
 operands) give integer64 results computed exactly in 64 bits, with

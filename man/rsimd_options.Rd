@@ -71,6 +71,10 @@ processed between checks for user interrupts (rounded up to a multiple of
 128), read when the package is loaded. Long inputs are processed in pieces
 of this size, so a small value exercises that splitting. The default is
 \eqn{2^{20}}{2^20}.}
+\item{\env{RSIMD_DEBUG_OWN_COMPLEX_OPS}}{For testing: set to \code{true} to
+match base R's complex multiply and divide, when the package is loaded,
+only with the package's own operators (see
+\code{\link{simd_complex_variants}()}), not with the C compiler's.}
 \item{\env{RSIMD_DISABLE_TIERS}}{Read when the package is installed: a
 comma-separated list of tiers not to compile, such as
 \code{"avx512,sve2"}. The \code{"none"} tier cannot be disabled: naming it,

@@ -72,7 +72,7 @@ static const R_CallMethodDef CallEntries[] = {
   CALLDEF(C_simd_cmath1, 3),
   CALLDEF(C_simd_cmath2, 5),
   CALLDEF(C_simd_c128_probe_inputs, 0),
-  CALLDEF(C_simd_c128_probe, 6),
+  CALLDEF(C_simd_c128_probe, 8),
   CALLDEF(C_simd_c128_variants, 0),
   CALLDEF(C_simd_c128_set_variants, 1),
   CALLDEF(C_simd_debug_fold, 6),

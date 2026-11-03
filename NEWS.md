@@ -86,7 +86,11 @@ First release.
   division, `cumsum()` and `cumprod()` are identical to base R's results,
   special values included: base R's rounding depends on the compiler that
   built R, so the variant is chosen when the package loads by comparing
-  with base R (`simd_complex_variants()`). The elementary functions
+  with base R (`simd_complex_variants()`). That holds also where the
+  compiler that builds rsimd rounds differently from R's (Ubuntu 26.04's
+  GCC targets x86-64-v3 and fuses multiply-adds; R from CRAN or Posit does
+  not): special values then come from rsimd's own C11 Annex G operators.
+  The elementary functions
   `simd_sqrt()`, `simd_exp()`, `simd_log()` (also with a base),
   `simd_log2()`, `simd_log10()`, `simd_pow()`, `simd_sin()` to
   `simd_atan()`, `simd_sinh()` to `simd_atanh()` and `simd_atan2()` take

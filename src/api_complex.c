@@ -11,9 +11,13 @@
    ordinary operand. Results are bare vectors. */
 
 #include <complex.h>
+#include <float.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include "rsimd.h"
 #include "dispatch.h"
+#include "soft_fma.h"
 #include "api_complex.h"
 
 /* Complex numbers per broadcast block: 4 KiB on the stack. */
@@ -100,6 +104,217 @@ static void cumprod_step(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
   out->i = x->r * t.i + x->i * t.r;
 }
 
+/* ---- Base R's operators, independent of this file's compiler ------------
+
+   The operators above are base R's when this file's compiler rounds as
+   R's did, which it need not: Ubuntu's amd64v3 GCC targets x86-64-v3 and
+   fuses a*b + c (and so does its libgcc's __muldc3 and __divdc3), while R
+   from CRAN or Posit is built for baseline x86-64 and fuses nothing. So the
+   probe also tries the operators below: C11 Annex G's multiply (G.5.1,
+   with its recovery of infinities) and Smith's division with the scaling
+   of GCC 12 and later, then Annex G's recovery, fused as libgcc's GCC
+   build fuses them or not at all.
+
+   Every rounding and every NaN is explicit, so that this file's compiler
+   cannot change them: rd() rounds on its own (no contraction can fuse it),
+   rsimd_fma fuses, and where an operand is NaN the result is the NaN that
+   the hardware gives for the operands in the order libgcc's build has them
+   (x86 the first operand's; Arm a signalling NaN's first, as R's NA is
+   stored, then the first operand's), quieted. That order is the one GCC
+   gives libgcc's source, which the operations below follow (ratio * b
+   rather than b * ratio, say). */
+
+static double rd(double x) {
+  volatile double v = x;
+  return v;
+}
+
+static int is_snan(double x) {
+  uint64_t u;
+  memcpy(&u, &x, sizeof u);
+  return isnan(x) && !((u >> 51) & 1);
+}
+
+static double quiet(double x) {
+  uint64_t u;
+  memcpy(&u, &x, sizeof u);
+  u |= (uint64_t) 1 << 51;
+  memcpy(&x, &u, sizeof x);
+  return x;
+}
+
+/* The NaN of p op q, p or q NaN, p the first operand. */
+static double nan2(double p, double q) {
+#if defined(__aarch64__) || defined(__arm__)
+  if (is_snan(p)) return quiet(p);
+  if (is_snan(q)) return quiet(q);
+#endif
+  return quiet(isnan(p) ? p : q);
+}
+
+/* The NaN of fma(p, q, r), one of them NaN. Arm takes the addend first,
+   and gives its default NaN for inf * 0 + a quiet NaN. */
+static double nan3(double p, double q, double r) {
+#if defined(__aarch64__) || defined(__arm__)
+  if (is_snan(r)) return quiet(r);
+  if (isnan(r) && ((isinf(p) && q == 0) || (p == 0 && isinf(q)))) return NAN;
+  if (is_snan(p)) return quiet(p);
+  if (is_snan(q)) return quiet(q);
+  return quiet(isnan(r) ? r : isnan(p) ? p : q);
+#else
+  return quiet(isnan(p) ? p : isnan(q) ? q : r);
+#endif
+}
+
+static double mul_(double p, double q) { return isnan(p) || isnan(q) ? nan2(p, q) : rd(p * q); }
+static double add_(double p, double q) { return isnan(p) || isnan(q) ? nan2(p, q) : rd(p + q); }
+static double sub_(double p, double q) { return isnan(p) || isnan(q) ? nan2(p, q) : rd(p - q); }
+static double div_(double p, double q) { return isnan(p) || isnan(q) ? nan2(p, q) : rd(p / q); }
+static double fma_(double p, double q, double r) {
+  return isnan(p) || isnan(q) || isnan(r) ? nan3(p, q, r) : rsimd_fma(p, q, r);
+}
+/* p * q + r, p * q - r and r - p * q, fused or not. */
+static double madd_(int fused, double p, double q, double r) {
+  return fused ? fma_(p, q, r) : add_(mul_(p, q), r);
+}
+static double msub_(int fused, double p, double q, double r) {
+  return fused ? fma_(p, q, isnan(r) ? r : -r) : sub_(mul_(p, q), r);
+}
+static double rsub_(int fused, double r, double p, double q) {
+  return fused ? fma_(isnan(p) ? p : -p, q, r) : sub_(r, mul_(p, q));
+}
+
+/* (a + bi)(c + di): the parts ac - bd and ad + bc with every product
+   rounded (each is also needed on its own), and where both are NaN Annex
+   G's recovery: an infinite factor is boxed to +-1 and 0 parts and the
+   NaNs of the other become zeros, as do all NaNs where a partial product
+   overflowed, and the parts are recomputed times infinity, fused (as
+   fma(a, c, -bd) and fma(a, d, bc)) or not. */
+static void ag_mul(int fused, double a, double b, double c, double d, Rcomplex *out) {
+  const double ac = mul_(a, c), bd = mul_(b, d), ad = mul_(a, d), cb = mul_(c, b);
+  double x = sub_(ac, bd), y = add_(ad, cb);
+  if (isnan(x) && isnan(y)) {
+    int recalc = 0;
+    if (isinf(a) || isinf(b)) {
+      a = copysign(isinf(a) ? 1.0 : 0.0, a);
+      b = copysign(isinf(b) ? 1.0 : 0.0, b);
+      if (isnan(c)) c = copysign(0.0, c);
+      if (isnan(d)) d = copysign(0.0, d);
+      recalc = 1;
+    }
+    if (isinf(c) || isinf(d)) {
+      c = copysign(isinf(c) ? 1.0 : 0.0, c);
+      d = copysign(isinf(d) ? 1.0 : 0.0, d);
+      if (isnan(a)) a = copysign(0.0, a);
+      if (isnan(b)) b = copysign(0.0, b);
+      recalc = 1;
+    }
+    if (!recalc && (isinf(ac) || isinf(bd) || isinf(ad) || isinf(cb))) {
+      if (isnan(a)) a = copysign(0.0, a);
+      if (isnan(b)) b = copysign(0.0, b);
+      if (isnan(c)) c = copysign(0.0, c);
+      if (isnan(d)) d = copysign(0.0, d);
+      recalc = 1;
+    }
+    if (recalc) {
+      x = INFINITY * (fused ? rsimd_fma(a, c, -rd(b * d)) : rd(a * c) - rd(b * d));
+      y = INFINITY * (fused ? rsimd_fma(a, d, rd(b * c)) : rd(a * d) + rd(b * c));
+    }
+  }
+  out->r = x;
+  out->i = y;
+}
+
+/* (a + bi) / (c + di) by Smith's method: the operands halved when the
+   divisor's larger part is near overflow, or scaled up by 2^52 when it is
+   below DBL_EPSILON or a dividend part is subnormal against a small
+   divisor; the ratio of the divisor's parts, applied to the quotient of a
+   dividend part instead where it is subnormal or zero. Where both parts
+   are NaN, Annex G's recovery (of the scaled operands): a zero divisor
+   gives infinities, an infinite dividend over a finite divisor an
+   infinity, a finite dividend over an infinite divisor zeros. */
+static void ag_div(int fused, double a, double b, double c, double d, Rcomplex *out) {
+  const double rbig = DBL_MAX / 2, rmax2 = rbig * DBL_EPSILON;
+  const int sw = fabs(c) < fabs(d);
+  double big = sw ? fabs(d) : fabs(c), ratio, denom, x, y;
+  if (big >= rbig) {
+    a = div_(a, 2);
+    b = div_(b, 2);
+    c = div_(c, 2);
+    d = div_(d, 2);
+    big /= 2;
+  }
+  if (big < DBL_EPSILON || (fabs(a) < DBL_MIN && fabs(b) < rmax2 && big < rmax2) ||
+      (fabs(b) < DBL_MIN && fabs(a) < rmax2 && big < rmax2)) {
+    a = mul_(a, 1 / DBL_EPSILON);
+    b = mul_(b, 1 / DBL_EPSILON);
+    c = mul_(c, 1 / DBL_EPSILON);
+    d = mul_(d, 1 / DBL_EPSILON);
+  }
+  if (sw) {
+    ratio = div_(c, d);
+    denom = madd_(fused, c, ratio, d);
+    if (fabs(ratio) > DBL_MIN) {
+      x = madd_(fused, a, ratio, b);
+      y = msub_(fused, ratio, b, a);
+    } else {
+      x = madd_(fused, div_(a, d), c, b);
+      y = msub_(fused, div_(b, d), c, a);
+    }
+  } else {
+    ratio = div_(d, c);
+    denom = madd_(fused, d, ratio, c);
+    if (fabs(ratio) > DBL_MIN) {
+      x = madd_(fused, b, ratio, a);
+      y = rsub_(fused, b, ratio, a);
+    } else {
+      x = madd_(fused, div_(b, c), d, a);
+      y = rsub_(fused, b, div_(a, c), d);
+    }
+  }
+  x = div_(x, denom);
+  y = div_(y, denom);
+  if (isnan(x) && isnan(y)) {
+    if (c == 0.0 && d == 0.0 && (!isnan(a) || !isnan(b))) {
+      x = mul_(copysign(INFINITY, c), a);
+      y = mul_(copysign(INFINITY, c), b);
+    } else if ((isinf(a) || isinf(b)) && isfinite(c) && isfinite(d)) {
+      a = copysign(isinf(a) ? 1.0 : 0.0, a);
+      b = copysign(isinf(b) ? 1.0 : 0.0, b);
+      x = INFINITY * (rd(a * c) + rd(b * d));
+      y = INFINITY * (rd(b * c) - rd(a * d));
+    } else if ((isinf(c) || isinf(d)) && isfinite(a) && isfinite(b)) {
+      c = copysign(isinf(c) ? 1.0 : 0.0, c);
+      d = copysign(isinf(d) ? 1.0 : 0.0, d);
+      x = 0.0 * (rd(a * c) + rd(b * d));
+      y = 0.0 * (rd(b * c) - rd(a * d));
+    }
+  }
+  out->r = x;
+  out->i = y;
+}
+
+/* The operators as rsimd_c128_fn: unfused (u) or fused (f), x * y or with
+   the operands the other way round (yx). */
+static void ag_mul_u(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  ag_mul(0, x->r, x->i, y->r, y->i, out);
+}
+static void ag_mul_u_yx(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  ag_mul(0, y->r, y->i, x->r, x->i, out);
+}
+static void ag_mul_f(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  ag_mul(1, x->r, x->i, y->r, y->i, out);
+}
+static void ag_mul_f_yx(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  ag_mul(1, y->r, y->i, x->r, x->i, out);
+}
+static void ag_div_u(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  ag_div(0, x->r, x->i, y->r, y->i, out);
+}
+static void ag_div_f(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
+  ag_div(1, x->r, x->i, y->r, y->i, out);
+}
+
 /* Until the probe has run: base R's operators for every element. */
 static rsimd_c128_arith c128_arith = {RSIMD_CMUL_SCALAR, RSIMD_CMUL_SCALAR, RSIMD_CDIV_SCALAR,
                                       RSIMD_CMUL_SCALAR, RSIMD_CMUL_SCALAR, c99_mul_xy, c99_div,
@@ -130,25 +345,30 @@ static double probe_double(uint64_t *s, int lo, int hi) {
 #define PROBE_RANDOM 1024
 #define PROBE_SPECIALS 8
 #define PROBE_CUMPROD 512
+#define PROBE_ASIN 8
 
-/* The probe's operands: list(z, w, x) with z and w for x * y and x / y
+/* The probe's operands: list(z, w, x, a) with z and w for x * y and x / y
    (random pairs of moderate and of extreme magnitudes, then every
-   combination of special values for the four parts) and x for cumprod
-   (random numbers of modulus near 1, so the product stays finite). */
+   combination of special values for the four parts), x for cumprod
+   (random numbers of modulus near 1, so the product stays finite) and a
+   for asin (real numbers just above 1, where the roundings of alpha^2 - 1
+   differ). */
 static SEXP simd_c128_probe_inputs_impl(void) {
   const double sp[PROBE_SPECIALS] = {1.0, 0.0, -0.0, -2.5, R_PosInf, R_NegInf, R_NaN, NA_REAL};
   const R_xlen_t ns = PROBE_SPECIALS * PROBE_SPECIALS * PROBE_SPECIALS * PROBE_SPECIALS;
   const R_xlen_t n = 2 * PROBE_RANDOM + ns;
   uint64_t seed = 20261005u;
-  SEXP out = PROTECT(Rf_allocVector(VECSXP, 3)), names;
-  Rcomplex *z, *w, *x;
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, 4)), names;
+  Rcomplex *z, *w, *x, *a;
   R_xlen_t i;
   SET_VECTOR_ELT(out, 0, rsimd_alloc_like(RSIMD_C128, n));
   SET_VECTOR_ELT(out, 1, rsimd_alloc_like(RSIMD_C128, n));
   SET_VECTOR_ELT(out, 2, rsimd_alloc_like(RSIMD_C128, PROBE_CUMPROD));
+  SET_VECTOR_ELT(out, 3, rsimd_alloc_like(RSIMD_C128, PROBE_ASIN));
   z = (Rcomplex *) rsimd_out_ptr(VECTOR_ELT(out, 0));
   w = (Rcomplex *) rsimd_out_ptr(VECTOR_ELT(out, 1));
   x = (Rcomplex *) rsimd_out_ptr(VECTOR_ELT(out, 2));
+  a = (Rcomplex *) rsimd_out_ptr(VECTOR_ELT(out, 3));
   for (i = 0; i < 2 * PROBE_RANDOM; i++) {
     /* The first half has moderate magnitudes, where only the rounding
        differs between the variants; the second spans the exponent range
@@ -178,10 +398,15 @@ static SEXP simd_c128_probe_inputs_impl(void) {
     x[i].r = cos(t) * (1.0 + probe_double(&seed, -12, -10));
     x[i].i = sin(t) * (1.0 + probe_double(&seed, -12, -10));
   }
-  names = PROTECT(Rf_allocVector(STRSXP, 3));
+  for (i = 0; i < PROBE_ASIN; i++) {
+    a[i].r = 1 + ldexp((double) (2 * i + 3), -30);
+    a[i].i = 0.0;
+  }
+  names = PROTECT(Rf_allocVector(STRSXP, 4));
   SET_STRING_ELT(names, 0, Rf_mkChar("z"));
   SET_STRING_ELT(names, 1, Rf_mkChar("w"));
   SET_STRING_ELT(names, 2, Rf_mkChar("x"));
+  SET_STRING_ELT(names, 3, Rf_mkChar("a"));
   Rf_setAttrib(out, R_NamesSymbol, names);
   UNPROTECT(2);
   return out;
@@ -229,19 +454,21 @@ static void probe_run(int op, int v1, int v2, rsimd_c128_fn f, const Rcomplex *x
 static const char *const mul_re_names[] = {"ac - bd", "fma(a, c, -bd)", "fma(-b, d, ac)"};
 static const char *const mul_im_names[] = {"ad + bc", "fma(b, c, ad)", "fma(a, d, bc)"};
 
-static void set_name(int k, const char *s, int level) {
-  snprintf(c128_names[k], sizeof c128_names[k], "%s%s", s,
+/* The name of choice k; `own` when its NaN results come from the Annex G
+   operators above rather than this compiler's. */
+static void set_name(int k, const char *s, int own, int level) {
+  snprintf(c128_names[k], sizeof c128_names[k], "%s%s%s", s, own ? "; Annex G" : "",
            level == 1 ? " (NA/NaN may differ)" : "");
 }
 
-static void set_mul_name(int k, int vr, int vi, int level) {
+static void set_mul_name(int k, int vr, int vi, int own, int level) {
   char buf[64];
   if (vr == RSIMD_CMUL_SCALAR) {
-    set_name(k, "scalar", level);
+    set_name(k, "scalar", own, level);
     return;
   }
   snprintf(buf, sizeof buf, "%s, %s", mul_re_names[vr], mul_im_names[vi]);
-  set_name(k, buf, level);
+  set_name(k, buf, own, level);
 }
 
 /* The variants, in order of preference: those of GCC builds first. */
@@ -269,8 +496,19 @@ static const Rcomplex *probe_data(SEXP v, R_xlen_t n, R_xlen_t *len) {
   return (const Rcomplex *) in.ptr;
 }
 
-static SEXP simd_c128_probe_impl(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp) {
-  const rsimd_c128_fn mul_fns[2] = {c99_mul_xy, c99_mul_yx};
+static SEXP simd_c128_probe_impl(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp,
+                                 SEXP as, SEXP asin_base) {
+  /* For each variant, the operators for its NaN results in order: this
+     compiler's, then the Annex G ones (unfused first where the variant is,
+     as an unfused build's are; fused first otherwise). */
+  const rsimd_c128_fn mul_fns[2][6] = {
+    {c99_mul_xy, c99_mul_yx, ag_mul_u, ag_mul_u_yx, ag_mul_f, ag_mul_f_yx},
+    {c99_mul_xy, c99_mul_yx, ag_mul_f, ag_mul_f_yx, ag_mul_u, ag_mul_u_yx}};
+  /* For testing, RSIMD_DEBUG_OWN_COMPLEX_OPS=true leaves out this
+     compiler's operators, so that the Annex G ones are checked against
+     base R wherever the tests run. */
+  const char *own_env = getenv("RSIMD_DEBUG_OWN_COMPLEX_OPS");
+  const int f0 = own_env != NULL && strcmp(own_env, "true") == 0 ? 1 : 0;
   const Rcomplex *pz, *pw, *pp, *pq, *px, *pc;
   Rcomplex *out, *prev, one;
   rsimd_c128_arith a = c128_arith;
@@ -283,44 +521,57 @@ static SEXP simd_c128_probe_impl(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, S
   pq = probe_data(quot, n, NULL);
   px = probe_data(x, -1, &m);
   pc = probe_data(cp, m, NULL);
+  {
+    R_xlen_t na;
+    const Rcomplex *pa = probe_data(as, -1, &na);
+    rsimd_cmath_probe_asin(pa, probe_data(asin_base, na, NULL), na);
+  }
   out = (Rcomplex *) R_alloc((size_t) (n > m ? n : m), sizeof(Rcomplex));
 
-  /* x * y: the variant and the operator for its NaN results. */
+  /* x * y: the variant and the operator for its NaN results (mul_fns). */
   a.mul_re = a.mul_im = RSIMD_CMUL_SCALAR;
-  a.mul1 = c99_mul_xy;
+  a.mul1 = f0 ? ag_mul_u : c99_mul_xy;
   for (k = 0; k <= 9 && best < 2; k++) {
     int vr = k < 9 ? variants[k][0] : RSIMD_CMUL_SCALAR, vi = k < 9 ? variants[k][1] : vr;
-    for (f = 0; f < 2; f++) {
-      probe_run(RSIMD_EW_MUL, vr, vi, mul_fns[f], pz, pw, n, out);
+    const rsimd_c128_fn *fns = mul_fns[vr != RSIMD_CMUL_UNFUSED && vr != RSIMD_CMUL_SCALAR];
+    for (f = 2 * f0; f < 6; f++) {
+      probe_run(RSIMD_EW_MUL, vr, vi, fns[f], pz, pw, n, out);
       level = match_level(out, pp, n);
       if (level > best) {
         best = level;
         a.mul_re = vr;
         a.mul_im = vi;
-        a.mul1 = mul_fns[f];
+        a.mul1 = fns[f];
       }
       if (best == 2) break;
     }
   }
-  set_mul_name(0, a.mul_re, a.mul_im, best);
+  set_mul_name(0, a.mul_re, a.mul_im, a.mul1 != c99_mul_xy && a.mul1 != c99_mul_yx, best);
 
-  /* x / y: libgcc's algorithm fused or not, else the operator. */
+  /* x / y: libgcc's algorithm fused or not, else the operator alone; for
+     the NaN results this compiler's operator, then the Annex G one rounded
+     as the variant (both ways for SCALAR). */
   best = 0;
   a.div = RSIMD_CDIV_SCALAR;
+  a.div1 = f0 ? ag_div_u : c99_div;
   for (k = 0; k < 3 && best < 2; k++) {
     int v = k == 0 ? RSIMD_CDIV_FMA : k == 1 ? RSIMD_CDIV_UNFUSED : RSIMD_CDIV_SCALAR;
-    probe_run(RSIMD_EW_DIV, v == RSIMD_CDIV_SCALAR ? RSIMD_CMUL_SCALAR : v, 0, c99_div, pz, pw, n,
-              out);
-    level = match_level(out, pq, n);
-    if (level > best) {
-      best = level;
-      a.div = v;
+    const rsimd_c128_fn div_fns[3] = {c99_div, v == RSIMD_CDIV_FMA ? ag_div_f : ag_div_u, ag_div_f};
+    for (f = f0; f < (v == RSIMD_CDIV_SCALAR ? 3 : 2) && best < 2; f++) {
+      probe_run(RSIMD_EW_DIV, v == RSIMD_CDIV_SCALAR ? RSIMD_CMUL_SCALAR : v, 0, div_fns[f], pz, pw,
+                n, out);
+      level = match_level(out, pq, n);
+      if (level > best) {
+        best = level;
+        a.div = v;
+        a.div1 = div_fns[f];
+      }
     }
   }
   set_name(1, a.div == RSIMD_CDIV_FMA        ? "libgcc, fused"
               : a.div == RSIMD_CDIV_UNFUSED ? "libgcc, unfused"
                                             : "scalar",
-           best);
+           a.div1 != c99_div, best);
 
   /* cumprod: each step is the element times the previous product. */
   prev = (Rcomplex *) R_alloc((size_t) m, sizeof(Rcomplex));
@@ -343,15 +594,16 @@ static SEXP simd_c128_probe_impl(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, S
       a.cp_im = vi;
     }
   }
-  set_mul_name(2, a.cp_re, a.cp_im, best);
+  set_mul_name(2, a.cp_re, a.cp_im, 0, best);
 
   c128_arith = a;
   return c128_variants();
 }
 
-SEXP C_simd_c128_probe(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp) {
+SEXP C_simd_c128_probe(SEXP z, SEXP w, SEXP prod, SEXP quot, SEXP x, SEXP cp, SEXP as,
+                       SEXP asin_base) {
   rsimd_entry();
-  return rsimd_exit(simd_c128_probe_impl(z, w, prod, quot, x, cp));
+  return rsimd_exit(simd_c128_probe_impl(z, w, prod, quot, x, cp, as, asin_base));
 }
 
 SEXP c128_variants(void) {

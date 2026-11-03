@@ -7,11 +7,13 @@
  * (z_tan, z_asin, z_acos, z_atan, the inverse hyperbolic functions through
  * the trigonometric ones, and the power, log-with-base and atan2 code).
  * This file is compiled with R's compiler flags rather than a tier's (in
- * particular with the compiler's default floating-point contraction), as
- * base R's own file is, so the same expressions round the same way.
- * Products and quotients in whole-number powers use the multiply and divide
- * chosen at load time (rsimd_c128_arith), as the kernels do, which
- * reproduce base R's results whichever compiler built R.
+ * particular with the compiler's default floating-point contraction), but
+ * the compiler need not be the one that built R, so nothing here relies on
+ * rounding as base R's file does: complex products and quotients (in
+ * powers, log with a base and atan2) use the multiply and divide chosen at
+ * load time (rsimd_c128_arith), as the kernels do, and the one multiply-add
+ * of R's own code, a^2 - 1 in asin's branch cut, rounds as base R's was
+ * found to (asin_cut). The C99 functions are the C library's, as R's are.
  *
  * acosh is the exception: base R's acosh(z) is acos(z) * i, which is the
  * negative of the principal value wherever its real part is negative (the
@@ -30,6 +32,7 @@
 #include "rsimd.h"
 #include "dispatch.h"
 #include "rvec.h"
+#include "soft_fma.h"
 #include "api_complex.h"
 
 static double complex to_c99(const Rcomplex *x) {
@@ -129,13 +132,29 @@ static double complex z_tan(double complex z) {
   return r;
 }
 
+/* How base R rounds alpha^2 - 1 in asin's branch cut (rsimd_cmath_base in
+   kernel_types.h), found by rsimd_cmath_probe_asin(). */
+static int asin_cut = RSIMD_CUT_UNKNOWN;
+
+/* alpha^2 - 1 rounded as base R does: the product on its own (volatile,
+   so that no contraction fuses it) or fused; unknown, as this compiler
+   rounds it. */
+static double asin_cut_sq1(int cut, double alpha) {
+  volatile double sq;
+  switch (cut) {
+  case RSIMD_CUT_FUSED: return rsimd_fma(alpha, alpha, -1.0);
+  case RSIMD_CUT_UNFUSED: sq = alpha * alpha; return sq - 1;
+  default: return alpha * alpha - 1;
+  }
+}
+
 static double complex z_asin(double complex z) {
   if (cimag(z) == 0 && fabs(creal(z)) > 1) {
     double alpha, t1, t2, x = creal(z), ri;
     t1 = 0.5 * fabs(x + 1);
     t2 = 0.5 * fabs(x - 1);
     alpha = t1 + t2;
-    ri = log(alpha + sqrt(alpha * alpha - 1));
+    ri = log(alpha + sqrt(asin_cut_sq1(asin_cut, alpha)));
     if (x > 1) ri *= -1;
     return asin(t1 - t2) + ri * I;
   }
@@ -199,7 +218,7 @@ static double complex z_asinh(double complex z) { return -I * z_asin(z * I); }
 static double complex z_atanh(double complex z) { return -I * z_atan(z * I); }
 
 static void z_logbase(const Rcomplex *z, const Rcomplex *base, Rcomplex *r) {
-  from_c99(z_clog(to_c99(z)) / z_clog(to_c99(base)), r);
+  from_c99(carith(RSIMD_EW_DIV, z_clog(to_c99(z)), z_clog(to_c99(base))), r);
 }
 
 static void z_atan2(const Rcomplex *csn, const Rcomplex *ccs, Rcomplex *r) {
@@ -215,7 +234,7 @@ static void z_atan2(const Rcomplex *csn, const Rcomplex *ccs, Rcomplex *r) {
       else dr = ((y >= 0) ? M_PI_2 : -M_PI_2);
     }
   } else {
-    dr = catan(dcsn / dccs);
+    dr = catan(carith(RSIMD_EW_DIV, dcsn, dccs));
     if (creal(dccs) < 0) dr += M_PI;
     if (creal(dr) > M_PI) dr -= 2 * M_PI;
   }
@@ -248,39 +267,46 @@ static void b_pow(const Rcomplex *x, const Rcomplex *y, Rcomplex *out) {
   from_c99(mycpow(to_c99(x), to_c99(y)), out);
 }
 
-/* asin_cut is found by cmath_base_get(). */
+/* asin_cut is set by rsimd_cmath_probe_asin(). */
 static rsimd_cmath_base cmath_base = {
   {b_sqrt, b_exp, b_log, b_sin, b_cos, b_tan, b_sinh, b_cosh, b_tanh, b_asin, b_acos, b_atan,
    b_asinh, b_acosh, b_atanh},
   {b_pow, z_logbase, z_atan2},
   RSIMD_CUT_UNKNOWN};
 
-/* How z_asin, as this file's compiler built it, rounds alpha * alpha - 1
-   on its branch cut (rsimd_cmath_base in kernel_types.h): b_asin is
-   compared with both roundings on real inputs just above 1, where they
-   give different results. */
-static int probe_asin_cut(void) {
-  int k, fused = 1, unfused = 1;
-  for (k = 1; k <= 8; k++) {
-    const double x = 1 + ldexp((double) (2 * k + 1), -30);
-    const double alpha = 0.5 * fabs(x + 1) + 0.5 * fabs(x - 1);
-    volatile double sq = alpha * alpha; /* rounded on its own */
-    Rcomplex z, r;
-    z.r = x;
-    z.i = 0;
-    b_asin(&z, &r);
-    if (r.i != -log(alpha + sqrt(sq - 1))) unfused = 0;
-    if (r.i != -log(alpha + sqrt(fma(alpha, alpha, -1)))) fused = 0;
+/* Finds asin_cut from base R's asin of n real numbers x just above 1 (in
+   `base`, imaginary parts zero), where the two roundings of alpha^2 - 1
+   give different results; b_asin, and through it acos and asinh, then
+   rounds alike. */
+void rsimd_cmath_probe_asin(const Rcomplex *x, const Rcomplex *base, R_xlen_t n) {
+  int fused = 1, unfused = 1;
+  R_xlen_t k;
+  for (k = 0; k < n; k++) {
+    const double alpha = 0.5 * fabs(x[k].r + 1) + 0.5 * fabs(x[k].r - 1);
+    const double s = x[k].r > 1 ? -1.0 : 1.0;
+    if (base[k].i != s * log(alpha + sqrt(asin_cut_sq1(RSIMD_CUT_UNFUSED, alpha)))) unfused = 0;
+    if (base[k].i != s * log(alpha + sqrt(asin_cut_sq1(RSIMD_CUT_FUSED, alpha)))) fused = 0;
   }
-  return fused == unfused ? RSIMD_CUT_UNKNOWN : fused ? RSIMD_CUT_FUSED : RSIMD_CUT_UNFUSED;
+  asin_cut = fused == unfused ? RSIMD_CUT_UNKNOWN : fused ? RSIMD_CUT_FUSED : RSIMD_CUT_UNFUSED;
 }
 
+/* With asin_cut UNKNOWN, how b_asin rounds (this compiler's alpha * alpha
+   - 1), if as one of the two: the vector tiers round as f1 does. */
 static const rsimd_cmath_base *cmath_base_get(void) {
-  static int probed = 0;
-  if (!probed) {
-    cmath_base.asin_cut = probe_asin_cut();
-    probed = 1;
+  int cut = asin_cut;
+  if (cut == RSIMD_CUT_UNKNOWN) {
+    volatile double vx = 1 + ldexp(3.0, -30); /* not a constant to fold */
+    Rcomplex z, r;
+    double alpha;
+    z.r = vx;
+    z.i = 0;
+    b_asin(&z, &r);
+    alpha = 0.5 * fabs(z.r + 1) + 0.5 * fabs(z.r - 1);
+    cut = r.i == -log(alpha + sqrt(asin_cut_sq1(RSIMD_CUT_UNFUSED, alpha))) ? RSIMD_CUT_UNFUSED
+          : r.i == -log(alpha + sqrt(asin_cut_sq1(RSIMD_CUT_FUSED, alpha))) ? RSIMD_CUT_FUSED
+                                                                             : RSIMD_CUT_UNKNOWN;
   }
+  cmath_base.asin_cut = cut;
   return &cmath_base;
 }
 
