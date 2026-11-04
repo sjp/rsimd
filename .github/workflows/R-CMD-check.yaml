@@ -5,7 +5,8 @@
 # On pull requests: ubuntu release (with the vignettes and the PDF manual),
 # devel and oldrel-1, ubuntu arm64, macOS arm64 and Windows, the others
 # without vignettes or LaTeX. On pushes to main also macOS x86-64, the
-# vignettes on every platform, and the build variants. The fast workflow
+# vignettes on every platform (on Windows only woven, without LaTeX), and
+# the build variants. The fast workflow
 # gives the first signal; coverage runs on pushes to main.
 on:
   push:

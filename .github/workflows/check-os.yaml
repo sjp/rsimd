@@ -2,8 +2,11 @@
 # whose tests loop over every available tier (NOT_CRAN=true), then the
 # dispatch tests once per available tier with RSIMD_IMPL set to it, against
 # the package R CMD check installed. With `vignettes` the vignettes are
-# built into PDFs (TinyTeX, cached); without, they are neither built nor
-# checked. With `manual` the PDF reference manual is built too.
+# built into PDFs (TinyTeX, cached), except on Windows, where their code is
+# only woven with Sweave and there is no LaTeX: tlmgr there is slow and can
+# hang for over an hour when the cache misses. Without `vignettes` they are
+# neither built nor checked. With `manual` the PDF reference manual is
+# built too.
 on:
   workflow_call:
     inputs:
@@ -57,47 +60,42 @@ jobs:
 
       # The Sweave vignettes are built into PDFs with pdflatex. TinyTeX with
       # the packages of tools/ci/latex-packages.txt is cached, so a cache hit
-      # skips the download and the tlmgr installs.
+      # skips the download and the tlmgr installs. Windows has no LaTeX.
       - name: Restore TinyTeX
-        if: inputs.vignettes
+        if: inputs.vignettes && runner.os != 'Windows'
         id: tinytex
         uses: actions/cache@v6
         with:
-          path: ${{ runner.os == 'Linux' && '~/.TinyTeX' || runner.os == 'macOS' && '~/Library/TinyTeX' || '~/AppData/Roaming/TinyTeX' }}
+          path: ${{ runner.os == 'Linux' && '~/.TinyTeX' || '~/Library/TinyTeX' }}
           key: tinytex-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.manual }}-${{ hashFiles('tools/ci/latex-packages.txt') }}
 
       - uses: r-lib/actions/setup-tinytex@v2
-        if: inputs.vignettes && steps.tinytex.outputs.cache-hit != 'true'
+        if: inputs.vignettes && runner.os != 'Windows' && steps.tinytex.outputs.cache-hit != 'true'
 
       - name: Install the LaTeX packages
-        if: inputs.vignettes && steps.tinytex.outputs.cache-hit != 'true'
+        if: inputs.vignettes && runner.os != 'Windows' && steps.tinytex.outputs.cache-hit != 'true'
+        timeout-minutes: 15
         run: |
           list() { sed -n "s/^$1: //p" tools/ci/latex-packages.txt; }
           pkgs=$(list vignettes)
           if [ "${{ inputs.manual }}" = true ]; then pkgs="$pkgs $(list manual)"; fi
           # TinyTeX's bundle can ship a tlmgr older than the repository's,
           # which then refuses to install anything until it updates itself.
-          # On Windows tlmgr is a batch file, which bash cannot run itself.
-          if [ "$RUNNER_OS" = Windows ]; then
-            cmd //c "tlmgr update --self && tlmgr install $pkgs"
-          else
-            tlmgr update --self
-            # shellcheck disable=SC2086 # one word per package
-            tlmgr install $pkgs
-          fi
+          tlmgr update --self
+          # shellcheck disable=SC2086 # one word per package
+          tlmgr install $pkgs
 
       - name: Put the cached TinyTeX on the PATH
-        if: inputs.vignettes && steps.tinytex.outputs.cache-hit == 'true'
+        if: inputs.vignettes && runner.os != 'Windows' && steps.tinytex.outputs.cache-hit == 'true'
         run: |
           case "$RUNNER_OS" in
             Linux) bin=$(ls -d "$HOME"/.TinyTeX/bin/*) ;;
             macOS) bin=$(ls -d "$HOME"/Library/TinyTeX/bin/*) ;;
-            Windows) bin=$(cygpath -w "$(ls -d "$(cygpath -u "$APPDATA")"/TinyTeX/bin/win*)") ;;
           esac
           echo "$bin" >> "$GITHUB_PATH"
 
       - name: Install texinfo, qpdf and Ghostscript for building and compacting the vignettes
-        if: inputs.vignettes
+        if: inputs.vignettes && runner.os != 'Windows'
         run: |
           case "$RUNNER_OS" in
             Linux) sudo apt-get update && sudo apt-get install -y texinfo qpdf ghostscript ;;
@@ -117,9 +115,10 @@ jobs:
           sh tools/check_makevars.sh
           sh ./cleanup
 
-      # R CMD build's vignette step shows nothing when R crashes in a chunk,
-      # so on Windows weave the vignettes first, with each chunk's label
-      # printed before it runs: the last label shown is the one that crashed.
+      # Windows has no LaTeX, so this is where its vignette code runs: each
+      # vignette is woven with Sweave (no PDF), each chunk's label printed
+      # before it runs, so that a crash shows the chunk that caused it. The
+      # check below then ignores the vignettes.
       - name: Weave the vignettes with visible output (Windows)
         if: inputs.vignettes && runner.os == 'Windows'
         run: |
@@ -139,10 +138,10 @@ jobs:
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: >-
-            ${{ !inputs.vignettes && 'c("--no-manual", "--as-cran", "--ignore-vignettes")'
+            ${{ !(inputs.vignettes && runner.os != 'Windows') && 'c("--no-manual", "--as-cran", "--ignore-vignettes")'
             || inputs.manual && 'c("--as-cran")' || 'c("--no-manual", "--as-cran")' }}
           build_args: >-
-            ${{ inputs.vignettes && 'c("--no-manual", "--compact-vignettes=both")'
+            ${{ inputs.vignettes && runner.os != 'Windows' && 'c("--no-manual", "--compact-vignettes=both")'
             || 'c("--no-manual", "--no-build-vignettes")' }}
           error-on: '"warning"'
           upload-snapshots: true
