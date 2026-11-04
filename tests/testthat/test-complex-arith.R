@@ -145,9 +145,14 @@ test_that("the package's own Annex G operators reproduce base R's", {
   # The compiler that builds rsimd need not round as R's did (Ubuntu
   # 26.04's GCC targets x86-64-v3 and fuses, Posit's R does not), so the
   # probe can pick operators that do not come from the compiler; here it
-  # must, whichever compiler built R.
+  # must. Those operators are libgcc's __muldc3 and __divdc3, so this holds
+  # only where R's complex * and / are libgcc's: on Linux and Windows. On
+  # macOS R is built with clang, whose compiler-rt divides by scaling with
+  # logb() and scalbn() rather than by Smith's method; there the probe
+  # takes the compiler's operators, which are R's.
   skip_on_cran()
   skip_if_no_subprocess()
+  skip_if(Sys.info()[["sysname"]] == "Darwin", "base R's complex operators are compiler-rt's")
   x <- rand_z(5000, seed = 3L, wide = TRUE)
   y <- rand_z(5000, seed = 4L, wide = TRUE)
   p <- grid_pairs(c(annex_g, extremes))
@@ -172,22 +177,31 @@ test_that("the package's own Annex G operators reproduce base R's", {
   expect_match(v[["mul"]], "Annex G", fixed = TRUE)
   expect_match(v[["div"]], "Annex G", fixed = TRUE)
   # Where the operands hold both NA and NaN, which one base R's quotient
-  # keeps depends on its C library (see above).
+  # keeps depends on its C library (see above), and which one its product
+  # keeps on how R's compiler ordered the commutative multiplies (on
+  # Windows not as on Linux).
   parts <- cbind(Re(x), Im(x), Re(y), Im(y))
   plain <- !(rowSums(is.na(parts) & !is.nan(parts)) > 0 & rowSums(is.nan(parts)) > 0)
+  # On a failure, the variants chosen and the first element that differs.
+  check <- function(got, want, label) {
+    expect_true(same_values(got, want), info = paste0(
+      label, "; ", paste(names(v), v, sep = ": ", collapse = ", "), "; ",
+      first_difference(got, want)
+    ))
+  }
   for (tier in names(there)) {
     r <- there[[tier]]
-    expect_true(same_values(r$mul, x * y), info = tier)
-    expect_true(same_values(r$div[plain], (x / y)[plain]), info = tier)
-    expect_true(same_values(r$pow, x^k), info = tier)
+    check(r$mul[plain], (x * y)[plain], paste(tier, "x * y"))
+    check(r$div[plain], (x / y)[plain], paste(tier, "x / y"))
+    check(r$pow, x^k, paste(tier, "x^k"))
   }
   # The functions that only the none tier computes as base R does.
   r <- there[["none"]]
-  expect_true(same_values(r$logb, suppressWarnings(log(x[1:500], y[1:500]))))
-  expect_true(same_values(r$atan2, suppressWarnings(atan2(x[1:500], y[1:500]))))
-  expect_true(same_values(r$asin, asin(a)))
-  expect_true(same_values(r$acos, acos(a)))
-  expect_true(same_values(r$asinh, asinh(a * 1i)))
+  check(r$logb, suppressWarnings(log(x[1:500], y[1:500])), "log(x, y)")
+  check(r$atan2, suppressWarnings(atan2(x[1:500], y[1:500])), "atan2")
+  check(r$asin, asin(a), "asin")
+  check(r$acos, acos(a), "acos")
+  check(r$asinh, asinh(a * 1i), "asinh")
 })
 
 test_that("scalars broadcast on either side, and other types are promoted", {
