@@ -228,12 +228,23 @@ test_that("scalars broadcast on either side, and other types are promoted", {
 test_that("every rounding variant's kernels compute its formula", {
   x <- rand_z(1003, seed = 7L, na_frac = 0, nan_frac = 0, inf_frac = 0)
   y <- rand_z(1003, seed = 8L, na_frac = 0, nan_frac = 0, inf_frac = 0)
+  # valgrind (3.26) emulates vfnmadd as -(x * y - z), not -(x * y) + z
+  # (dis_FMA in VEX/priv/guest_amd64_toIR.c), so an exact zero gets the
+  # wrong sign there. Where the compiler fuses on its own (x86-64-v3 GCC),
+  # FMA2's real part fma(-b, d, ac) is a vfnmadd, so under valgrind its
+  # zeros are compared without their sign.
+  unsigned_re_zero <- function(z) complex(real = Re(z) + 0, imaginary = Im(z))
   for (vr in 0:2) {
     for (vi in 0:2) {
       expected <- cmul_ref(x, y, vr, vi)
+      mul <- simd_mul
+      if (vr == 2L && under_valgrind()) {
+        expected <- unsigned_re_zero(expected)
+        mul <- function(x, y) unsigned_re_zero(simd_mul(x, y))
+      }
       with_variants(c(vr, vi, 1L, 1L, 1L), {
-        expect_tiers_give(expected, simd_mul, x, y)
-        expect_tiers_give(expected[1:7], simd_mul, x[1:7], y[1:7])
+        expect_tiers_give(expected, mul, x, y)
+        expect_tiers_give(expected[1:7], mul, x[1:7], y[1:7])
       })
     }
   }

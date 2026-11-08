@@ -31,6 +31,12 @@ has_wide_long_double <- function() {
     isTRUE(.Machine$longdouble.digits >= 64)
 }
 
+# Is this R running under valgrind? Its launcher preloads its vgpreload_*
+# libraries into every process it runs.
+under_valgrind <- function() {
+  grepl("vgpreload", Sys.getenv("LD_PRELOAD"), fixed = TRUE)
+}
+
 # 257 doubles with 1e16, 1, -1e16 at positions 1, 129 and 257: in fast mode
 # all three land in accumulator 0, lane 0 for every lane width up to 32, so
 # the fast sum is 0 on every tier.
